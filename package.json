@@ -3,15 +3,33 @@
   "version": "1.0.0",
   "description": "Delta iERP Warranty & Service Management System Demo for Solartive Techno Industries",
   "private": true,
-  "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "node server/server.js",
-    "db:migrate": "node server/run_postgres_migrations.js"
+    "dev": "next dev -p 3000",
+    "build": "next build",
+    "start": "next start -p 3000",
+    "db:init": "node server/init_nextjs_db.js",
+    "db:migrate": "node server/run_nextjs_migrations.js",
+    "db:seed": "node server/migrate_json_to_nextjs_db.js",
+    "db:admin": "node server/seed_nextjs_admin.js"
   },
   "dependencies": {
+    "@ant-design/cssinjs": "^2.1.2",
+    "@ant-design/icons": "^6.3.4",
+    "@types/qrcode": "^1.5.6",
+    "antd": "^6.6.8",
+    "axios": "^1.21.0",
+    "dayjs": "^1.11.23",
     "dotenv": "^18.0.9",
-    "pg": "^8.23.1"
+    "drizzle-kit": "^0.31.11",
+    "drizzle-orm": "^0.45.4",
+    "jose": "^6.2.15",
+    "next": "^14.2.35",
+    "pg": "^8.23.1",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.16"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -24,5 +42,14 @@
     "postgresql"
   ],
   "author": "Delta Infosoft Pvt. Ltd.",
-  "license": "UNLICENSED"
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.19",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.4.5"
+  }
 }

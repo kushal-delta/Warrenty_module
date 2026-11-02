@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --theme-gradient-from: #003eb3;
+  --theme-gradient-to: #1677ff;
+}
+
+/* RULES §46: Drawer & Modal bodies must be positioned relative for popup container containment */
+.ant-drawer-body,
+.ant-modal-body {
+  position: relative !important;
+}
+
+/* RULES §4: Never use ellipses or truncating in tables; ensure clean multi-line wrapping */
+.ant-table-cell {
+  word-break: break-word !important;
+  white-space: normal !important;
+  line-height: 1.35 !important;
+}
+
+/* RULES §10: Tree Tables keyboard focused row styling */
+.lg-row-focused td {
+  background-color: #e6f4ff !important;
+  outline: 2px solid #1677ff !important;
+  outline-offset: -2px;
+}
+
+/* Form Item styling refinements */
+.ant-form-item {
+  margin-bottom: 16px;
+}
+
+/* Status row background colors for registers */
+.row-status-active td {
+  background-color: #f6ffed !important;
+}
+
+.row-status-pending td {
+  background-color: #fffbe6 !important;
+}
+
+.row-status-alert td {
+  background-color: #fff1f0 !important;
+}

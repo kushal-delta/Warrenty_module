@@ -7,6 +7,11 @@
 # Dependencies
 node_modules/
 
+# Next.js build and cache
+.next/
+out/
+tsconfig.tsbuildinfo
+
 # Vercel deployment artifacts
 .vercel/
 
