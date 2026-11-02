@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Delta iERP — Warranty &amp; Service</title>
+  <meta http-equiv="refresh" content="0; url=/app/index.html">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23009694'/><text y='73' x='50' text-anchor='middle' font-size='64' font-family='Arial' font-weight='bold' fill='%23fff'>D</text></svg>">
+  <style>
+    :root {
+      --brand: #009694;
+      --brand-dk: #00726F;
+      --cyan: #00B7C7;
+      --ink: #15262B;
+      --ink2: #456068;
+      --paper: #F3F7F7;
+      --card: #ffffff;
+      --rule: #DFE8EA;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--paper);
+      color: var(--ink);
+      font: 15px/1.6 "Segoe UI", Roboto, -apple-system, Arial, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .box {
+      background: var(--card);
+      border: 1px solid var(--rule);
+      border-radius: 12px;
+      padding: 36px 32px;
+      max-width: 520px;
+      width: 100%;
+      box-shadow: 0 12px 36px -12px rgba(0, 40, 48, 0.18);
+      text-align: center;
+    }
+    .logo {
+      height: 48px;
+      width: auto;
+      margin-bottom: 16px;
+    }
+    .pq {
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--ink);
+      letter-spacing: -0.5px;
+    }
+    .pq b { color: var(--brand); }
+    .sub {
+      color: var(--ink2);
+      font-size: 14px;
+      margin-top: 6px;
+      margin-bottom: 24px;
+    }
+    .spinner {
+      width: 34px;
+      height: 34px;
+      border: 3px solid #D0E4E6;
+      border-top-color: var(--brand);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 18px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .btn {
+      display: inline-block;
+      background: var(--brand);
+      color: #fff;
+      font-weight: 600;
+      padding: 10px 22px;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: background 0.15s;
+      margin: 6px 4px;
+    }
+    .btn:hover { background: var(--brand-dk); }
+    .btn.sec {
+      background: #EAF3F3;
+      color: var(--brand-dk);
+    }
+    .btn.sec:hover { background: #D9ECEC; }
+    .links { margin-top: 20px; font-size: 13px; color: var(--ink2); }
+  </style>
+  <script>
+    (function () {
+      var dest = '/app/index.html' + window.location.search + window.location.hash;
+      window.location.replace(dest);
+    })();
+  </script>
+</head>
+<body>
+  <div class="box">
+    <img src="/app/solartive-logo.png" alt="Solartive" class="logo" onerror="this.style.display='none'">
+    <div class="pq">Delta <b>iERP</b></div>
+    <div class="sub">Warranty &amp; Service Management System</div>
+    <div class="spinner" id="sp"></div>
+    <p style="margin-bottom: 18px; color: var(--ink2);">Redirecting to the application...</p>
+    <div>
+      <a class="btn" href="/app/index.html">Open Application →</a>
+      <a class="btn sec" href="/Demo-Runbook.html">Demo Runbook</a>
+    </div>
+    <div class="links">
+      <a href="/START%20HERE.html" style="color:inherit; text-decoration: underline;">System Documentation &amp; Overview</a>
+    </div>
+  </div>
+</body>
+</html>

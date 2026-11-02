@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+
+# Vercel deployment artifacts
+.vercel/
+
+# Temporary and backup data files
+*.tmp
+*.bak
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

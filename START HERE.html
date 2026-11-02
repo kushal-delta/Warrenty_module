@@ -1,0 +1,70 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Delta Warranty + Service - Solartive demo</title><style>:root{--brand:#009694;--brand-dk:#00726F;--cyan:#00B7C7;--accent:#FFAB40;--ink:#15262B;--ink2:#456068;--ink3:#71898F;--paper:#F3F7F7;--card:#fff;--rule:#DFE8EA;--good:#146B45;--warn:#9A5B00;--bad:#B3261E}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--paper);color:var(--ink);font:15.5px/1.6 "Segoe UI",Roboto,-apple-system,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+.hero{background:linear-gradient(142deg,#08262B 0%,#0E4750 48%,#009694 115%);color:#fff;padding:40px 32px 38px;position:relative;overflow:hidden}
+.hero:before{content:'';position:absolute;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle,rgba(0,183,199,.32),transparent 68%);top:-200px;right:-140px}
+.hero-in{max-width:1100px;margin:0 auto;position:relative;z-index:2}
+.plate{display:inline-flex;background:#fff;border-radius:9px;padding:10px 18px;margin-bottom:18px;box-shadow:0 8px 24px -10px rgba(0,0,0,.45)}
+.plate img{height:46px;width:auto;display:block}
+.pq{font-size:34px;font-weight:800;letter-spacing:-1px;line-height:1}.pq b{color:var(--cyan)}
+.by{font-size:11px;letter-spacing:2.6px;text-transform:uppercase;color:#8FB6C0;font-weight:700;margin-top:8px}
+.hero h1{font-size:clamp(25px,3.4vw,38px);font-weight:300;line-height:1.22;margin-top:22px;max-width:24ch}.hero h1 b{font-weight:700;color:var(--accent)}
+.hero p{color:#B9D3DA;margin-top:12px;max-width:68ch;font-size:15px}
+.wrap{max-width:1100px;margin:0 auto;padding:30px 32px 70px}
+h2{font-size:12px;letter-spacing:.15em;text-transform:uppercase;color:var(--ink3);font-weight:700;margin:30px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--rule)}
+h2:first-child{margin-top:0}
+h3{font-size:17px;margin:0 0 6px}
+p{margin:0 0 10px}
+code,.mono{font:600 13px ui-monospace,Consolas,monospace;background:#EAF3F3;padding:1px 6px;border-radius:4px;color:#0B3D45;white-space:nowrap}
+.note{background:#E2F1F3;border-left:3px solid var(--brand);padding:13px 18px;border-radius:0 5px 5px 0;font-size:14.5px;color:#0B3D45;margin:0 0 18px}
+.note.warn{background:#FFF4E0;border-color:var(--accent);color:#5C3B00}
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:26px}
+@media(max-width:760px){.cards{grid-template-columns:1fr}.wrap{padding:22px 16px 50px}.hero{padding:30px 16px}}
+a.card{display:block;background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:20px 22px;text-decoration:none;color:inherit;transition:.14s;box-shadow:0 1px 2px rgba(15,33,41,.05)}
+a.card:hover{border-color:var(--brand);box-shadow:0 6px 22px -10px rgba(0,114,127,.4);transform:translateY(-1px)}
+a.card h3{font-size:18px}a.card p{font-size:14px;color:var(--ink2);margin:0}
+a.card .go{margin-top:10px;font-size:12.5px;font-weight:700;color:var(--brand-dk)}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--rule);border-radius:6px;overflow:hidden;margin:0 0 18px;font-size:14px}
+th{background:#EAF3F3;text-align:left;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink2);padding:8px 12px}
+td{padding:8px 12px;border-top:1px solid #EEF3F5;vertical-align:top}
+.tag{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 8px;border-radius:9px;background:#E1F4F4;color:var(--brand-dk);margin-right:4px}
+.foot{border-top:1px solid var(--rule);padding-top:16px;margin-top:30px;font-size:12.5px;color:var(--ink3);display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(108px,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule);border-radius:5px;overflow:hidden;margin-bottom:28px}.stats div{background:var(--card);padding:12px 16px}.stats b{display:block;font-size:10px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink3)}.stats span{font-size:21px;font-weight:700;font-variant-numeric:tabular-nums}.caps{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:14px;margin-bottom:28px}.cap{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:15px 18px}.cap>b{display:block;margin-bottom:4px}.cap>span{font-size:13.8px;color:var(--ink2);display:block}</style></head><body>
+<div class="hero"><div class="hero-in"><div class="plate"><img src="app/solartive-logo.png" alt="Solartive"></div>
+<div class="pq">Warranty <b>&amp; Service</b></div><div class="by">Delta iERP module · by Delta Infosoft Pvt. Ltd.</div>
+<h1>Demo system for <b>SOLARTIVE TECHNO INDUSTRIES</b></h1>
+<p>Solar submersible pump · motor · controller — each component with its own serial number and its own warranty. One QR sticker to register the warranty, one call to start service, one job card to approve and close it.</p></div></div>
+<div class="wrap">
+<div class="stats"><div><b>Customers</b><span>25</span></div><div><b>Installations</b><span>26</span></div><div><b>Serials</b><span>137</span></div><div><b>Warranties</b><span>80</span></div><div><b>Service calls</b><span>29</span></div><div><b>Job cards</b><span>17</span></div><div><b>Dealers</b><span>8</span></div><div><b>Tables</b><span>34</span></div></div>
+
+<h2>Open</h2>
+<div class="note"><b>Double-click <b>Start Warranty Service Demo.cmd</b></b> in this folder. The system opens in your browser by itself. Everything you enter is kept in <code>data\warranty-service-data.json</code> inside this folder, so it is still there tomorrow, it is the same in Chrome and Edge, and copying the whole folder to another PC or a pen drive carries the data with it. Leave the small black window open while you work; closing it only stops the system &mdash; the data stays in the file.<br><br>Opening <code>app\index.html</code> directly also works, but the browser then keeps its own private copy (the top bar says <b>Local only</b>).</div>
+<div class="cards">
+ <a class="card" href="app/index.html"><h3>Open the system</h3><p>Works offline &mdash; nothing to install. Sign in with the quick-demo chips on the login page.</p><div class="go">Launch →</div></a>
+ <a class="card" href="Demo-Runbook.html"><h3>Demo runbook</h3><p>Step-by-step script for the client demo: what to click, what to say, who to sign in as, and the hard questions.</p><div class="go">Open the runbook →</div></a>
+</div>
+
+<h2>Sign-in details</h2>
+<table><thead><tr><th>Role</th><th>User</th><th>Password</th><th>What they see</th></tr></thead><tbody>
+<tr><td>Super admin</td><td><span class="mono">admin</span></td><td><span class="mono">delta@2026</span></td><td>Everything, all states. Can reset the demo data (profile menu).</td></tr><tr><td>HO user (Uttar Pradesh rights)</td><td><span class="mono">ho.up</span></td><td><span class="mono">delta@2026</span></td><td>Head-office screens, restricted to the states given in the user's rights.</td></tr><tr><td>HO head — level-2 approver</td><td><span class="mono">ho.head</span></td><td><span class="mono">delta@2026</span></td><td>Approves job cards of ₹10,000 and above.</td></tr><tr><td>Service manager</td><td><span class="mono">mgr.gno</span> · <span class="mono">mgr.lko</span> · <span class="mono">mgr.jai</span> · <span class="mono">mgr.ind</span></td><td><span class="mono">delta@2026</span></td><td>Own service centre; level-1 approver.</td></tr><tr><td>Service engineer</td><td><span class="mono">eng.gno1</span> · <span class="mono">eng.lko1</span> · <span class="mono">eng.jai1</span> · <span class="mono">eng.ind1</span></td><td><span class="mono">delta@2026</span></td><td>Own calls, visit reports, job cards, van stock.</td></tr><tr><td>Dealer</td><td><span class="mono">1001</span> … <span class="mono">1006</span></td><td><span class="mono">123</span></td><td>Own customers and warranties only. Dealer 1003 has a 30-month warranty override.</td></tr><tr><td>Customer (farmer)</td><td><span class="mono">9810101001</span> (Ramesh Kumar &mdash; two sets) · <span class="mono">9415101004</span> · <span class="mono">9829101010</span></td><td>OTP</td><td>The OTP is shown on screen (simulated SMS). Own products and calls only.</td></tr></tbody></table>
+
+<h2>Everything that was asked for</h2>
+<div class="caps">
+ <div class="cap"><b>Flow from the PPTs</b><span>Sticker import → QR print → dealer sign-up and approval → registration by dealer / customer / HO → per-serial warranty → replacement → service call → visit → job card → multi-level approval → stock → close. The <b>End-to-End Flow</b> page inside the system shows it.</span></div>
+ <div class="cap"><b>Pump · Motor · Controller</b><span>Each component is its own model, its own serial and its own warranty (pump 24, motor 24, controller 36 months). A call, a spare and a replacement are all tracked against the component serial.</span></div>
+ <div class="cap"><b>Add · Edit · Delete</b><span>Every master and transaction screen has all three. Delete is guarded &mdash; a record in use cannot be removed and the message says what uses it.</span></div>
+ <div class="cap"><b>Excel import everywhere</b><span>21 lists import from Excel (.xlsx / .csv) with a downloadable template, row-by-row validation, an error report and update-existing. Ready templates are in <b>Import Templates</b>; job-card lines import too.</span></div>
+ <div class="cap"><b>Database</b><span>34 tables, SQL Server script, demo data script and data dictionary in <b>database</b>. The <b>Database Schema</b> screen shows tables, ER diagram and SQL.</span></div>
+ <div class="cap"><b>Roles and scoping</b><span>HO (by state), service manager and engineer (by service centre), dealer (own business) and customer (own products) see only their own data.</span></div>
+ <div class="cap"><b>WhatsApp / SMS / OTP</b><span>Simulated for the demo: every message is shown on a phone-style card and written to the message log. A real gateway plugs in at one place.</span></div>
+ <div class="cap"><b>Branding</b><span>Solartive company profile, GSTIN and logo on the login page, warranty card, job card and messages. Editable in <b>Masters → Company Profile</b>.</span></div>
+</div>
+
+<div class="note warn"><b>Before the demo, please note:</b> toll-free number, e-mail, phone and website in the Company Profile are placeholders &mdash; replace them with Solartive's real details (Masters → Company Profile). All customers, dealers, serials and amounts are fictional sample data. An old <b>.xls</b> file must first be saved as <b>.xlsx</b> or <b>.csv</b> before import.</div>
+
+<h2>What is in this folder</h2>
+<table><tbody>
+<tr><td><span class="mono">Start Warranty Service Demo.cmd</span></td><td>One-click start (Windows). Uses PowerShell, already part of Windows &mdash; nothing to install.</td></tr><tr><td><span class="mono">app\</span></td><td>The application (HTML + JavaScript, works offline).</td></tr><tr><td><span class="mono">data\</span></td><td>Your live data file <code>warranty-service-data.json</code> (plus a previous copy and one snapshot per day).</td></tr><tr><td><span class="mono">database\</span></td><td><code>01_create_tables.sql</code> (SQL Server), <code>02_demo_data.sql</code> (the same sample data), <code>Data-Dictionary.xlsx</code> (tables, columns, relationships).</td></tr><tr><td><span class="mono">Import Templates\</span></td><td>One Excel template per importable list; each sample row imports as it is, plus bigger demo files for the live import.</td></tr><tr><td><span class="mono">Demo-Runbook.html</span></td><td>The demo script.</td></tr></tbody></table>
+<div class="foot"><span>Delta Infosoft Pvt. Ltd. &middot; Delta iERP Warranty &amp; Service v1.0</span><span>Prepared for SOLARTIVE TECHNO INDUSTRIES PRIVATE LIMITED &middot; Greater Noida</span></div>
+</div></body></html>
