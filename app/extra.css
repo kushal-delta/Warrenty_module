@@ -2,11 +2,10 @@
    Warranty & Service demo - additions to the Delta iERP theme (app.css)
    ============================================================ */
 
-/* layering: login 900 < modal 960 < toast / WhatsApp card 990 */
 .modal{z-index:960}
 .toast{z-index:995}
 .pop{z-index:970}
-#syncBar{z-index:940}
+#syncBar{display:none!important}
 .mono{font-family:var(--mono);letter-spacing:.2px}
 
 /* ---------- login ---------- */

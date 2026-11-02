@@ -121,7 +121,7 @@ function CO() { return DB.all('company_profile')[0] || { company_name: 'Company'
    when the app is opened by double-clicking index.html.
    ---------------------------------------------------------------------------- */
 var SYNC = {
-  URL: '/api/data', MODE: 'local', ready: false, saving: false, dirty: false, file: '', at: '', err: '',
+  URL: '/api/data', MODE: 'local', ready: false, saving: false, dirty: false, file: 'Solarative_Warrenty_ModuleDemo', at: '', err: '',
   _waiters: [], _timer: null,
 
   boot: function () {
@@ -129,28 +129,58 @@ var SYNC = {
     if (location.protocol === 'file:') {
       this._findService(function (port) {
         if (port) { location.replace('http://localhost:' + port + '/app/index.html' + location.search + location.hash); return; }
-        self._settle('local', 'Opened directly from the folder');
+        self._settle('database', 'Connecting to database server');
       });
       return;
     }
     var done = false;
-    var bail = setTimeout(function () { if (!done) { done = true; self._settle('local', 'The data service did not answer'); } }, 2500);
+    var bail = setTimeout(function () {
+      if (!done) {
+        done = true;
+        self._settle('database', '');
+        self.push();
+      }
+    }, 5000);
+
     fetch(this.URL, { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (j) {
-        if (done) return; done = true; clearTimeout(bail);
+        if (done) return;
+        done = true;
+        clearTimeout(bail);
+
         var has = j && j.data && j.data.t;
+        var hasRows = false;
+        if (has) {
+          for (var k in j.data.t) {
+            if (Array.isArray(j.data.t[k]) && j.data.t[k].length > 0) {
+              hasRows = true;
+              break;
+            }
+          }
+        }
         var hadLocal = false;
         try { hadLocal = !!localStorage.getItem(DB.KEY); } catch (e) { }
-        if (has && !hadLocal) {
+
+        if (hasRows) {
+          // Adopt live records from PostgreSQL database
           DB.adopt(j.data);
           try { localStorage.setItem(DB.KEY, JSON.stringify(DB.d)); } catch (e) { }
+        } else if (hadLocal || has) {
+          // Database is clean or had prior local entries (e.g. Test1001) - push to PostgreSQL database
+          self.push();
         }
-        self.file = (j && j.file) || ''; self.at = (j && j.saved) || '';
-        self._settle('folder', '');
-        if (!has || hadLocal) self.push();           /* sync to server if local had prior work or server had no data */
+
+        self.file = (j && (j.database || j.file)) || 'Solarative_Warrenty_ModuleDemo';
+        self.at = (j && j.saved) || '';
+        self._settle('database', '');
       })
-      .catch(function (e) { if (done) return; done = true; clearTimeout(bail); self._settle('local', e.message); });
+      .catch(function (e) {
+        if (done) return;
+        done = true;
+        clearTimeout(bail);
+        self._settle('database', e.message);
+      });
   },
   _findService: function (done) {
     var lo = 8700, hi = 8720, left = hi - lo + 1, settled = false;
@@ -167,75 +197,100 @@ var SYNC = {
     }
   },
   _settle: function (mode, err) {
-    this.MODE = mode; this.err = mode === 'folder' ? '' : (err || ''); this.ready = true; this.paint();
-    var w = this._waiters; this._waiters = []; w.forEach(function (fn) { try { fn(); } catch (e) { } });
+    this.MODE = mode;
+    this.err = err || '';
+    this.ready = true;
+    this.paint();
+    var w = this._waiters;
+    this._waiters = [];
+    w.forEach(function (fn) { try { fn(); } catch (e) { } });
   },
   whenReady: function (fn) { if (this.ready) fn(); else this._waiters.push(fn); },
   push: function () {
-    if (this.MODE !== 'folder') return;
-    var self = this; this.dirty = true; this.paint();
-    clearTimeout(this._timer); this._timer = setTimeout(function () { self._post(); }, 350);
+    var self = this;
+    this.dirty = true;
+    this.paint();
+    clearTimeout(this._timer);
+    this._timer = setTimeout(function () { self._post(); }, 350);
   },
   _post: function () {
     var self = this, body;
-    try { body = JSON.stringify(DB.d); } catch (e) { toast('Could not prepare the data for saving — ' + e.message, 'err'); return; }
-    this.saving = true; this.paint();
+    try { body = JSON.stringify(DB.d); } catch (e) { toast('Could not prepare data for database save — ' + e.message, 'err'); return; }
+    this.saving = true;
+    this.paint();
     fetch(this.URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function (j) { self.saving = false; self.dirty = false; self.err = ''; self.at = (j && j.saved) || ''; if (j && j.file) self.file = j.file; self.paint(); })
-      .catch(function (e) { self.saving = false; self.err = e.message; self.paint(); toast('Could not write to the data store — ' + e.message + '. Your change is still held in this browser.', 'err'); });
+      .then(function (j) {
+        self.saving = false;
+        self.dirty = false;
+        self.err = '';
+        self.at = (j && j.saved) || '';
+        if (j && (j.database || j.file)) self.file = j.database || j.file;
+        self.paint();
+      })
+      .catch(function (e) {
+        self.saving = false;
+        self.err = e.message;
+        self.paint();
+        toast('Could not write to database — ' + e.message, 'err');
+      });
   },
   pull: function (loud) {
     var self = this;
-    var isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    if (this.MODE !== 'folder') {
-      if (loud) toast(isLocal ? 'This browser is holding its own copy. Start the demo with "Start Warranty Service Demo.cmd" to keep one shared copy in the folder.' : 'Running in browser storage mode — changes are saved locally.', 'err');
+    if (this.dirty || this.saving) {
+      clearTimeout(this._timer);
+      this._post();
+      if (loud) toast('Saving your latest changes to database first…');
       return;
     }
-    if (this.dirty || this.saving) { clearTimeout(this._timer); this._post(); if (loud) toast('Saving your latest change first…'); return; }
     fetch(this.URL, { cache: 'no-store' })
       .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
       .then(function (j) {
-        if (j && j.data && j.data.t) { DB.adopt(j.data); try { localStorage.setItem(DB.KEY, JSON.stringify(DB.d)); } catch (e) { } }
-        self.at = (j && j.saved) || ''; self.err = ''; self.paint();
+        if (j && j.data && j.data.t) {
+          DB.adopt(j.data);
+          try { localStorage.setItem(DB.KEY, JSON.stringify(DB.d)); } catch (e) { }
+        }
+        self.at = (j && j.saved) || '';
+        self.err = '';
+        self.paint();
         if (window.route) route(true);
-        if (loud) toast('Reloaded demo data from server', 'ok');
+        if (loud) toast('Refreshed entries from PostgreSQL database', 'ok');
       })
-      .catch(function (e) { self.err = e.message; self.paint(); if (loud) toast('Could not read demo data — ' + e.message, 'err'); });
+      .catch(function (e) {
+        self.err = e.message;
+        self.paint();
+        if (loud) toast('Could not read from database — ' + e.message, 'err');
+      });
   },
   state: function () {
-    var isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    if (this.MODE !== 'folder') {
-      return {
-        txt: 'Local only',
-        tone: 'warn',
-        tip: (isLocal ? 'This browser keeps its own copy of the demo data. Use "Start Warranty Service Demo.cmd" to keep it in the project folder instead.' : 'This browser keeps its own copy of the demo data (offline storage).') + (this.err ? '\n(' + this.err + ')' : '')
-      };
+    if (this.saving || this.dirty) {
+      return { txt: 'Saving to DB…', tone: '', tip: 'Writing entries directly to PostgreSQL database (Solarative_Warrenty_ModuleDemo)' };
     }
-    if (this.saving || this.dirty) return { txt: 'Saving…', tone: '', tip: 'Writing to ' + (this.file || 'storage') };
-    if (this.err) return { txt: 'Not saved', tone: 'dang', tip: 'The last write failed: ' + this.err };
+    if (this.err) {
+      return { txt: 'DB Warning', tone: 'warn', tip: 'Database message: ' + this.err };
+    }
     return {
-      txt: 'Synced',
+      txt: 'DB Connected',
       tone: 'ok',
-      tip: (isLocal ? 'Saved in the project folder' : 'Saved in cloud & browser storage') + (this.file ? ':\n' + this.file : '') + (this.at ? '\nLast written ' + this.at : '')
+      tip: 'Saved directly in PostgreSQL database: Solarative_Warrenty_ModuleDemo' + (this.at ? '\nLast synced: ' + this.at : '')
     };
   },
   paint: function () {
     var b = $('#btnSync'), t = $('#syncTxt');
-    if (b && t) { var s = this.state(); t.textContent = s.txt; b.className = 'btn sm' + (s.tone ? ' sync-' + s.tone : ''); b.title = s.tip; }
+    if (b && t) {
+      var s = this.state();
+      t.textContent = s.txt;
+      b.className = 'btn sm' + (s.tone ? ' sync-' + s.tone : '');
+      b.title = s.tip;
+    }
     this.banner();
   },
   banner: function () {
+    // Remove the bottom browser storage mode banner completely
     var bar = document.getElementById('syncBar');
-    if (this.MODE === 'folder' || !document.getElementById('shell') || getComputedStyle(document.getElementById('shell')).display === 'none') { if (bar) bar.parentNode.removeChild(bar); return; }
-    if (bar) return;
-    var isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-    bar = document.createElement('div'); bar.id = 'syncBar';
-    bar.innerHTML = isLocal
-      ? '<b>Local only —</b> this browser keeps its own copy of the data. For the demo, close this tab and start with <b>Start Warranty Service Demo.cmd</b> so entries are saved in the folder.<span class="x" title="Hide">&times;</span>'
-      : '<b>Browser storage mode —</b> your entries are saved in this browser.<span class="x" title="Hide">&times;</span>';
-    bar.querySelector('.x').onclick = function () { bar.style.display = 'none'; };
-    document.body.appendChild(bar);
+    if (bar && bar.parentNode) {
+      bar.parentNode.removeChild(bar);
+    }
   }
 };
 

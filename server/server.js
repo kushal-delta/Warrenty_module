@@ -1,6 +1,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const appRoot = path.join(__dirname, '..');
 const dataDir = path.join(appRoot, 'data');
@@ -64,59 +65,10 @@ function handleRequest(req, res, port) {
 
   // API Data
   if (pathname === '/api/data') {
-    if (req.method === 'GET') {
-      let data = {};
-      let saved = '';
-      if (fs.existsSync(dataFile)) {
-        try {
-          const raw = fs.readFileSync(dataFile, 'utf8');
-          data = JSON.parse(raw);
-          saved = fs.statSync(dataFile).mtime.toISOString();
-        } catch (e) {
-          data = {};
-        }
-      }
-      return send(res, 200, JSON.stringify({
-        ok: true,
-        file: dataFile,
-        saved,
-        data
-      }));
-    }
-
-    if (req.method === 'POST') {
-      let chunks = [];
-      req.on('data', chunk => chunks.push(chunk));
-      req.on('end', () => {
-        const raw = Buffer.concat(chunks).toString('utf8');
-        if (!raw || !raw.trim()) {
-          return send(res, 400, JSON.stringify({ ok: false, error: 'empty body' }));
-        }
-
-        try {
-          if (fs.existsSync(dataFile)) {
-            try { fs.copyFileSync(dataFile, bakFile); } catch (e) {}
-            const todayStr = new Date().toISOString().slice(0, 10);
-            const snapFile = path.join(snapDir, `warranty-service-data-${todayStr}.json`);
-            if (!fs.existsSync(snapFile)) {
-              try { fs.copyFileSync(dataFile, snapFile); } catch (e) {}
-            }
-          }
-          const tmp = dataFile + '.tmp';
-          fs.writeFileSync(tmp, raw, 'utf8');
-          fs.renameSync(tmp, dataFile);
-
-          const saved = new Date().toISOString();
-          console.log(`  ${saved} saved ${(raw.length / 1024).toFixed(1)} KB`);
-          return send(res, 200, JSON.stringify({ ok: true, saved, file: dataFile }));
-        } catch (e) {
-          return send(res, 500, JSON.stringify({ ok: false, error: e.message }));
-        }
-      });
-      return;
-    }
-
-    return send(res, 405, JSON.stringify({ ok: false, error: 'method not allowed' }));
+    const dataHandler = require('../api/data.js');
+    return dataHandler(req, res).catch(err => {
+      send(res, 500, JSON.stringify({ ok: false, error: err.message }));
+    });
   }
 
   // Root redirect
@@ -162,14 +114,20 @@ function startServer(port = 8700) {
 
   server.once('listening', () => {
     const url = `http://localhost:${port}/app/index.html`;
+    const dbInfo = process.env.DATABASE_URL ? 'Connected (Solarative_Warrenty_ModuleDemo)' : 'File fallback';
     console.log('');
     console.log('  Delta Warranty + Service - SOLARTIVE TECHNO INDUSTRIES PVT LTD');
     console.log('  ---------------------------------------------------------------');
     console.log(`  Application : ${url}`);
-    console.log(`  Data file   : ${dataFile}`);
+    console.log(`  Database    : ${dbInfo}`);
     console.log('  ---------------------------------------------------------------');
     console.log('  Server running. Press Ctrl+C to stop.');
     console.log('');
+    try {
+      if (process.platform === 'win32') {
+        require('child_process').exec(`start "" "${url}"`);
+      }
+    } catch (e) {}
   });
 
   server.listen(port);

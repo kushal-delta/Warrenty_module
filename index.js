@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+require('dotenv').config();
 
 const appRoot = __dirname;
 
@@ -59,7 +60,10 @@ module.exports = function handler(req, res) {
   if (pathname === '/api/data') {
     try {
       const dataHandler = require('./api/data.js');
-      return dataHandler(req, res);
+      return dataHandler(req, res).catch(e => {
+        res.statusCode = 500;
+        return res.end(JSON.stringify({ ok: false, error: e.message }));
+      });
     } catch (e) {
       res.statusCode = 500;
       return res.end(JSON.stringify({ ok: false, error: e.message }));
