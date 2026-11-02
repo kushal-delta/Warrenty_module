@@ -23,5 +23,13 @@
         { "key": "Cache-Control", "value": "no-store, no-cache, must-revalidate" }
       ]
     }
-  ]
+  ],
+  "functions": {
+    "index.js": {
+      "includeFiles": "{app/**,data/**,database/**,Import Templates/**,*.html}"
+    },
+    "api/*.js": {
+      "includeFiles": "data/**"
+    }
+  }
 }
