@@ -1,0 +1,28 @@
+{
+  "name": "delta-warranty-service-demo",
+  "version": "1.0.0",
+  "description": "Delta iERP Warranty & Service Management System Demo for Solartive Techno Industries",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node server/server.js",
+    "db:migrate": "node server/run_postgres_migrations.js"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.9",
+    "pg": "^8.23.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "delta-ierp",
+    "warranty",
+    "service",
+    "solartive",
+    "postgresql"
+  ],
+  "author": "Delta Infosoft Pvt. Ltd.",
+  "license": "UNLICENSED"
+}

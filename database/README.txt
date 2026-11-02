@@ -1,13 +1,26 @@
-﻿DATABASE SCRIPTS - Delta iERP Warranty & Service (Solartive Techno Industries Pvt Ltd)
+DATABASE SCRIPTS - Delta iERP Warranty & Service (Solartive Techno Industries Pvt Ltd)
 =====================================================================================
 
-Target: Microsoft SQL Server 2016 or later (SQL Server Management Studio / sqlcmd).
+Target Databases:
+  1. PostgreSQL 12+ (psql / Node.js migration)
+  2. Microsoft SQL Server 2016 or later (SQL Server Management Studio / sqlcmd)
 
-1. Create an empty database, e.g.   CREATE DATABASE SolartiveWarranty;   then   USE SolartiveWarranty;
-2. Run  01_create_tables.sql   - 34 tables, primary / foreign keys, unique constraints, defaults, indexes.
-3. Run  02_demo_data.sql       - the same sample data that the demo application shows (customers, serials,
-                                 warranties, service calls, job cards, stock, ...). Optional.
-4. Data-Dictionary.xlsx        - every table, column (type, null, key, default, description) and relationship.
+---
+
+PostgreSQL Setup:
+  1. Connection String (.env):
+     DATABASE_URL=postgresql://postgres:Delta%401010@localhost:5432/Solarative_Warrenty_ModuleDemo
+  2. Run migration:
+     npm run db:migrate
+     (or run database/01_create_tables_postgres.sql directly in psql/pgAdmin)
+  3. All 34 tables, foreign keys, unique constraints, and search indexes are created.
+
+Microsoft SQL Server Setup:
+  1. Create an empty database, e.g.   CREATE DATABASE SolartiveWarranty;   then   USE SolartiveWarranty;
+  2. Run  01_create_tables.sql   - 34 tables, primary / foreign keys, unique constraints, defaults, indexes.
+  3. Run  02_demo_data.sql       - the same sample data that the demo application shows (customers, serials,
+                                   warranties, service calls, job cards, stock, ...). Optional.
+  4. Data-Dictionary.xlsx        - every table, column (type, null, key, default, description) and relationship.
 
 The scripts are generated from the same definition that draws the screens, the Database Schema page in the
 application and the Excel import templates, so they always agree with what you see in the demo.
