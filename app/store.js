@@ -19,17 +19,25 @@ var DB = {
   adopt: function (o) {
     if (o && o.t && o.seq) this.d = o;
     else this.d = SEED.build();
+    if (!this.d.t) this.d.t = {};
+    if (!this.d.seq) this.d.seq = {};
     var self = this;
     SCHEMA.tables.forEach(function (t) {
       if (!self.d.t[t.name]) self.d.t[t.name] = [];
-      if (self.d.seq[t.name] == null) self.d.seq[t.name] = 0;
+      var max = 0, a = self.d.t[t.name];
+      for (var i = 0; i < a.length; i++) {
+        var id = Number(a[i][t.pk]);
+        if (!isNaN(id) && id > max) max = id;
+      }
+      var curSeq = Number(self.d.seq[t.name]);
+      self.d.seq[t.name] = (!isNaN(curSeq) && curSeq >= max) ? curSeq : max;
     });
     return this.d;
   },
   save: function () {
     try { localStorage.setItem(this.KEY, JSON.stringify(this.d)); }
-    catch (e) { toast('Browser storage is full or blocked — ' + e.message, 'err'); }
-    if (window.SYNC) SYNC.push();
+    catch (e) { }
+    if (window.SYNC) SYNC.push(true);
   },
   reset: function () {
     this.d = SEED.build();
@@ -53,7 +61,20 @@ var DB = {
   /** insert; assigns the primary key and the created_on stamp */
   add: function (t, row, noLog) {
     var pk = this.pk(t);
-    row[pk] = ++this.d.seq[t];
+    if (!this.d.seq) this.d.seq = {};
+    var cur = Number(this.d.seq[t]);
+    if (isNaN(cur) || cur < 0) {
+      var max = 0, a = this.all(t);
+      for (var k = 0; k < a.length; k++) {
+        var id = Number(a[k][pk]);
+        if (!isNaN(id) && id > max) max = id;
+      }
+      cur = max;
+    }
+    cur++;
+    this.d.seq[t] = cur;
+    row[pk] = cur;
+
     var cols = SCHEMA.by[t].cols;
     for (var i = 0; i < cols.length; i++) {
       var c = cols[i];
@@ -206,16 +227,46 @@ var SYNC = {
     w.forEach(function (fn) { try { fn(); } catch (e) { } });
   },
   whenReady: function (fn) { if (this.ready) fn(); else this._waiters.push(fn); },
-  push: function () {
+  push: function (immediate) {
     var self = this;
     this.dirty = true;
     this.paint();
     clearTimeout(this._timer);
-    this._timer = setTimeout(function () { self._post(); }, 350);
+    if (immediate) {
+      this._post();
+    } else {
+      this._timer = setTimeout(function () { self._post(); }, 50);
+    }
   },
   _post: function () {
     var self = this, body;
-    try { body = JSON.stringify(DB.d); } catch (e) { toast('Could not prepare data for database save — ' + e.message, 'err'); return; }
+    try {
+      if (DB && DB.d && DB.d.t) {
+        SCHEMA.tables.forEach(function (t) {
+          var rows = DB.d.t[t.name] || [];
+          var pk = t.pk;
+          var max = 0;
+          for (var i = 0; i < rows.length; i++) {
+            var id = Number(rows[i][pk]);
+            if (!isNaN(id) && id > max) max = id;
+          }
+          for (var j = 0; j < rows.length; j++) {
+            var rowId = Number(rows[j][pk]);
+            if (isNaN(rowId) || rowId <= 0 || rows[j][pk] == null) {
+              max++;
+              rows[j][pk] = max;
+            }
+          }
+          if (!DB.d.seq) DB.d.seq = {};
+          var curSeq = Number(DB.d.seq[t.name]);
+          DB.d.seq[t.name] = (!isNaN(curSeq) && curSeq >= max) ? curSeq : max;
+        });
+      }
+      body = JSON.stringify(DB.d);
+    } catch (e) {
+      toast('Could not prepare data for database save — ' + e.message, 'err');
+      return;
+    }
     this.saving = true;
     this.paint();
     fetch(this.URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: body })

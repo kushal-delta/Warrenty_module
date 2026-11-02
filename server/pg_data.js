@@ -35,10 +35,8 @@ function formatRowForClient(row, tableDef) {
 
     if (val instanceof Date) {
       if (col.t === 'date') {
-        // YYYY-MM-DD
         val = val.toISOString().slice(0, 10);
       } else {
-        // ISO timestamp
         val = val.toISOString();
       }
     }
@@ -48,20 +46,48 @@ function formatRowForClient(row, tableDef) {
 }
 
 function sanitizeValForDb(val, col) {
-  if (val === undefined) return null;
-  if (val === '') {
-    if (col.t === 'int' || col.t === 'pk' || col.t.startsWith('dec') || col.t.startsWith('dP') || col.t === 'date' || col.t === 'dt') {
-      return null;
+  if (val === undefined || val === null || val === '') {
+    // If column has a default value defined, use it!
+    if (col.def !== null && col.def !== undefined && col.def !== '') {
+      if (col.t === 'bit' || col.t === 'int') {
+        return Number(col.def);
+      }
+      if (col.t.startsWith('dec') || col.t.startsWith('dP')) {
+        return parseFloat(col.def);
+      }
+      return col.def;
     }
+
+    // If column is required (NOT NULL) but has no explicit default
+    if (col.req) {
+      if (col.t === 'int') return 0;
+      if (col.t.startsWith('dec') || col.t.startsWith('dP')) return 0;
+      if (col.t === 'bit') return 0;
+      if (col.t === 'date') return new Date().toISOString().slice(0, 10);
+      if (col.t === 'dt') return new Date().toISOString();
+      return '';
+    }
+
+    // Otherwise nullable
+    return null;
+  }
+
+  if (col.t === 'pk') {
+    const n = Number(val);
+    return (!isNaN(n) && n > 0) ? n : null;
+  }
+  if (col.t === 'int') {
+    const n = parseInt(val, 10);
+    return isNaN(n) ? (col.req ? (col.def != null ? Number(col.def) : 0) : null) : n;
+  }
+  if (col.t.startsWith('dec') || col.t.startsWith('dP')) {
+    const n = parseFloat(val);
+    return isNaN(n) ? (col.req ? (col.def != null ? parseFloat(col.def) : 0) : null) : n;
   }
   if (col.t === 'bit') {
-    if (val === null || val === undefined || val === '') {
-      return col.def != null ? Number(col.def) : 0;
-    }
     return (val === 1 || val === '1' || val === true) ? 1 : 0;
   }
   if (col.t === 'date' && val) {
-    // If it's a date string like '2026-11-02T...', take just the date portion
     if (typeof val === 'string' && val.length >= 10) {
       return val.slice(0, 10);
     }
@@ -111,7 +137,6 @@ async function saveDbData(payload) {
   const client = await p.connect();
   try {
     await client.query('BEGIN');
-    // Allow upserts without foreign key constraint race conditions
     await client.query("SET session_replication_role = 'replica'");
 
     for (const tableDef of SCHEMA.tables) {
@@ -119,11 +144,59 @@ async function saveDbData(payload) {
       const pk = tableDef.pk;
       const rows = Array.isArray(payload.t[tableName]) ? payload.t[tableName] : [];
 
+      // Find unique column if any (e.g. serial_no, username, batch_no, etc.)
+      const uniqueCol = tableDef.cols.find(c => c.uq && c.n !== pk);
+
+      // Determine current maximum PK from both payload and DB
+      let maxPk = 0;
+      for (const r of rows) {
+        const id = Number(r[pk]);
+        if (!isNaN(id) && id > maxPk) maxPk = id;
+      }
+      try {
+        const dbMax = await client.query(`SELECT COALESCE(MAX("${pk}"), 0) AS max_id FROM "${tableName}"`);
+        const dbMaxId = Number(dbMax.rows[0].max_id);
+        if (!isNaN(dbMaxId) && dbMaxId > maxPk) maxPk = dbMaxId;
+      } catch (e) {}
+
+      // Fetch existing rows if table has a unique column to reconcile primary keys
+      const existingByKey = new Map();
+      if (uniqueCol) {
+        try {
+          const exRes = await client.query(`SELECT "${pk}", "${uniqueCol.n}" FROM "${tableName}"`);
+          for (const er of exRes.rows) {
+            const keyVal = er[uniqueCol.n];
+            if (keyVal !== null && keyVal !== undefined) {
+              existingByKey.set(String(keyVal).trim().toLowerCase(), Number(er[pk]));
+            }
+          }
+        } catch (e) {}
+      }
+
+      // Ensure every incoming row has a valid, non-null, unique primary key
+      for (const r of rows) {
+        let currentPk = Number(r[pk]);
+        if (isNaN(currentPk) || currentPk <= 0 || r[pk] === null || r[pk] === undefined || r[pk] === '') {
+          // Check if it matches an existing record by unique key
+          if (uniqueCol && r[uniqueCol.n]) {
+            const matchVal = String(r[uniqueCol.n]).trim().toLowerCase();
+            if (existingByKey.has(matchVal)) {
+              currentPk = existingByKey.get(matchVal);
+            }
+          }
+          if (isNaN(currentPk) || currentPk <= 0) {
+            maxPk++;
+            currentPk = maxPk;
+          }
+          r[pk] = currentPk;
+        }
+      }
+
       // 1. Delete rows in DB that are no longer present in incoming payload
       if (rows.length === 0) {
         await client.query(`DELETE FROM "${tableName}"`);
       } else {
-        const pks = rows.map(r => r[pk]).filter(v => v !== null && v !== undefined && v !== '');
+        const pks = rows.map(r => Number(r[pk])).filter(v => !isNaN(v) && v > 0);
         if (pks.length > 0) {
           const placeholders = pks.map((_, i) => `$${i + 1}`).join(',');
           await client.query(`DELETE FROM "${tableName}" WHERE "${pk}" NOT IN (${placeholders})`, pks);
@@ -136,7 +209,10 @@ async function saveDbData(payload) {
         const valsToInsert = [];
 
         for (const col of tableDef.cols) {
-          const rawVal = r[col.n];
+          let rawVal = r[col.n];
+          if (col.n === pk) {
+            rawVal = Number(r[pk]);
+          }
           const sanitized = sanitizeValForDb(rawVal, col);
           colsToInsert.push(col.n);
           valsToInsert.push(sanitized);
