@@ -70,7 +70,7 @@ This project is fully configured for seamless 1-click deployment on **Vercel**.
 ```bash
 npm run dev
 # or
-node server.js
+node server/server.js
 ```
 Opens on `http://localhost:8700/app/index.html`.
 

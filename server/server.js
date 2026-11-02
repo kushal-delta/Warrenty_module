@@ -1,9 +1,8 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const url = require('url');
 
-const appRoot = __dirname;
+const appRoot = path.join(__dirname, '..');
 const dataDir = path.join(appRoot, 'data');
 const dataFile = path.join(dataDir, 'warranty-service-data.json');
 const bakFile = path.join(dataDir, 'warranty-service-data.previous.json');

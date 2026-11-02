@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "Delta iERP Warranty & Service Management System Demo for Solartive Techno Industries",
   "private": true,
-  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server/server.js",
+    "start": "node server/server.js"
   },
   "engines": {
     "node": ">=18.0.0"
