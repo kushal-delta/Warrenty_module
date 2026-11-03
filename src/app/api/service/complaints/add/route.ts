@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db, pool } from "@/db";
-import { Complaints } from "@/db/schema";
+import { query } from "@/lib/sqlserver";
+import { randomUUID } from "crypto";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
+import { OUT_OF_SCOPE, getScope, inGeoScope } from "@/lib/auth/scope";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,49 +40,28 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const currentUserId = sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056";
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const currentUserId = sessionUser.UserId;
+    const scope = await getScope(sessionUser);
+    if (scope.portal && !(scope.dealerId || scope.customerId)) return NextResponse.json({ error: "Your login is not linked to a dealer / customer record. Ask the administrator to link it in User Management." }, { status: 403 });
+    // Portal logins book calls only on their own pumps.
+    if (scope.portal && installationId) {
+      const own = await query(`SELECT TOP 1 1 AS [ok] FROM dbo.[Installations] WHERE [InstallationId] = @p0 AND (([DealerId] = @p1) OR ([CustomerId] = @p2))`, [installationId, scope.dealerId, scope.customerId]);
+      if (!own.length) return NextResponse.json({ error: OUT_OF_SCOPE }, { status: 403 });
+    }
+    if (!inGeoScope(scope, stateId, district)) {
+      return NextResponse.json({ error: `${OUT_OF_SCOPE}. Choose a state and district you have rights to.` }, { status: 403 });
+    }
 
     // Generate unique ComplaintNo
-    const countRes = await pool.query(`SELECT COUNT(*) as count FROM "Complaints"`);
-    const nextSeq = parseInt(countRes.rows[0].count, 10) + 1;
+    const countRes = await query<any>(`SELECT COUNT(*) AS [count] FROM dbo.[Complaints]`);
+    const nextSeq = Number(countRes[0].count) + 1;
     const complaintNo = `CMP/26-27/${String(nextSeq).padStart(4, "0")}`;
 
-    const isAssigned = Boolean(engineerUserId);
+    const isAssigned = Boolean(engineerUserId) && !scope.portal;
     const status = isAssigned ? "Assigned" : "New";
 
-    const inserted = await db
-      .insert(Complaints)
-      .values({
-        ComplaintNo: complaintNo,
-        CallDate: callDate ? new Date(callDate) : new Date(),
-        CallTypeId: callTypeId,
-        ProjectId: projectId || null,
-        Priority: priority,
-        Source: source,
-        Status: status,
-        InstallationId: installationId || null,
-        CustomerId: customerId || null,
-        CustomerName: customerName.trim(),
-        Mobile: mobile.trim(),
-        Address: address?.trim() || null,
-        Village: village?.trim() || null,
-        District: district?.trim() || null,
-        StateId: stateId || null,
-        Pincode: pincode?.trim() || null,
-        DealerId: dealerId || null,
-        WarrantyStatus: warrantyStatus || null,
-        ComplaintText: complaintText.trim(),
-        ServiceCenterId: serviceCenterId || null,
-        EngineerUserId: engineerUserId || null,
-        AssignedOn: isAssigned ? new Date() : null,
-        DueDate: dueDate ? new Date(dueDate) : null,
-        CreatedBy: sessionUser?.Username || "Portal User",
-        InsertedByUserId: currentUserId,
-        LastUpdatedByUserId: currentUserId,
-      })
-      .returning();
-
-    const newComplaint = inserted[0];
+    const newComplaint = (await query<any>(`INSERT INTO dbo.[Complaints] ([ComplaintId],[ComplaintNo],[CallDate],[CallTypeId],[ProjectId],[Priority],[Source],[Status],[InstallationId],[CustomerId],[CustomerName],[Mobile],[Address],[Village],[District],[StateId],[Pincode],[DealerId],[WarrantyStatus],[ComplaintText],[ServiceCenterId],[EngineerUserId],[AssignedOn],[DueDate],[CreatedBy],[InsertedByUserId],[LastUpdatedByUserId],[InsertedOn],[LastUpdatedOn]) OUTPUT INSERTED.* VALUES (@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13,@p14,@p15,@p16,@p17,@p18,@p19,@p20,@p21,@p22,@p23,@p24,@p25,@p25,SYSUTCDATETIME(),SYSUTCDATETIME())`, [randomUUID(), complaintNo, callDate ? new Date(callDate) : new Date(), callTypeId, projectId || null, priority, source, status, installationId || null, (scope.portal === "CUSTOMER" ? scope.customerId : customerId) || null, customerName.trim(), (scope.portal === "CUSTOMER" ? scope.customerMobile || mobile : mobile).trim(), address?.trim() || null, village?.trim() || null, district?.trim() || null, stateId || null, pincode?.trim() || null, (scope.portal === "DEALER" ? scope.dealerId : dealerId) || null, warrantyStatus || null, complaintText.trim(), serviceCenterId || null, scope.portal ? null : engineerUserId || null, isAssigned && !scope.portal ? new Date() : null, dueDate ? new Date(dueDate) : null, sessionUser.Username, currentUserId]))[0];
 
     await saveAuditLog({
       userId: currentUserId,

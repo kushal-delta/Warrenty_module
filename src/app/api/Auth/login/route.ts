@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { execute, query } from "@/lib/sqlserver";
 import { signAuthToken } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
+import { hashPassword, needsRehash, verifyPassword } from "@/lib/auth/password";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,11 +18,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Query user by username
-    const userRows = await db
-      .select()
-      .from(Users)
-      .where(eq(Users.Username, username.trim()))
-      .limit(1);
+    const userRows = await query<any>(
+      `SELECT TOP 1 * FROM dbo.[Users] WHERE [Username] = @p0`,
+      [username.trim()]
+    );
 
     if (userRows.length === 0) {
       return NextResponse.json(
@@ -34,12 +32,17 @@ export async function POST(request: NextRequest) {
 
     const user = userRows[0];
 
-    // Password verification (for demo, simple comparison)
-    if (user.Password !== password.trim()) {
+    // Password verification against the scrypt hash (legacy plain-text rows are still accepted once)
+    if (!(await verifyPassword(password.trim(), user.Password))) {
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
       );
+    }
+
+    // Replace a legacy plain-text (or weaker) password with a fresh hash now that we know it is correct
+    if (needsRehash(user.Password)) {
+      await execute(`UPDATE dbo.[Users] SET [Password] = @p0 WHERE [UserId] = @p1`, [await hashPassword(password.trim()), user.UserId]);
     }
 
     if (!user.IsActive) {
@@ -50,10 +53,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update LastLogin
-    await db
-      .update(Users)
-      .set({ LastLogin: new Date() })
-      .where(eq(Users.UserId, user.UserId));
+    await execute(`UPDATE dbo.[Users] SET [LastLogin] = SYSUTCDATETIME() WHERE [UserId] = @p0`, [user.UserId]);
 
     const sessionPayload = {
       UserId: user.UserId,
@@ -64,6 +64,7 @@ export async function POST(request: NextRequest) {
       Role: user.Role,
       IsAdmin: user.IsAdmin,
       ServiceCenterId: user.ServiceCenterId,
+      FormRights: user.FormRights || null,
     };
 
     const token = await signAuthToken(sessionPayload);

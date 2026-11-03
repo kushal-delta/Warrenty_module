@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Complaints } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
+import { OUT_OF_SCOPE, callVisible, getScope } from "@/lib/auth/scope";
 
 export async function POST(request: NextRequest) {
   try {
@@ -19,19 +18,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const currentUserId = sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056";
-
-    const updated = await db
-      .update(Complaints)
-      .set({
-        Status,
-        Resolution: Resolution.trim(),
-        ClosedOn: new Date(),
-        LastUpdatedOn: new Date(),
-        LastUpdatedByUserId: currentUserId,
-      })
-      .where(eq(Complaints.ComplaintId, ComplaintId))
-      .returning();
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const currentUserId = sessionUser.UserId;
+    if (sessionUser.Role === "DEALER" || sessionUser.Role === "CUSTOMER") return NextResponse.json({ error: "Only service staff can close calls" }, { status: 403 });
+    if (!(await callVisible(await getScope(sessionUser), ComplaintId))) return NextResponse.json({ error: OUT_OF_SCOPE }, { status: 403 });
+    const updated = await query<any>(`UPDATE dbo.[Complaints] SET [Status] = @p0, [Resolution] = @p1, [ClosedOn] = SYSUTCDATETIME(), [LastUpdatedOn] = SYSUTCDATETIME(), [LastUpdatedByUserId] = @p2 OUTPUT INSERTED.* WHERE [ComplaintId] = @p3`, [Status, Resolution.trim(), currentUserId, ComplaintId]);
 
     if (updated.length === 0) {
       return NextResponse.json({ error: "Complaint not found" }, { status: 404 });

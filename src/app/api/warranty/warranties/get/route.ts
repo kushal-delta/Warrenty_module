@@ -1,56 +1,22 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import {
-  Warranties,
-  Installations,
-  Customers,
-  Dealers,
-  ProductModels,
-} from "@/db/schema";
-import { desc, eq, and, ilike } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
+import { sessionFromRequest } from "@/lib/auth/jwt";
+import { geoFilter, getScope, positionalParams } from "@/lib/auth/scope";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const { category, status, search, limit = 100 } = body;
 
-    const rows = await db
-      .select({
-        WarrantyId: Warranties.WarrantyId,
-        WarrantyNo: Warranties.WarrantyNo,
-        InstallationId: Warranties.InstallationId,
-        InstallNo: Installations.InstallNo,
-        SerialNo: Warranties.SerialNo,
-        Category: Warranties.Category,
-        ProductModelId: Warranties.ProductModelId,
-        ModelName: ProductModels.ModelName,
-        ModelCode: ProductModels.ModelCode,
-        CustomerId: Warranties.CustomerId,
-        CustomerName: Customers.CustomerName,
-        CustomerMobile: Customers.Mobile,
-        Village: Installations.Village,
-        District: Installations.District,
-        DealerId: Warranties.DealerId,
-        DealerName: Dealers.FirmName,
-        StartDate: Warranties.StartDate,
-        WarrantyMonths: Warranties.WarrantyMonths,
-        ExtendedMonths: Warranties.ExtendedMonths,
-        EndDate: Warranties.EndDate,
-        Status: Warranties.Status,
-        RegisteredBy: Warranties.RegisteredBy,
-        RegisteredOn: Warranties.RegisteredOn,
-        WhatsappSent: Warranties.WhatsappSent,
-        Remarks: Warranties.Remarks,
-        InsertedOn: Warranties.InsertedOn,
-      })
-      .from(Warranties)
-      .leftJoin(Installations, eq(Warranties.InstallationId, Installations.InstallationId))
-      .leftJoin(Customers, eq(Warranties.CustomerId, Customers.CustomerId))
-      .leftJoin(Dealers, eq(Warranties.DealerId, Dealers.DealerId))
-      .leftJoin(ProductModels, eq(Warranties.ProductModelId, ProductModels.ProductModelId))
-      .orderBy(desc(Warranties.InsertedOn))
-      .limit(limit);
+    const sessionUser = await sessionFromRequest(request);
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const scope = await getScope(sessionUser);
+    const where: string[] = [], params: unknown[] = [];
+    const scopeFilter = geoFilter(scope, { state: "i.[StateId]", district: "i.[District]", dealer: "w.[DealerId]", customer: "w.[CustomerId]" }, positionalParams(params));
+    if (scopeFilter) where.push(scopeFilter);
+    if (category) { where.push(`w.[Category] = @p${params.length}`); params.push(category); } if (status) { where.push(`(w.[Status] = @p${params.length} OR (@p${params.length} = 'Expired' AND w.[EndDate] < SYSUTCDATETIME()))`); params.push(status); } if (search) { where.push(`(w.[SerialNo] LIKE @p${params.length} OR w.[WarrantyNo] LIKE @p${params.length} OR c.[CustomerName] LIKE @p${params.length} OR c.[Mobile] LIKE @p${params.length} OR d.[FirmName] LIKE @p${params.length})`); params.push(`%${search}%`); } params.push(Number(limit) || 100);
+    const rows = await query<any>(`SELECT TOP (@p${params.length - 1}) w.*, i.[InstallNo], i.[Village], i.[District], c.[CustomerName], c.[Mobile] AS [CustomerMobile], d.[FirmName] AS [DealerName], p.[ModelName], p.[ModelCode] FROM dbo.[Warranties] w LEFT JOIN dbo.[Installations] i ON w.[InstallationId]=i.[InstallationId] LEFT JOIN dbo.[Customers] c ON w.[CustomerId]=c.[CustomerId] LEFT JOIN dbo.[Dealers] d ON w.[DealerId]=d.[DealerId] LEFT JOIN dbo.[ProductModels] p ON w.[ProductModelId]=p.[ProductModelId]${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY w.[InsertedOn] DESC`, params);
 
     const now = new Date().getTime();
     const enriched = rows.map((r) => {

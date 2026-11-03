@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { ProductModels } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
@@ -16,18 +14,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ProductModelId is required" }, { status: 400 });
     }
 
-    const updated = await db
-      .update(ProductModels)
-      .set({
-        ...fields,
-        Hp: fields.Hp ? String(fields.Hp) : null,
-        Kw: fields.Kw ? String(fields.Kw) : null,
-        WarrantyMonths: fields.WarrantyMonths ? Number(fields.WarrantyMonths) : 24,
-        LastUpdatedOn: new Date(),
-        LastUpdatedByUserId: sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056",
-      })
-      .where(eq(ProductModels.ProductModelId, ProductModelId))
-      .returning();
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const allowed = ["ModelCode", "ModelName", "Category", "Hp", "Kw", "Technology", "VoltageRange", "HeadRange", "Discharge", "SizeInch", "WarrantyMonths", "Description", "IsActive", "SortOrder"];
+    const edits = Object.entries(fields).filter(([key]) => allowed.includes(key)).map(([key, value]) => [key, key === "Hp" || key === "Kw" ? (value ? String(value) : null) : key === "WarrantyMonths" ? Number(value || 24) : value] as const);
+    const updated = await query<any>(`UPDATE dbo.[ProductModels] SET ${edits.map(([key], index) => `[${key}] = @p${index}`).join(", ")}, [LastUpdatedOn] = SYSUTCDATETIME(), [LastUpdatedByUserId] = @p${edits.length} OUTPUT INSERTED.* WHERE [ProductModelId] = @p${edits.length + 1}`, [...edits.map(([, value]) => value), sessionUser.UserId, ProductModelId]);
 
     if (updated.length === 0) {
       return NextResponse.json({ error: "Product model not found" }, { status: 404 });
@@ -44,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, productModel: updated[0] });
   } catch (err: any) {
-    if (err.code === "23505") {
+    if (String(err.number) === "2627" || String(err.number) === "2601") {
       return NextResponse.json(
         { error: "A product model with this code already exists." },
         { status: 409 }

@@ -1,5 +1,5 @@
-import { db } from "@/db";
-import { AuditLogs } from "@/db/schema";
+import { query } from "@/lib/sqlserver";
+import { randomUUID } from "crypto";
 
 export interface SaveAuditLogParams {
   userId?: string | null;
@@ -25,14 +25,11 @@ export async function saveAuditLog({
     const detailsStr =
       typeof details === "string" ? details : details ? JSON.stringify(details) : null;
 
-    await db.insert(AuditLogs).values({
-      UserId: userId || null,
-      UserName: userName || null,
-      Action: action,
-      TableName: tableName,
-      RecordId: recordId ? String(recordId) : null,
-      Details: detailsStr,
-    });
+    await query(
+      `INSERT INTO dbo.[AuditLogs] ([AuditLogId], [UserId], [UserName], [Action], [TableName], [RecordId], [Details], [LogOn])
+       VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, SYSUTCDATETIME())`,
+      [randomUUID(), userId || null, userName || null, action, tableName, recordId ? String(recordId) : null, detailsStr]
+    );
   } catch (err) {
     console.error("Failed to write audit log:", err);
   }

@@ -1,13 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Companies } from "@/db/schema";
+import { sessionFromRequest } from "@/lib/auth/jwt";
+import { getErpCompany } from "@/lib/services/erpCompany";
 
 export async function POST(request: NextRequest) {
   try {
-    const rows = await db.select().from(Companies).limit(1);
-    return NextResponse.json({ success: true, company: rows[0] || null });
+    if (!await sessionFromRequest(request)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const company = await getErpCompany();
+    return NextResponse.json({ success: true, company, fetchedAt: new Date().toISOString() }, { headers: { "Cache-Control": "no-store" } });
   } catch (err: any) {
-    return NextResponse.json({ error: "Failed to fetch company profile" }, { status: 500 });
+    console.error("Company get error from iERP:", err);
+    return NextResponse.json({ error: err.message || "Unable to load company details. Please try Refresh." }, { status: 502 });
   }
 }

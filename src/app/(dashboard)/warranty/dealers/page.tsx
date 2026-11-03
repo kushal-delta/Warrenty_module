@@ -1,5 +1,7 @@
 "use client";
 
+import { FormSection } from "@/components/common/FormSection";
+import { DistrictSelect } from "@/components/common/DistrictSelect";
 import React, { useState, useEffect } from "react";
 import {
   Table,
@@ -33,6 +35,7 @@ import {
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { BulkUploadWizard } from "@/components/common/BulkUploadWizard";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 
 export default function DealersPage() {
   const [form] = Form.useForm();
@@ -49,6 +52,7 @@ export default function DealersPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  useUrlQuery("q", (q) => { setSearch(q); setStatusFilter(undefined); });
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -111,7 +115,7 @@ export default function DealersPage() {
     try {
       setDeleting(true);
       await deleteDealer(deletingDealer.DealerId);
-      message.success(`Dealer ${deletingDealer.FirmName} removed from database`);
+      message.success(`Dealer ${deletingDealer.FirmName} deleted successfully`);
       setDeleteModalOpen(false);
       setDeletingDealer(null);
     } catch (err: any) {
@@ -227,7 +231,7 @@ export default function DealersPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <ShopOutlined className="text-blue-600" />
@@ -238,7 +242,7 @@ export default function DealersPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="page-actions">
           <Button
             icon={<ReloadOutlined />}
             onClick={() => fetchDealers()}
@@ -258,7 +262,7 @@ export default function DealersPage() {
       </div>
 
       {/* Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+      <div className="filter-toolbar">
         <Input
           prefix={<SearchOutlined className="text-slate-400" />}
           placeholder="Search dealers by Firm Name, Mobile, City, or Code..."
@@ -289,13 +293,19 @@ export default function DealersPage() {
           rowKey="DealerId"
           size="middle"
           loading={isLoading}
-          pagination={{ pageSize: 15 }}
+          pagination={{
+            defaultPageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "15", "20", "50", "100"],
+            showTotal: (total, range) => `Showing ${range[0]}-${range[1]} of ${total} dealers`,
+          }}
           scroll={{ x: 900 }}
         />
       </div>
 
       {/* Drawer */}
       <Drawer
+        rootClassName="entry-drawer"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         closable={false}
@@ -333,46 +343,50 @@ export default function DealersPage() {
           </div>
         }
       >
-        <Form form={form} layout="vertical" requiredMark={false} className="py-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4">
-            <Form.Item
+        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form"><p className="entry-form-hint"><span aria-hidden="true">*</span> Required fields · Review the details before saving.</p><FormSection number="01" title="Dealer identity" description="Enter the firm details and primary contact."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="FirmName"
               label={<span className="text-xs font-semibold text-slate-700">Firm Name</span>}
               rules={[{ required: true, message: "Firm name is required" }]}
             >
               <Input placeholder="e.g. Kisan Solar Systems" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="DealerCode"
               label={<span className="text-xs font-semibold text-slate-700">Dealer Code</span>}
             >
               <Input placeholder="e.g. 1008" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="ContactPerson"
               label={<span className="text-xs font-semibold text-slate-700">Contact Person</span>}
             >
               <Input placeholder="e.g. Rajesh Tyagi" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
+              name="Status"
+              label={<span className="text-xs font-semibold text-slate-700">Status</span>}
+              rules={[{ required: true }]}
+            >
+              <Select>
+                <Select.Option value="Approved">Approved</Select.Option>
+                <Select.Option value="Pending">Pending Review</Select.Option>
+                <Select.Option value="Blocked">Blocked</Select.Option>
+              </Select>
+            </Form.Item></div></div></FormSection>
+<FormSection number="02" title="Contact &amp; territory" description="Add contact details and the region served by this dealer."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="Mobile"
               label={<span className="text-xs font-semibold text-slate-700">Primary Mobile</span>}
               rules={[{ required: true, message: "Mobile number is required" }]}
             >
               <Input placeholder="e.g. 9810011001" maxLength={10} />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="Email"
               label={<span className="text-xs font-semibold text-slate-700">Email Address</span>}
             >
               <Input placeholder="dealer@example.com" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="StateId"
               label={<span className="text-xs font-semibold text-slate-700">State</span>}
             >
@@ -383,49 +397,30 @@ export default function DealersPage() {
                   </Select.Option>
                 ))}
               </Select>
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="District"
               label={<span className="text-xs font-semibold text-slate-700">District</span>}
-            >
-              <Input placeholder="e.g. Meerut" />
-            </Form.Item>
-
-            <Form.Item
+            ><DistrictSelect stateField="StateId" />
+            </Form.Item></div>
+<div className=""><Form.Item
               name="City"
               label={<span className="text-xs font-semibold text-slate-700">City</span>}
             >
               <Input placeholder="e.g. Meerut" />
-            </Form.Item>
-
-            <Form.Item
-              name="Status"
-              label={<span className="text-xs font-semibold text-slate-700">Status</span>}
-              rules={[{ required: true }]}
-            >
-              <Select>
-                <Select.Option value="Approved">Approved</Select.Option>
-                <Select.Option value="Pending">Pending Review</Select.Option>
-                <Select.Option value="Blocked">Blocked</Select.Option>
-              </Select>
-            </Form.Item>
-          </div>
-
-          <Form.Item
+            </Form.Item></div></div></FormSection>
+<FormSection number="03" title="Address &amp; notes" description="Provide the full address and any useful internal notes."><div className="form-grid form-grid-two"><div className="entry-field-wide"><Form.Item
             name="Address"
             label={<span className="text-xs font-semibold text-slate-700">Office / Shop Address</span>}
           >
             <Input.TextArea rows={2} placeholder="Shop No, Main Market..." />
-          </Form.Item>
-
-          <Form.Item
+          </Form.Item></div>
+<div className="entry-field-wide"><Form.Item
             name="Remarks"
             label={<span className="text-xs font-semibold text-slate-700">Internal Remarks</span>}
           >
             <Input.TextArea rows={2} placeholder="Territory notes, credit terms..." />
-          </Form.Item>
-        </Form>
+          </Form.Item></div></div></FormSection></Form>
       </Drawer>
 
       {/* Delete Confirmation Modal */}

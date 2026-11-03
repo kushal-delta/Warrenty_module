@@ -1,65 +1,20 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Stickers, ProductModels, StickerBatches } from "@/db/schema";
-import { desc, eq, and, ilike } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const { category, status, productModelId, search, limit = 100 } = body;
 
-    const rows = await db
-      .select({
-        StickerId: Stickers.StickerId,
-        SerialNo: Stickers.SerialNo,
-        Category: Stickers.Category,
-        ProductModelId: Stickers.ProductModelId,
-        ModelCode: ProductModels.ModelCode,
-        ModelName: ProductModels.ModelName,
-        SupplierName: Stickers.SupplierName,
-        ProductGroup: Stickers.ProductGroup,
-        InvoiceNo: Stickers.InvoiceNo,
-        InvoiceDate: Stickers.InvoiceDate,
-        InvoiceLocation: Stickers.InvoiceLocation,
-        MfgDate: Stickers.MfgDate,
-        Status: Stickers.Status,
-        PrintCount: Stickers.PrintCount,
-        LastPrintedOn: Stickers.LastPrintedOn,
-        StickerBatchId: Stickers.StickerBatchId,
-        BatchNo: StickerBatches.BatchNo,
-        InsertedOn: Stickers.InsertedOn,
-        LastUpdatedOn: Stickers.LastUpdatedOn,
-      })
-      .from(Stickers)
-      .leftJoin(ProductModels, eq(Stickers.ProductModelId, ProductModels.ProductModelId))
-      .leftJoin(StickerBatches, eq(Stickers.StickerBatchId, StickerBatches.StickerBatchId))
-      .orderBy(desc(Stickers.InsertedOn))
-      .limit(limit);
-
-    let filtered = rows;
-    if (category) {
-      filtered = filtered.filter((s) => s.Category === category);
-    }
-    if (status) {
-      filtered = filtered.filter((s) => s.Status === status);
-    }
-    if (productModelId) {
-      filtered = filtered.filter((s) => s.ProductModelId === productModelId);
-    }
-    if (search) {
-      const q = search.toLowerCase();
-      filtered = filtered.filter(
-        (s) =>
-          s.SerialNo.toLowerCase().includes(q) ||
-          (s.InvoiceNo && s.InvoiceNo.toLowerCase().includes(q)) ||
-          (s.ModelName && s.ModelName.toLowerCase().includes(q))
-      );
-    }
+    const where: string[] = [], params: unknown[] = [];
+    if (category) { where.push(`s.[Category] = @p${params.length}`); params.push(category); } if (status) { where.push(`s.[Status] = @p${params.length}`); params.push(status); } if (productModelId) { where.push(`s.[ProductModelId] = @p${params.length}`); params.push(productModelId); } if (search) { where.push(`(s.[SerialNo] LIKE @p${params.length} OR s.[InvoiceNo] LIKE @p${params.length} OR p.[ModelName] LIKE @p${params.length})`); params.push(`%${search}%`); }
+    params.push(Number(limit) || 100);
+    const filtered = await query(`SELECT TOP (@p${params.length - 1}) s.*, p.[ModelCode], p.[ModelName], b.[BatchNo] FROM dbo.[Stickers] s LEFT JOIN dbo.[ProductModels] p ON s.[ProductModelId] = p.[ProductModelId] LEFT JOIN dbo.[StickerBatches] b ON s.[StickerBatchId] = b.[StickerBatchId]${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY s.[InsertedOn] DESC`, params);
 
     return NextResponse.json({ success: true, stickers: filtered });
   } catch (err: any) {
     console.error("Stickers get error:", err);
-    return NextResponse.json({ error: "Failed to fetch stickers register" }, { status: 500 });
+    return NextResponse.json({ error: err.message || "Failed to fetch stickers register" }, { status: 500 });
   }
 }

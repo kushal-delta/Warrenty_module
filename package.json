@@ -7,10 +7,7 @@
     "dev": "next dev -p 3000",
     "build": "next build",
     "start": "next start -p 3000",
-    "db:init": "node server/init_nextjs_db.js",
-    "db:migrate": "node server/run_nextjs_migrations.js",
-    "db:seed": "node server/migrate_json_to_nextjs_db.js",
-    "db:admin": "node server/seed_nextjs_admin.js"
+    "db:inspect": "powershell -NoProfile -File server/inspect-warranty.ps1"
   },
   "dependencies": {
     "@ant-design/cssinjs": "^2.1.2",
@@ -20,11 +17,9 @@
     "axios": "^1.21.0",
     "dayjs": "^1.11.23",
     "dotenv": "^18.0.9",
-    "drizzle-kit": "^0.31.11",
-    "drizzle-orm": "^0.45.4",
     "jose": "^6.2.15",
+    "mssql": "^12.7.13",
     "next": "^14.2.35",
-    "pg": "^8.23.1",
     "qrcode": "^1.5.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -39,7 +34,7 @@
     "warranty",
     "service",
     "solartive",
-    "postgresql"
+    "sql-server"
   ],
   "author": "Delta Infosoft Pvt. Ltd.",
   "license": "UNLICENSED",

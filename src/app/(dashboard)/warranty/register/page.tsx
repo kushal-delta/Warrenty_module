@@ -1,5 +1,6 @@
 "use client";
 
+import { DistrictSelect } from "@/components/common/DistrictSelect";
 import React, { useState } from "react";
 import {
   Form,
@@ -88,7 +89,7 @@ export default function RegisterWarrantyPage() {
 
       const result = await addFullInstallation(payload);
       setSubmittedResult(result);
-      message.success("Installation & Warranties registered successfully in real-time database!");
+      message.success("Installation and warranties registered successfully!");
     } catch (err: any) {
       reportFormError(err, { form, fallback: "Failed to register installation and warranties" });
     } finally {
@@ -150,21 +151,18 @@ export default function RegisterWarrantyPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className="space-y-6">
       {/* Title */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
+      <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <SafetyCertificateOutlined className="text-blue-600" />
             Register Solar Pump Installation & Warranties
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            Single atomic entry for Customer, Site, Pump, Motor, and Controller warranties
+            Add customer and site details, then register the pump, motor, and controller warranties.
           </p>
         </div>
-        <Tag color="blue" className="text-xs px-2.5 py-1 font-semibold">
-          RULE §8: POST /add-full
-        </Tag>
       </div>
 
       <Form
@@ -189,7 +187,7 @@ export default function RegisterWarrantyPage() {
           }
           className="shadow-xs border-slate-200 rounded-xl"
         >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
+          <div className="form-grid form-grid-three">
             <Form.Item
               name="customerName"
               label={<span className="text-xs font-semibold text-slate-700">Customer Name</span>}
@@ -224,8 +222,7 @@ export default function RegisterWarrantyPage() {
               name="district"
               label={<span className="text-xs font-semibold text-slate-700">District</span>}
               rules={[{ required: true, message: "District is required" }]}
-            >
-              <Input placeholder="e.g. Meerut / Jaipur" />
+            ><DistrictSelect stateField="stateId" />
             </Form.Item>
 
             <Form.Item
@@ -261,7 +258,7 @@ export default function RegisterWarrantyPage() {
           }
           className="shadow-xs border-slate-200 rounded-xl mt-4"
         >
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-x-4">
+          <div className="form-grid form-grid-four">
             <Form.Item
               name="installDate"
               label={<span className="text-xs font-semibold text-slate-700">Installation Date</span>}
@@ -312,7 +309,7 @@ export default function RegisterWarrantyPage() {
           <div className="space-y-4">
             {/* Component 1: Pump */}
             <div className="p-4 bg-blue-50/50 border border-blue-200 rounded-xl">
-              <div className="flex items-center space-x-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2 mb-4">
                 <Tag color="blue" className="font-bold">
                   COMPONENT 1: PUMP
                 </Tag>
@@ -320,7 +317,7 @@ export default function RegisterWarrantyPage() {
                   24 Months standard warranty
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="form-grid form-grid-two">
                 <Form.Item
                   name="pumpSerial"
                   label={<span className="text-xs font-semibold text-slate-700">Pump Serial No</span>}
@@ -346,7 +343,7 @@ export default function RegisterWarrantyPage() {
 
             {/* Component 2: Motor */}
             <div className="p-4 bg-cyan-50/50 border border-cyan-200 rounded-xl">
-              <div className="flex items-center space-x-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2 mb-4">
                 <Tag color="cyan" className="font-bold">
                   COMPONENT 2: MOTOR
                 </Tag>
@@ -354,7 +351,7 @@ export default function RegisterWarrantyPage() {
                   24 Months standard warranty
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="form-grid form-grid-two">
                 <Form.Item
                   name="motorSerial"
                   label={<span className="text-xs font-semibold text-slate-700">Motor Serial No</span>}
@@ -380,7 +377,7 @@ export default function RegisterWarrantyPage() {
 
             {/* Component 3: Controller */}
             <div className="p-4 bg-purple-50/50 border border-purple-200 rounded-xl">
-              <div className="flex items-center space-x-2 mb-3">
+              <div className="flex flex-wrap items-center gap-2 mb-4">
                 <Tag color="purple" className="font-bold">
                   COMPONENT 3: CONTROLLER
                 </Tag>
@@ -388,7 +385,7 @@ export default function RegisterWarrantyPage() {
                   36 Months standard warranty
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="form-grid form-grid-two">
                 <Form.Item
                   name="controllerSerial"
                   label={
@@ -418,7 +415,7 @@ export default function RegisterWarrantyPage() {
           </div>
         </Card>
 
-        <div className="flex items-center justify-end space-x-3 pt-4">
+        <div className="form-actions">
           <Button size="large" onClick={() => form.resetFields()}>
             Reset Form
           </Button>
@@ -429,7 +426,7 @@ export default function RegisterWarrantyPage() {
             loading={submitting || isLoading}
             className="bg-blue-600 shadow-md font-semibold px-8"
           >
-            Confirm & Save to Database
+            Register Installation
           </Button>
         </div>
       </Form>

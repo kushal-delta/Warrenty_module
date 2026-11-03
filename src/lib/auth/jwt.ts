@@ -15,6 +15,8 @@ export interface AuthSessionUser {
   Role: string;
   IsAdmin: boolean;
   ServiceCenterId?: string | null;
+  /** Screen rights (comma-separated form / module keys; only these screens are open, blank = dashboard only). Refreshed on every app load by /api/Auth/getUser. */
+  FormRights?: string | null;
 }
 
 export async function signAuthToken(user: AuthSessionUser): Promise<string> {

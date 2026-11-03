@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Dealers } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
@@ -16,12 +14,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "DealerId is required in request body" }, { status: 400 });
     }
 
-    const currentUserId = sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056";
-
-    const deleted = await db
-      .delete(Dealers)
-      .where(eq(Dealers.DealerId, DealerId))
-      .returning();
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const currentUserId = sessionUser.UserId;
+    const deleted = await query<any>(`DELETE FROM dbo.[Dealers] OUTPUT DELETED.* WHERE [DealerId] = @p0`, [DealerId]);
 
     if (deleted.length === 0) {
       return NextResponse.json({ error: "Dealer not found" }, { status: 404 });
@@ -41,7 +36,7 @@ export async function POST(request: NextRequest) {
       message: `Dealer ${deleted[0].FirmName} deleted successfully`,
     });
   } catch (err: any) {
-    if (err.code === "23503") {
+    if (String(err.number) === "547") {
       return NextResponse.json(
         {
           error:

@@ -32,10 +32,20 @@ export function AntdPopupContainer({ children }: AntdPopupContainerProps) {
       theme={{
         token: {
           colorPrimary: "#1677ff",
-          borderRadius: 6,
+          borderRadius: 8,
+          colorText: "#1e293b",
+          colorTextSecondary: "#64748b",
+          colorBorder: "#d8e0eb",
+          colorBgLayout: "#f5f7fb",
           fontFamily:
             '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-          controlHeight: 36,
+          controlHeight: 40,
+        },
+        components: {
+          Card: { paddingLG: 24, headerHeight: 56 },
+          Form: { itemMarginBottom: 20, verticalLabelPadding: "0 0 8px" },
+          Table: { cellPaddingBlockSM: 14, cellPaddingInlineSM: 16, headerBg: "#f8fafc" },
+          Menu: { itemHeight: 44, itemBorderRadius: 8 },
         },
       }}
     >

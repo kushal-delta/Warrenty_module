@@ -1,64 +1,25 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import {
-  Complaints,
-  CallTypes,
-  ServiceCenters,
-  Users,
-  Projects,
-  Customers,
-} from "@/db/schema";
-import { desc, eq, and, ilike } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
+import { sessionFromRequest } from "@/lib/auth/jwt";
+import { callFilter, getScope, positionalParams } from "@/lib/auth/scope";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json().catch(() => ({}));
     const { status, serviceCenterId, engineerUserId, search, limit = 100 } = body;
 
-    const rows = await db
-      .select({
-        ComplaintId: Complaints.ComplaintId,
-        ComplaintNo: Complaints.ComplaintNo,
-        CallDate: Complaints.CallDate,
-        CallTypeId: Complaints.CallTypeId,
-        CallTypeName: CallTypes.CallTypeName,
-        ProjectId: Complaints.ProjectId,
-        ProjectName: Projects.ProjectName,
-        Priority: Complaints.Priority,
-        Source: Complaints.Source,
-        Status: Complaints.Status,
-        InstallationId: Complaints.InstallationId,
-        CustomerId: Complaints.CustomerId,
-        CustomerName: Complaints.CustomerName,
-        Mobile: Complaints.Mobile,
-        Address: Complaints.Address,
-        Village: Complaints.Village,
-        District: Complaints.District,
-        StateId: Complaints.StateId,
-        Pincode: Complaints.Pincode,
-        WarrantyStatus: Complaints.WarrantyStatus,
-        ComplaintText: Complaints.ComplaintText,
-        ServiceCenterId: Complaints.ServiceCenterId,
-        ServiceCenterName: ServiceCenters.ServiceCenterName,
-        EngineerUserId: Complaints.EngineerUserId,
-        EngineerFirstName: Users.FirstName,
-        EngineerLastName: Users.LastName,
-        AssignedOn: Complaints.AssignedOn,
-        DueDate: Complaints.DueDate,
-        ClosedOn: Complaints.ClosedOn,
-        Resolution: Complaints.Resolution,
-        CreatedBy: Complaints.CreatedBy,
-        InsertedOn: Complaints.InsertedOn,
-        LastUpdatedOn: Complaints.LastUpdatedOn,
-      })
-      .from(Complaints)
-      .leftJoin(CallTypes, eq(Complaints.CallTypeId, CallTypes.CallTypeId))
-      .leftJoin(ServiceCenters, eq(Complaints.ServiceCenterId, ServiceCenters.ServiceCenterId))
-      .leftJoin(Users, eq(Complaints.EngineerUserId, Users.UserId))
-      .leftJoin(Projects, eq(Complaints.ProjectId, Projects.ProjectId))
-      .orderBy(desc(Complaints.InsertedOn))
-      .limit(limit);
+    const sessionUser = await sessionFromRequest(request);
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const where: string[] = [], params: unknown[] = [];
+    const scopeFilter = callFilter(await getScope(sessionUser), "c", positionalParams(params));
+    if (scopeFilter) where.push(scopeFilter);
+    if (status) { where.push(`c.[Status] = @p${params.length}`); params.push(status); }
+    if (serviceCenterId) { where.push(`c.[ServiceCenterId] = @p${params.length}`); params.push(serviceCenterId); }
+    if (engineerUserId) { where.push(`c.[EngineerUserId] = @p${params.length}`); params.push(engineerUserId); }
+    if (search) { where.push(`(c.[ComplaintNo] LIKE @p${params.length} OR c.[CustomerName] LIKE @p${params.length} OR c.[Mobile] LIKE @p${params.length} OR c.[Village] LIKE @p${params.length} OR c.[District] LIKE @p${params.length})`); params.push(`%${search}%`); }
+    params.push(Number(limit) || 100);
+    const rows = await query<any>(`SELECT TOP (@p${params.length - 1}) c.*, ct.[CallTypeName], sc.[ServiceCenterName], p.[ProjectName], u.[FirstName] AS [EngineerFirstName], u.[LastName] AS [EngineerLastName] FROM dbo.[Complaints] c LEFT JOIN dbo.[CallTypes] ct ON c.[CallTypeId] = ct.[CallTypeId] LEFT JOIN dbo.[ServiceCenters] sc ON c.[ServiceCenterId] = sc.[ServiceCenterId] LEFT JOIN dbo.[Users] u ON c.[EngineerUserId] = u.[UserId] LEFT JOIN dbo.[Projects] p ON c.[ProjectId] = p.[ProjectId]${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY c.[InsertedOn] DESC`, params);
 
     const enriched = rows.map((c) => ({
       ...c,

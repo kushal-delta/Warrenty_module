@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Stickers, ProductModels } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
+import { randomUUID } from "crypto";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
@@ -31,53 +30,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const currentUserId = sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056";
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const currentUserId = sessionUser.UserId;
 
     // Insert into Stickers
-    const inserted = await db
-      .insert(Stickers)
-      .values({
-        SerialNo: SerialNo.trim().toUpperCase(),
-        ProductModelId,
-        Category: Category.trim().toUpperCase(),
-        SupplierName: SupplierName?.trim() || "Solartive Techno Industries",
-        ProductGroup: ProductGroup?.trim() || "Solar Submersible Pump Set",
-        InvoiceNo: InvoiceNo?.trim() || null,
-        InvoiceDate: InvoiceDate ? new Date(InvoiceDate) : null,
-        InvoiceLocation: InvoiceLocation?.trim() || "Greater Noida HO",
-        MfgDate: MfgDate ? new Date(MfgDate) : null,
-        Status: Status || "Generated",
-        PrintCount: 0,
-        StickerBatchId: StickerBatchId || null,
-        InsertedByUserId: currentUserId,
-        LastUpdatedByUserId: currentUserId,
-      })
-      .returning();
-
-    const newSticker = inserted[0];
+    const newSticker = (await query<any>(`INSERT INTO dbo.[Stickers] ([StickerId],[SerialNo],[ProductModelId],[Category],[SupplierName],[ProductGroup],[InvoiceNo],[InvoiceDate],[InvoiceLocation],[MfgDate],[Status],[PrintCount],[StickerBatchId],[InsertedByUserId],[LastUpdatedByUserId],[InsertedOn],[LastUpdatedOn]) OUTPUT INSERTED.* VALUES (@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,0,@p11,@p12,@p12,SYSUTCDATETIME(),SYSUTCDATETIME())`, [randomUUID(), SerialNo.trim().toUpperCase(), ProductModelId, Category.trim().toUpperCase(), SupplierName?.trim() || "Solartive Techno Industries", ProductGroup?.trim() || "Solar Submersible Pump Set", InvoiceNo?.trim() || null, InvoiceDate ? new Date(InvoiceDate) : null, InvoiceLocation?.trim() || "Greater Noida HO", MfgDate ? new Date(MfgDate) : null, Status || "Generated", StickerBatchId || null, currentUserId]))[0];
 
     // Fetch enriched details with ModelName
-    const enriched = await db
-      .select({
-        StickerId: Stickers.StickerId,
-        SerialNo: Stickers.SerialNo,
-        Category: Stickers.Category,
-        ProductModelId: Stickers.ProductModelId,
-        ModelCode: ProductModels.ModelCode,
-        ModelName: ProductModels.ModelName,
-        SupplierName: Stickers.SupplierName,
-        ProductGroup: Stickers.ProductGroup,
-        InvoiceNo: Stickers.InvoiceNo,
-        InvoiceDate: Stickers.InvoiceDate,
-        InvoiceLocation: Stickers.InvoiceLocation,
-        MfgDate: Stickers.MfgDate,
-        Status: Stickers.Status,
-        PrintCount: Stickers.PrintCount,
-        InsertedOn: Stickers.InsertedOn,
-      })
-      .from(Stickers)
-      .leftJoin(ProductModels, eq(Stickers.ProductModelId, ProductModels.ProductModelId))
-      .where(eq(Stickers.StickerId, newSticker.StickerId));
+    const enriched = await query<any>(`SELECT s.*, p.[ModelCode], p.[ModelName] FROM dbo.[Stickers] s LEFT JOIN dbo.[ProductModels] p ON s.[ProductModelId] = p.[ProductModelId] WHERE s.[StickerId] = @p0`, [newSticker.StickerId]);
 
     await saveAuditLog({
       userId: currentUserId,
@@ -93,7 +53,7 @@ export async function POST(request: NextRequest) {
       sticker: enriched[0] || newSticker,
     });
   } catch (err: any) {
-    if (err.code === "23505") {
+    if (String(err.number) === "2627" || String(err.number) === "2601") {
       return NextResponse.json(
         { error: `Serial number already exists in register.` },
         { status: 409 }

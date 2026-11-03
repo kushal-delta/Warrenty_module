@@ -10,6 +10,10 @@ import {
   Tag,
   Space,
   Spin,
+  Drawer,
+  Grid,
+  Badge,
+  Tooltip,
 } from "antd";
 import {
   DashboardOutlined,
@@ -25,11 +29,25 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusCircleOutlined,
+  TeamOutlined,
+  BellOutlined,
+  DownOutlined,
+  CarOutlined,
+  ToolOutlined,
+  AuditOutlined,
+  SwapOutlined,
+  BarChartOutlined,
+  InboxOutlined,
+  DatabaseOutlined,
+  SettingOutlined,
+  HistoryOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
+import { GlobalSearch } from "@/components/common/GlobalSearch";
+import { canUseForm, formForPath, parseList, type RoleCode } from "@/lib/auth/forms";
 
 const { Header, Sider, Content } = Layout;
 
@@ -42,9 +60,16 @@ export default function DashboardLayout({
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const screens = Grid.useBreakpoint();
+  const isMobile = !screens.lg;
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname, isMobile]);
 
   const { user, fetchCurrentUser, logout, isAuthenticated } = useAuthStore();
-  const { fetchBootstrap, company } = useMasterStore();
+  const { fetchBootstrap, company, states } = useMasterStore();
 
   useEffect(() => {
     setMounted(true);
@@ -88,6 +113,11 @@ export default function DashboardLayout({
           icon: <ShopOutlined />,
           label: <Link href="/warranty/dealers">Dealers Master</Link>,
         },
+        {
+          key: "/warranty/customers",
+          icon: <TeamOutlined />,
+          label: <Link href="/warranty/customers">Customers</Link>,
+        },
       ],
     },
     {
@@ -100,6 +130,53 @@ export default function DashboardLayout({
           icon: <CustomerServiceOutlined />,
           label: <Link href="/service/complaints">Complaints Register</Link>,
         },
+        {
+          key: "/service/reminders",
+          icon: <BellOutlined />,
+          label: <Link href="/service/reminders">Call Reminders</Link>,
+        },
+        {
+          key: "/service/visits",
+          icon: <CarOutlined />,
+          label: <Link href="/service/visits">Visit Reports</Link>,
+        },
+        {
+          key: "/service/jobcards",
+          icon: <ToolOutlined />,
+          label: <Link href="/service/jobcards">Job Cards (Estimate)</Link>,
+        },
+        {
+          key: "/service/approvals",
+          icon: <AuditOutlined />,
+          label: <Link href="/service/approvals">Job Card Approvals</Link>,
+        },
+        {
+          key: "/service/replacements",
+          icon: <SwapOutlined />,
+          label: <Link href="/service/replacements">Replacement / Return</Link>,
+        },
+        {
+          key: "/service/reports",
+          icon: <BarChartOutlined />,
+          label: <Link href="/service/reports">Service Reports</Link>,
+        },
+      ],
+    },
+    {
+      key: "sub-stock",
+      icon: <InboxOutlined />,
+      label: "Spares Stock",
+      children: [
+        {
+          key: "/stock/availability",
+          icon: <InboxOutlined />,
+          label: <Link href="/stock/availability">Stock Availability</Link>,
+        },
+        {
+          key: "/stock/ledger",
+          icon: <DatabaseOutlined />,
+          label: <Link href="/stock/ledger">Stock Ledger & Entry</Link>,
+        },
       ],
     },
     {
@@ -108,18 +185,48 @@ export default function DashboardLayout({
       label: "Configuration",
       children: [
         {
-          key: "/masters/product-models",
-          icon: <AppstoreOutlined />,
-          label: <Link href="/masters/product-models">Product Models</Link>,
-        },
-        {
           key: "/masters/company",
           icon: <BankOutlined />,
           label: <Link href="/masters/company">Company Profile</Link>,
         },
+        {
+          key: "/admin/users",
+          icon: <TeamOutlined />,
+          label: <Link href="/admin/users">User Management</Link>,
+        },
+        ...[
+          ["spares", "Spares & Rates"],
+          ["labour", "Labour / Service Charges"],
+          ["faults", "Fault Master"],
+          ["call-types", "Call Types & Valid Days"],
+          ["projects", "Projects / Schemes"],
+          ["approval-rules", "Approval Rules"],
+        ].map(([resource, title]) => ({
+          key: `/masters/config/${resource}`,
+          icon: <SettingOutlined />,
+          label: <Link href={`/masters/config/${resource}`}>{title}</Link>,
+        })),
+        {
+          key: "/system/activity",
+          icon: <HistoryOutlined />,
+          label: <Link href="/system/activity">Activity & Message Log</Link>,
+        },
       ],
     },
   ];
+
+  // Dealers and customers see the prototype portal wording (e.g. "My Warranty") for the same screens.
+  const roleLabel = (child: any) => { const custom = formForPath(child.key)?.labels?.[user?.Role as RoleCode]; return custom ? { ...child, label: <Link href={child.key}>{custom}</Link> } : child; };
+  // Screen rights: hide links the user cannot open (the middleware also blocks them), and drop empty groups.
+  const allowedPath = (path: string) => { const form = formForPath(path); return !form || canUseForm(user, form.key); };
+  const visibleMenu = menuItems
+    .map((item: any) => (item.children ? { ...item, children: item.children.filter((child: any) => allowedPath(child.key)).map(roleLabel) } : item))
+    .filter((item: any) => !item.children || item.children.length > 0);
+  const stateNames = (() => {
+    if (!user || user.IsAdmin || user.Role === "SUPER") return "All states";
+    const ids = parseList(user.StateRights).map((s) => s.toLowerCase());
+    return ids.length ? states.filter((s: any) => ids.includes(String(s.StateId).toLowerCase())).map((s: any) => s.ShortName || s.StateName).join(", ") || "Selected states" : "All states";
+  })();
 
   const userDropdownItems = [
     {
@@ -135,9 +242,21 @@ export default function DashboardLayout({
               {user?.Role || "SUPER"}
             </Tag>
           </div>
+          <p className="text-[11px] text-slate-500 mt-1 max-w-[220px] truncate" title={stateNames}>States: {stateNames}</p>
         </div>
       ),
     },
+    { type: "divider" as const },
+    ...(allowedPath("/admin/users") ? [{
+      key: "users",
+      icon: <TeamOutlined />,
+      label: <Link href="/admin/users">User Management</Link>,
+    }] : []),
+    ...(allowedPath("/masters/company") ? [{
+      key: "company",
+      icon: <BankOutlined />,
+      label: <Link href="/masters/company">Company Profile</Link>,
+    }] : []),
     { type: "divider" as const },
     {
       key: "logout",
@@ -156,112 +275,185 @@ export default function DashboardLayout({
   }
 
   return (
-    <Layout className="min-h-screen">
+    <Layout className="app-shell">
       {/* Sidebar */}
       <Sider
         collapsible
         collapsed={collapsed}
         onCollapse={(value) => setCollapsed(value)}
         trigger={null}
-        width={240}
+        width={280}
         theme="light"
-        className="border-r border-slate-200/80 shadow-xs select-none"
+        className="app-sidebar border-r border-slate-200/80 select-none"
       >
         {/* Brand */}
-        <div className="h-16 flex items-center px-4 border-b border-slate-100 bg-white">
-          <div className="flex items-center space-x-2.5 overflow-hidden">
-            <div className="flex items-center justify-center w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white font-bold shrink-0 shadow-sm shadow-blue-500/20">
-              <SafetyCertificateOutlined className="text-lg" />
-            </div>
+        <Link
+          href="/"
+          className={`h-16 flex items-center ${collapsed ? "justify-center px-2" : "px-4"} border-b border-slate-100 bg-white hover:bg-slate-50/50 transition-colors`}
+        >
+          <div className="flex items-center space-x-3 overflow-hidden">
+            <img
+              src="/logo-mark.png"
+              alt="Delta iERP"
+              className="h-9 w-auto object-contain shrink-0"
+            />
             {!collapsed && (
-              <div className="min-w-0">
-                <span className="text-sm font-extrabold text-slate-900 tracking-tight block truncate">
-                  Delta Warranty
-                </span>
-                <span className="text-[11px] text-slate-400 font-medium block truncate">
-                  Solartive Techno
+              <div className="min-w-0 flex flex-col justify-center">
+                <div className="flex items-center leading-none">
+                  <span className="text-[17px] font-black text-slate-900 tracking-tight font-sans">
+                    Delta
+                  </span>
+                  <span className="text-[17px] font-black text-[#009688] tracking-tight ml-1 font-sans">
+                    iERP
+                  </span>
+                </div>
+                <span className="text-[9px] font-bold text-slate-400 tracking-widest uppercase mt-1 leading-none">
+                  WARRANTY & SERVICE
                 </span>
               </div>
             )}
           </div>
-        </div>
+        </Link>
 
         {/* Navigation Menu */}
         <div className="py-2">
           <Menu
             mode="inline"
             selectedKeys={[pathname]}
-            defaultOpenKeys={["sub-warranty", "sub-service", "sub-masters"]}
-            items={menuItems}
+            defaultOpenKeys={["sub-warranty", "sub-service", "sub-stock", "sub-masters"]}
+            items={visibleMenu}
             className="border-none text-slate-600 font-medium"
           />
         </div>
       </Sider>
 
+      <Drawer
+        title={
+          <div className="flex items-center space-x-2.5">
+            <img
+              src="/logo-mark.png"
+              alt="Delta iERP"
+              className="h-7 w-auto object-contain shrink-0"
+            />
+            <div className="flex flex-col leading-none">
+              <div className="flex items-center">
+                <span className="text-base font-black text-slate-900">Delta</span>
+                <span className="text-base font-black text-[#009688] ml-1">iERP</span>
+              </div>
+              <span className="text-[8px] font-bold text-slate-400 tracking-wider uppercase mt-0.5">
+                WARRANTY & SERVICE
+              </span>
+            </div>
+          </div>
+        }
+        placement="left"
+        width="min(300px, 88vw)"
+        open={isMobile && mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        styles={{ body: { padding: "12px 4px" } }}
+      >
+        <Menu
+          mode="inline"
+          selectedKeys={[pathname]}
+          defaultOpenKeys={["sub-warranty", "sub-service", "sub-stock", "sub-masters"]}
+          items={visibleMenu}
+          onClick={() => setMobileMenuOpen(false)}
+          className="border-none"
+        />
+      </Drawer>
+
       {/* Main Shell */}
-      <Layout>
+      <Layout className="app-main">
         {/* Top Header */}
-        <Header className="h-16 bg-white border-b border-slate-200/80 px-4 md:px-6 flex items-center justify-between sticky top-0 z-20 shadow-xs">
+        <Header className="app-header">
+          {/* Left section: Hamburger & Module / Brand Indicator */}
           <div className="flex items-center space-x-3">
             <Button
               type="text"
               icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setCollapsed(!collapsed)}
-              className="text-slate-600 hover:text-blue-600 text-base"
+              aria-label={isMobile ? "Open navigation" : collapsed ? "Expand navigation" : "Collapse navigation"}
+              aria-expanded={isMobile ? mobileMenuOpen : !collapsed}
+              onClick={() => (isMobile ? setMobileMenuOpen(true) : setCollapsed(!collapsed))}
+              className="text-slate-600 hover:text-blue-600 text-base h-9 w-9 flex items-center justify-center rounded-lg hover:bg-slate-100"
             />
-            <div className="hidden sm:block">
-              <span className="text-xs font-semibold text-blue-600 uppercase tracking-wider bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
-                PostgreSQL Live DB
-              </span>
-            </div>
+            {/* Client brand (logo is 320×57, so width follows the fixed height) */}
+            <div className="h-8 w-px bg-slate-200 hidden sm:block" />
+            <Link href="/" aria-label="Solartive — go to dashboard" className="flex items-center shrink-0">
+              <img
+                src="/solartive-logo-sm.png"
+                alt="Solartive"
+                width={180}
+                height={32}
+                className="h-7 sm:h-8 w-auto max-w-[150px] sm:max-w-none object-contain select-none"
+                draggable={false}
+              />
+            </Link>
           </div>
 
-          {/* Right actions */}
+          {/* Center section: Global Search */}
+          <div className="hidden md:flex items-center flex-1 max-w-lg mx-6">
+            <GlobalSearch />
+          </div>
+
+          {/* Right section: System Status, Notification & Sleek Profile Card */}
           <div className="flex items-center space-x-3">
-            <Link href="/warranty/verify">
-              <Button
-                type="default"
-                icon={<SearchOutlined />}
-                className="hidden md:inline-flex items-center text-xs font-semibold rounded-lg border-slate-300 hover:border-blue-500 hover:text-blue-600"
-              >
-                Verify Serial
-              </Button>
+           
+
+            {/* Quick Link / Notification Bell */}
+            <Link href="/service/complaints">
+              <Tooltip title="Service Complaints">
+                <Button
+                  type="text"
+                  icon={
+                    <Badge dot color="#ef4444" offset={[-2, 2]}>
+                      <BellOutlined className="text-slate-600 text-base" />
+                    </Badge>
+                  }
+                  className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600"
+                />
+              </Tooltip>
             </Link>
 
-            <Link href="/warranty/register">
-              <Button
-                type="primary"
-                icon={<PlusCircleOutlined />}
-                className="inline-flex items-center text-xs font-semibold rounded-lg shadow-sm bg-blue-600"
-              >
-                Register
-              </Button>
-            </Link>
+            <div className="h-5 w-px bg-slate-200 hidden sm:block" />
 
+            {/* Premium Profile Card Button */}
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomRight" trigger={["click"]}>
-              <button className="flex items-center space-x-2 p-1.5 rounded-lg hover:bg-slate-100 transition-colors border border-transparent hover:border-slate-200">
+              <div
+                role="button"
+                tabIndex={0}
+                aria-label="User Account Menu"
+                className="flex items-center space-x-2.5 px-2.5 py-1.5 rounded-xl border border-slate-200/90 bg-slate-50/70 hover:bg-white hover:border-slate-300 hover:shadow-xs transition-all cursor-pointer select-none group"
+              >
                 <Avatar
-                  style={{ backgroundColor: "#1677ff", verticalAlign: "middle" }}
-                  size="small"
+                  style={{
+                    background: "linear-gradient(135deg, #1677ff 0%, #003eb3 100%)",
+                    verticalAlign: "middle",
+                    boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+                  }}
+                  size={32}
+                  className="font-bold text-xs"
                 >
-                  {user?.FirstName?.[0] || "A"}
+                  {user?.FirstName?.[0]?.toUpperCase() || "A"}
                 </Avatar>
-                <div className="hidden md:block text-left text-xs leading-tight">
-                  <div className="font-semibold text-slate-800">
-                    {user?.FirstName || "Admin"}
+                <div className="hidden sm:block text-left leading-none">
+                  <div className="font-bold text-slate-800 text-xs tracking-tight">
+                    {user ? `${user.FirstName} ${user.LastName || ""}`.trim() : "Delta Admin"}
                   </div>
-                  <div className="text-[10px] text-slate-400 font-mono">
-                    {user?.Role || "SUPER"}
+                  <div className="text-[10px] font-medium text-slate-400 mt-0.5 flex items-center gap-1">
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-blue-100/70 text-blue-700 font-semibold text-[9px] uppercase tracking-wider">
+                      {user?.Role || "SUPER"}
+                    </span>
                   </div>
                 </div>
-              </button>
+                <DownOutlined className="text-[10px] text-slate-400 group-hover:text-slate-600 transition-colors ml-0.5" />
+              </div>
             </Dropdown>
           </div>
         </Header>
 
         {/* Content body */}
-        <Content className="p-4 md:p-6 bg-slate-50 min-h-[calc(100vh-64px)] overflow-x-hidden">
-          <div className="max-w-7xl mx-auto">{children}</div>
+        <Content className="app-content" id="main-content">
+          <div className="app-page" key={pathname}>{children}</div>
         </Content>
       </Layout>
     </Layout>

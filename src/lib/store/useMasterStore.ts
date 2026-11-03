@@ -48,6 +48,7 @@ export interface ProductModel {
 
 export interface MasterState {
   company: Company | null;
+  engineers: any[];
   states: any[];
   districts: any[];
   productModels: ProductModel[];
@@ -72,6 +73,7 @@ export interface MasterState {
 
 export const useMasterStore = create<MasterState>((set, get) => ({
   company: null,
+  engineers: [],
   states: [],
   districts: [],
   productModels: [],
@@ -92,6 +94,7 @@ export const useMasterStore = create<MasterState>((set, get) => ({
       const data = res.data.data;
       set({
         company: data.company,
+        engineers: data.engineers || [],
         states: data.states,
         districts: data.districts,
         productModels: data.productModels,

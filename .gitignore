@@ -9,6 +9,10 @@ node_modules/
 
 # Next.js build and cache
 .next/
+.next-dev/
+.migration/
+warranty-target.env
+.next-dev/
 out/
 tsconfig.tsbuildinfo
 

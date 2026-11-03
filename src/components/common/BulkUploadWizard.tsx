@@ -348,7 +348,11 @@ export const BulkUploadWizard: React.FC<BulkUploadWizardProps> = ({
               columns={tableColumns}
               rowKey="_rowId"
               size="small"
-              pagination={{ pageSize: 8 }}
+              pagination={{
+                defaultPageSize: 8,
+                showSizeChanger: true,
+                pageSizeOptions: ["5", "8", "15", "25"],
+              }}
               scroll={{ x: "max-content" }}
             />
           </div>

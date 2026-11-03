@@ -1,5 +1,6 @@
 "use client";
 
+import { FormSection } from "@/components/common/FormSection";
 import React, { useState, useEffect } from "react";
 import {
   Table,
@@ -120,7 +121,7 @@ export default function StickersPage() {
         message.success(`Serial ${values.SerialNo} updated successfully`);
       } else {
         await addSticker(payload);
-        message.success(`Serial ${values.SerialNo} registered in real time to database`);
+        message.success(`Serial ${values.SerialNo} registered successfully`);
       }
 
       setDrawerOpen(false);
@@ -136,7 +137,7 @@ export default function StickersPage() {
     try {
       setDeleting(true);
       await deleteSticker(deletingSticker.StickerId);
-      message.success(`Serial ${deletingSticker.SerialNo} removed from database`);
+      message.success(`Serial ${deletingSticker.SerialNo} deleted successfully`);
       setDeleteModalOpen(false);
       setDeletingSticker(null);
     } catch (err: any) {
@@ -271,18 +272,18 @@ export default function StickersPage() {
   return (
     <div className="space-y-4">
       {/* Header bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <BarcodeOutlined className="text-blue-600" />
             Serial & Sticker Register
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Real-time component serials stored in PostgreSQL database with live CRUD
+            Manage component serials, product models, and installation status.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="page-actions">
           <Button
             icon={<ReloadOutlined />}
             onClick={() => fetchStickers()}
@@ -308,7 +309,7 @@ export default function StickersPage() {
       </div>
 
       {/* Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+      <div className="filter-toolbar">
         <Input
           prefix={<SearchOutlined className="text-slate-400" />}
           placeholder="Search by Serial No, Invoice, or Model..."
@@ -358,15 +359,20 @@ export default function StickersPage() {
           })}
           columns={columns}
           rowKey="StickerId"
-          size="middle"
           loading={isLoading}
-          pagination={{ pageSize: 15, showTotal: (total) => `Total ${total} serials` }}
+          pagination={{
+            defaultPageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "15", "20", "50", "100"],
+            showTotal: (total, range) => `Showing ${range[0]}-${range[1]} of ${total} serials`,
+          }}
           scroll={{ x: 1000 }}
         />
       </div>
 
       {/* Create / Edit Drawer adhering to RULES §44 */}
       <Drawer
+        rootClassName="entry-drawer"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         closable={false}
@@ -377,7 +383,7 @@ export default function StickersPage() {
           <DrawerHeader
             icon={<BarcodeOutlined />}
             title={editingSticker ? "Edit Serial Record" : "Register New Component Serial"}
-            subtitle="Real-time sticker registration into PostgreSQL database"
+            subtitle="Add component details, stock status, and invoice information."
             meta={
               editingSticker ? (
                 <>
@@ -399,14 +405,12 @@ export default function StickersPage() {
               Cancel
             </Button>
             <Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">
-              {editingSticker ? "Save Changes" : "Save Serial to Database"}
+              {editingSticker ? "Save Changes" : "Register Serial"}
             </Button>
           </div>
         }
       >
-        <Form form={form} layout="vertical" requiredMark={false} className="py-2">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-4">
-            <Form.Item
+        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form"><p className="entry-form-hint"><span aria-hidden="true">*</span> Required fields · Review the details before saving.</p><FormSection number="01" title="Component identity" description="Match the serial printed on the component with its category and product model."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="SerialNo"
               label={<span className="text-xs font-semibold text-slate-700">Serial Number</span>}
               rules={[{ required: true, message: "Serial number is required" }]}
@@ -416,9 +420,8 @@ export default function StickersPage() {
                 className="font-mono uppercase"
                 disabled={Boolean(editingSticker)}
               />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="Category"
               label={<span className="text-xs font-semibold text-slate-700">Category</span>}
               rules={[{ required: true, message: "Category is required" }]}
@@ -428,9 +431,8 @@ export default function StickersPage() {
                 <Select.Option value="MOTOR">Motor</Select.Option>
                 <Select.Option value="CONTROLLER">Controller</Select.Option>
               </Select>
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className="entry-field-wide"><Form.Item
               name="ProductModelId"
               label={<span className="text-xs font-semibold text-slate-700">Product Model</span>}
               rules={[{ required: true, message: "Product model is required" }]}
@@ -446,9 +448,8 @@ export default function StickersPage() {
                   </Select.Option>
                 ))}
               </Select>
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div></div></FormSection>
+<FormSection number="02" title="Stock &amp; manufacturing" description="Set the current stock status and the manufacturing date."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="Status"
               label={<span className="text-xs font-semibold text-slate-700">Status</span>}
               rules={[{ required: true, message: "Status is required" }]}
@@ -458,51 +459,44 @@ export default function StickersPage() {
                 <Select.Option value="Registered">Registered (Installed)</Select.Option>
                 <Select.Option value="Replaced">Replaced</Select.Option>
               </Select>
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="MfgDate"
               label={<span className="text-xs font-semibold text-slate-700">Manufacturing Date</span>}
             >
               <SmartDatePicker placeholder="Select or type date" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div></div></FormSection>
+<FormSection number="03" title="Invoice &amp; supplier" description="Add purchase details to help trace this component later."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="InvoiceNo"
               label={<span className="text-xs font-semibold text-slate-700">Invoice Number</span>}
             >
               <Input placeholder="e.g. SI/26/1042" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="InvoiceDate"
               label={<span className="text-xs font-semibold text-slate-700">Invoice Date</span>}
             >
               <SmartDatePicker placeholder="Select invoice date" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="InvoiceLocation"
               label={<span className="text-xs font-semibold text-slate-700">Invoice Location</span>}
             >
               <Input placeholder="e.g. Greater Noida HO" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="SupplierName"
               label={<span className="text-xs font-semibold text-slate-700">Supplier Name</span>}
             >
               <Input placeholder="e.g. Solartive Techno Industries" />
-            </Form.Item>
-          </div>
-        </Form>
+            </Form.Item></div></div></FormSection></Form>
       </Drawer>
 
       {/* Delete Confirmation Modal adhering to RULES §16 */}
       <ConfirmModal
         open={deleteModalOpen}
         title="Delete Serial Record"
-        description={`Are you sure you want to delete serial ${deletingSticker?.SerialNo}? This will permanently remove the record from the database.`}
+        description={`Are you sure you want to delete serial ${deletingSticker?.SerialNo}? This will permanently delete the record.`}
         items={deletingSticker ? [deletingSticker.SerialNo, deletingSticker.ModelName || ""] : []}
         loading={deleting}
         onConfirm={handleDeleteConfirm}

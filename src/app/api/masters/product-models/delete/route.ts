@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { ProductModels } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
@@ -16,10 +14,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "ProductModelId is required in request body" }, { status: 400 });
     }
 
-    const deleted = await db
-      .delete(ProductModels)
-      .where(eq(ProductModels.ProductModelId, ProductModelId))
-      .returning();
+    const deleted = await query<any>(`DELETE FROM dbo.[ProductModels] OUTPUT DELETED.* WHERE [ProductModelId] = @p0`, [ProductModelId]);
 
     if (deleted.length === 0) {
       return NextResponse.json({ error: "Product model not found" }, { status: 404 });
@@ -40,7 +35,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (err: any) {
     // RULES §7: Foreign key restrict error handling
-    if (err.code === "23503") {
+    if (String(err.number) === "547") {
       return NextResponse.json(
         {
           error:

@@ -171,7 +171,7 @@ export default function ActiveWarrantiesPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <SafetyCertificateOutlined className="text-blue-600" />
@@ -192,7 +192,7 @@ export default function ActiveWarrantiesPage() {
       </div>
 
       {/* Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+      <div className="filter-toolbar">
         <Input
           prefix={<SearchOutlined className="text-slate-400" />}
           placeholder="Search by Serial No, Customer Name, Mobile..."
@@ -234,7 +234,12 @@ export default function ActiveWarrantiesPage() {
           rowKey="WarrantyId"
           size="middle"
           loading={isLoading}
-          pagination={{ pageSize: 15, showTotal: (total) => `Total ${total} warranties` }}
+          pagination={{
+            defaultPageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "15", "20", "50", "100"],
+            showTotal: (total, range) => `Showing ${range[0]}-${range[1]} of ${total} warranties`,
+          }}
           scroll={{ x: 1000 }}
         />
       </div>

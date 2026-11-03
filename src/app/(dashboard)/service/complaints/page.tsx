@@ -1,5 +1,7 @@
 "use client";
 
+import { FormSection } from "@/components/common/FormSection";
+import { DistrictSelect } from "@/components/common/DistrictSelect";
 import React, { useState, useEffect } from "react";
 import {
   Table,
@@ -35,6 +37,7 @@ import {
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 import dayjs from "dayjs";
 
 export default function ComplaintsPage() {
@@ -51,10 +54,11 @@ export default function ComplaintsPage() {
     isLoading,
   } = useServiceStore();
 
-  const { callTypes, serviceCenters, projects, states } = useMasterStore();
+  const { engineers, callTypes, serviceCenters, projects, states } = useMasterStore();
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  useUrlQuery("q", (q) => { setSearch(q); setStatusFilter(undefined); setPriorityFilter(undefined); });
   const [priorityFilter, setPriorityFilter] = useState<string | undefined>(undefined);
 
   // Drawer state for Log Complaint
@@ -97,7 +101,7 @@ export default function ComplaintsPage() {
       };
 
       await addComplaint(payload);
-      message.success("Service ticket logged in database successfully");
+      message.success("Service ticket created successfully");
       setDrawerOpen(false);
     } catch (err: any) {
       reportFormError(err, { form, fallback: "Could not log complaint" });
@@ -302,7 +306,7 @@ export default function ComplaintsPage() {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className="page-header">
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <CustomerServiceOutlined className="text-blue-600" />
@@ -313,7 +317,7 @@ export default function ComplaintsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="page-actions">
           <Button
             icon={<ReloadOutlined />}
             onClick={() => fetchComplaints()}
@@ -333,7 +337,7 @@ export default function ComplaintsPage() {
       </div>
 
       {/* Filter toolbar */}
-      <div className="flex flex-wrap items-center gap-3 bg-white p-3 rounded-xl border border-slate-200">
+      <div className="filter-toolbar">
         <Input
           prefix={<SearchOutlined className="text-slate-400" />}
           placeholder="Search tickets by No, Customer Name, Mobile, Village..."
@@ -377,13 +381,19 @@ export default function ComplaintsPage() {
           rowKey="ComplaintId"
           size="middle"
           loading={isLoading}
-          pagination={{ pageSize: 15 }}
+          pagination={{
+            defaultPageSize: 15,
+            showSizeChanger: true,
+            pageSizeOptions: ["10", "15", "20", "50", "100"],
+            showTotal: (total, range) => `Showing ${range[0]}-${range[1]} of ${total} complaints`,
+          }}
           scroll={{ x: 1000 }}
         />
       </div>
 
       {/* Log Complaint Drawer */}
       <Drawer
+        rootClassName="entry-drawer"
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         closable={false}
@@ -394,7 +404,7 @@ export default function ComplaintsPage() {
           <DrawerHeader
             icon={<CustomerServiceOutlined />}
             title="Log Customer Complaint Ticket"
-            subtitle="Register new service call ticket in PostgreSQL database"
+            subtitle="Capture the customer, location, and problem details."
             meta={<DrawerChip label="New Service Call" tone="solid" />}
             maximized={maximized}
             onToggleMaximize={() => setMaximized(!maximized)}
@@ -412,17 +422,14 @@ export default function ComplaintsPage() {
           </div>
         }
       >
-        <Form form={form} layout="vertical" requiredMark={false} className="py-2">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-x-4">
-            <Form.Item
+        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form"><p className="entry-form-hint"><span aria-hidden="true">*</span> Required fields · Review the details before saving.</p><FormSection number="01" title="Service request" description="Classify the call and choose its priority."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="callDate"
               label={<span className="text-xs font-semibold text-slate-700">Call Date</span>}
               rules={[{ required: true }]}
             >
               <SmartDatePicker placeholder="Select or type date" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="callTypeId"
               label={<span className="text-xs font-semibold text-slate-700">Call Type</span>}
               rules={[{ required: true, message: "Call type is required" }]}
@@ -434,9 +441,8 @@ export default function ComplaintsPage() {
                   </Select.Option>
                 ))}
               </Select>
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="priority"
               label={<span className="text-xs font-semibold text-slate-700">Priority</span>}
               rules={[{ required: true }]}
@@ -447,25 +453,8 @@ export default function ComplaintsPage() {
                 <Select.Option value="High">High</Select.Option>
                 <Select.Option value="Urgent">Urgent</Select.Option>
               </Select>
-            </Form.Item>
-
-            <Form.Item
-              name="customerName"
-              label={<span className="text-xs font-semibold text-slate-700">Customer Name</span>}
-              rules={[{ required: true, message: "Customer name is required" }]}
-            >
-              <Input placeholder="e.g. Gopal Sharma" />
-            </Form.Item>
-
-            <Form.Item
-              name="mobile"
-              label={<span className="text-xs font-semibold text-slate-700">Customer Mobile</span>}
-              rules={[{ required: true, message: "Mobile number is required" }]}
-            >
-              <Input placeholder="e.g. 9414101017" maxLength={10} />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="serviceCenterId"
               label={<span className="text-xs font-semibold text-slate-700">Service Center</span>}
             >
@@ -476,23 +465,33 @@ export default function ComplaintsPage() {
                   </Select.Option>
                 ))}
               </Select>
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div></div></FormSection>
+<FormSection number="02" title="Customer &amp; location" description="Add the customer details and service location."><div className="form-grid form-grid-two"><div className=""><Form.Item
+              name="customerName"
+              label={<span className="text-xs font-semibold text-slate-700">Customer Name</span>}
+              rules={[{ required: true, message: "Customer name is required" }]}
+            >
+              <Input placeholder="e.g. Gopal Sharma" />
+            </Form.Item></div>
+<div className=""><Form.Item
+              name="mobile"
+              label={<span className="text-xs font-semibold text-slate-700">Customer Mobile</span>}
+              rules={[{ required: true, message: "Mobile number is required" }]}
+            >
+              <Input placeholder="e.g. 9414101017" maxLength={10} />
+            </Form.Item></div>
+<div className=""><Form.Item
               name="village"
               label={<span className="text-xs font-semibold text-slate-700">Village / Tehsil</span>}
             >
               <Input placeholder="e.g. Phagi" />
-            </Form.Item>
-
-            <Form.Item
+            </Form.Item></div>
+<div className=""><Form.Item
               name="district"
               label={<span className="text-xs font-semibold text-slate-700">District</span>}
-            >
-              <Input placeholder="e.g. Jaipur" />
-            </Form.Item>
-
-            <Form.Item
+            ><DistrictSelect stateField="stateId" />
+            </Form.Item></div>
+<div className=""><Form.Item
               name="stateId"
               label={<span className="text-xs font-semibold text-slate-700">State</span>}
             >
@@ -503,10 +502,8 @@ export default function ComplaintsPage() {
                   </Select.Option>
                 ))}
               </Select>
-            </Form.Item>
-          </div>
-
-          <Form.Item
+            </Form.Item></div></div></FormSection>
+<FormSection number="03" title="Reported problem" description="Describe symptoms, error codes, and when the problem started."><div className="form-grid form-grid-two"><div className="entry-field-wide"><Form.Item
             name="complaintText"
             label={
               <span className="text-xs font-semibold text-slate-700">
@@ -519,8 +516,7 @@ export default function ComplaintsPage() {
               rows={3}
               placeholder="Describe the breakdown symptoms, discharge issues, controller trip code, or motor heating..."
             />
-          </Form.Item>
-        </Form>
+          </Form.Item></div></div></FormSection></Form>
       </Drawer>
 
       {/* Assign Engineer Modal */}
@@ -566,20 +562,7 @@ export default function ComplaintsPage() {
             label={<span className="text-xs font-semibold text-slate-700">Assign Field Engineer</span>}
             rules={[{ required: true, message: "Please select an engineer" }]}
           >
-            <Select placeholder="Select engineer">
-              <Select.Option value="242b2d94-7e53-4b78-8ee0-f31c9ddb7056">
-                Pradeep Kumar (Greater Noida)
-              </Select.Option>
-              <Select.Option value="242b2d94-7e53-4b78-8ee0-f31c9ddb7056">
-                Rahul Chauhan (Greater Noida)
-              </Select.Option>
-              <Select.Option value="242b2d94-7e53-4b78-8ee0-f31c9ddb7056">
-                Mohan Lal Saini (Jaipur)
-              </Select.Option>
-              <Select.Option value="242b2d94-7e53-4b78-8ee0-f31c9ddb7056">
-                Rakesh Patidar (Indore)
-              </Select.Option>
-            </Select>
+            <Select placeholder="Select engineer" notFoundContent="No engineers available">{engineers.filter((e: any) => e.IsActive).map((e: any) => <Select.Option key={e.UserId} value={e.UserId}>{e.FirstName} {e.LastName}</Select.Option>)}</Select>
           </Form.Item>
         </Form>
       </Modal>

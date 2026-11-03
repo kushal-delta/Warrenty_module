@@ -1,15 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import {
-  Warranties,
-  Installations,
-  Customers,
-  Dealers,
-  ProductModels,
-  Stickers,
-} from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { query } from "@/lib/sqlserver";
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,36 +14,7 @@ export async function POST(request: NextRequest) {
     const cleanSerial = String(serialNo).trim().toUpperCase();
 
     // 1. Check active Warranties table
-    const wRows = await db
-      .select({
-        WarrantyId: Warranties.WarrantyId,
-        WarrantyNo: Warranties.WarrantyNo,
-        SerialNo: Warranties.SerialNo,
-        Category: Warranties.Category,
-        ModelName: ProductModels.ModelName,
-        ModelCode: ProductModels.ModelCode,
-        CustomerId: Warranties.CustomerId,
-        CustomerName: Customers.CustomerName,
-        CustomerMobile: Customers.Mobile,
-        InstallNo: Installations.InstallNo,
-        InstallDate: Installations.InstallDate,
-        SiteAddress: Installations.SiteAddress,
-        Village: Installations.Village,
-        District: Installations.District,
-        DealerName: Dealers.FirmName,
-        StartDate: Warranties.StartDate,
-        WarrantyMonths: Warranties.WarrantyMonths,
-        EndDate: Warranties.EndDate,
-        Status: Warranties.Status,
-        ReplacedFromSerial: Warranties.ReplacedFromSerial,
-      })
-      .from(Warranties)
-      .leftJoin(Installations, eq(Warranties.InstallationId, Installations.InstallationId))
-      .leftJoin(Customers, eq(Warranties.CustomerId, Customers.CustomerId))
-      .leftJoin(Dealers, eq(Warranties.DealerId, Dealers.DealerId))
-      .leftJoin(ProductModels, eq(Warranties.ProductModelId, ProductModels.ProductModelId))
-      .where(eq(Warranties.SerialNo, cleanSerial))
-      .limit(1);
+    const wRows = await query<any>(`SELECT TOP 1 w.*, p.[ModelName], p.[ModelCode], c.[CustomerName], c.[Mobile] AS [CustomerMobile], i.[InstallNo], i.[InstallDate], i.[SiteAddress], i.[Village], i.[District], d.[FirmName] AS [DealerName] FROM dbo.[Warranties] w LEFT JOIN dbo.[Installations] i ON w.[InstallationId]=i.[InstallationId] LEFT JOIN dbo.[Customers] c ON w.[CustomerId]=c.[CustomerId] LEFT JOIN dbo.[Dealers] d ON w.[DealerId]=d.[DealerId] LEFT JOIN dbo.[ProductModels] p ON w.[ProductModelId]=p.[ProductModelId] WHERE w.[SerialNo]=@p0`, [cleanSerial]);
 
     if (wRows.length > 0) {
       const record = wRows[0];
@@ -73,21 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 2. Check Stickers table if registered or unregistered
-    const sRows = await db
-      .select({
-        StickerId: Stickers.StickerId,
-        SerialNo: Stickers.SerialNo,
-        Category: Stickers.Category,
-        Status: Stickers.Status,
-        ModelName: ProductModels.ModelName,
-        ModelCode: ProductModels.ModelCode,
-        InvoiceNo: Stickers.InvoiceNo,
-        MfgDate: Stickers.MfgDate,
-      })
-      .from(Stickers)
-      .leftJoin(ProductModels, eq(Stickers.ProductModelId, ProductModels.ProductModelId))
-      .where(eq(Stickers.SerialNo, cleanSerial))
-      .limit(1);
+    const sRows = await query<any>(`SELECT TOP 1 s.*, p.[ModelName], p.[ModelCode] FROM dbo.[Stickers] s LEFT JOIN dbo.[ProductModels] p ON s.[ProductModelId]=p.[ProductModelId] WHERE s.[SerialNo]=@p0`, [cleanSerial]);
 
     if (sRows.length > 0) {
       const sticker = sRows[0];

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { readAuthToken } from "@/lib/auth/token";
 import { verifyAuthToken } from "@/lib/auth/jwt";
+import { canUseApi, canUseForm, formForPath } from "@/lib/auth/forms";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -42,6 +43,23 @@ export async function middleware(request: NextRequest) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("redirect", pathname);
     return NextResponse.redirect(loginUrl);
+  }
+
+  // 5. Screen (form) rights — APIs answer 403, pages go back to the dashboard with a notice
+  if (pathname.startsWith("/api/")) {
+    if (!canUseApi(user, pathname, request.method)) {
+      return NextResponse.json(
+        { error: "You do not have rights to this screen. Ask your administrator for access.", code: "FORBIDDEN" },
+        { status: 403 }
+      );
+    }
+  } else {
+    const form = formForPath(pathname);
+    if (form && !canUseForm(user, form.key)) {
+      const home = new URL("/", request.url);
+      home.searchParams.set("denied", form.label);
+      return NextResponse.redirect(home);
+    }
   }
 
   return NextResponse.next();

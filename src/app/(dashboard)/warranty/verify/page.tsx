@@ -12,11 +12,19 @@ import {
 } from "@ant-design/icons";
 import { useWarrantyStore } from "@/lib/store/useWarrantyStore";
 import { formatDate } from "@/lib/utils/dateFormat";
+import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 
 export default function WarrantyVerifyPage() {
   const [serialInput, setSerialInput] = useState("");
   const { verifySerial, verifyResult, isLoading } = useWarrantyStore();
   const [searched, setSearched] = useState(false);
+
+  // Opened from the global search: /warranty/verify?serial=XXXX verifies straight away.
+  useUrlQuery("serial", (serial) => {
+    setSerialInput(serial);
+    setSearched(true);
+    verifySerial(serial).catch(() => undefined);
+  });
 
   const handleVerify = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -37,13 +45,13 @@ export default function WarrantyVerifyPage() {
           Serial Number Warranty Verification
         </h1>
         <p className="text-sm text-slate-500 max-w-lg mx-auto">
-          Instant status check of pump, motor, or controller serials against active database records
+          Check the warranty status of a pump, motor, or controller serial number.
         </p>
       </div>
 
       {/* Search Input Box */}
-      <Card className="shadow-md border-slate-200 rounded-2xl p-4">
-        <form onSubmit={handleVerify} className="flex gap-2">
+      <Card className="shadow-md border-slate-200 rounded-2xl">
+        <form onSubmit={handleVerify} className="flex flex-col sm:flex-row gap-3">
           <Input
             size="large"
             prefix={<BarcodeOutlined className="text-slate-400 text-lg mr-1" />}
@@ -89,7 +97,7 @@ export default function WarrantyVerifyPage() {
         <div className="py-12 text-center">
           <Spin size="large" />
           <p className="text-xs text-slate-500 mt-3 font-medium">
-            Querying live database records...
+            Checking warranty status...
           </p>
         </div>
       )}
@@ -97,9 +105,9 @@ export default function WarrantyVerifyPage() {
       {!isLoading && searched && verifyResult && (
         <div className="space-y-4">
           {verifyResult.found && verifyResult.isRegistered ? (
-            <Card className="shadow-lg border-slate-200 rounded-2xl overflow-hidden p-2">
+            <Card className="shadow-lg border-slate-200 rounded-2xl overflow-hidden">
               <div
-                className={`p-4 rounded-xl flex items-center justify-between ${
+                className={`p-4 rounded-xl flex flex-wrap gap-3 items-center justify-between ${
                   verifyResult.isUnderWarranty
                     ? "bg-emerald-50 border border-emerald-200 text-emerald-900"
                     : "bg-amber-50 border border-amber-200 text-amber-900"
@@ -218,7 +226,7 @@ export default function WarrantyVerifyPage() {
               type="error"
               showIcon
               message={<span className="font-bold">Serial Not Found</span>}
-              description={`No record matching serial "${serialInput}" was found in the database. Please check the serial code printed on the pump, motor, or controller label.`}
+              description={`No record matching serial "${serialInput}" was found. Please check the serial code printed on the pump, motor, or controller label.`}
               className="rounded-2xl"
             />
           )}

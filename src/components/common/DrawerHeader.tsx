@@ -8,7 +8,7 @@ import {
   CloseOutlined,
 } from "@ant-design/icons";
 
-export const DRAWER_WIDTH = "min(1380px, 100%)";
+export const DRAWER_WIDTH = "min(960px, 100%)";
 
 export const DRAWER_HEADER_STYLE: React.CSSProperties = {
   padding: 0,
@@ -68,7 +68,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
   onClose,
 }) => {
   return (
-    <div className="flex items-center justify-between px-6 py-4 w-full text-white select-none">
+    <div className="flex items-center justify-between px-4 sm:px-6 py-4 w-full text-white select-none">
       {/* Left: Icon, Title, Subtitle, Meta chips */}
       <div className="flex items-center space-x-3.5 min-w-0">
         {icon && (
@@ -78,13 +78,13 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
         )}
         <div className="min-w-0">
           <div className="flex items-center space-x-2.5 flex-wrap gap-y-1">
-            <h2 className="text-lg font-bold text-white tracking-tight truncate leading-tight">
+            <h2 className="text-lg font-bold text-white tracking-tight break-words leading-tight">
               {title}
             </h2>
             {meta && <div className="flex items-center space-x-1.5 flex-wrap">{meta}</div>}
           </div>
           {subtitle && (
-            <p className="text-xs text-blue-100 font-normal leading-normal mt-0.5 truncate">
+            <p className="text-xs text-blue-100 font-normal leading-normal mt-1 break-words">
               {subtitle}
             </p>
           )}
@@ -104,6 +104,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
                   <FullscreenOutlined className="text-white text-base" />
                 )
               }
+              aria-label={maximized ? "Restore drawer size" : "Maximize drawer"}
               onClick={onToggleMaximize}
               className="text-white hover:bg-white/20 transition-colors"
             />
@@ -113,6 +114,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
           <Button
             type="text"
             icon={<CloseOutlined className="text-white text-base" />}
+            aria-label="Close drawer"
             onClick={onClose}
             className="text-white hover:bg-white/20 hover:text-red-200 transition-colors"
           />

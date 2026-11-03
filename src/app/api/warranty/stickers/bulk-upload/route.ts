@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { Stickers, ProductModels } from "@/db/schema";
-import { inArray } from "drizzle-orm";
+import { query, getSqlPool, sql } from "@/lib/sqlserver";
+import { randomUUID } from "crypto";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
@@ -16,16 +15,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No rows provided for bulk upload" }, { status: 400 });
     }
 
-    const currentUserId = sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056";
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const currentUserId = sessionUser.UserId;
 
     // 1. Resolve product models to find ProductModelId by ModelCode
-    const allModels = await db
-      .select({
-        ProductModelId: ProductModels.ProductModelId,
-        ModelCode: ProductModels.ModelCode,
-        Category: ProductModels.Category,
-      })
-      .from(ProductModels);
+    const allModels = await query<any>(`SELECT [ProductModelId], [ModelCode], [Category] FROM dbo.[ProductModels]`);
 
     const modelCodeMap = new Map<string, { id: string; category: string }>();
     allModels.forEach((m) => {
@@ -55,10 +49,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Query existing serials via inArray
-    const existing = await db
-      .select({ SerialNo: Stickers.SerialNo })
-      .from(Stickers)
-      .where(inArray(Stickers.SerialNo, Array.from(seenSerials)));
+    const serials = Array.from(seenSerials);
+    const existing = serials.length ? await query<any>(`SELECT [SerialNo] FROM dbo.[Stickers] WHERE [SerialNo] IN (${serials.map((_, index) => `@p${index}`).join(", ")})`, serials) : [];
 
     const existingSerialSet = new Set(existing.map((s) => s.SerialNo.toUpperCase()));
 
@@ -92,8 +84,18 @@ export async function POST(request: NextRequest) {
 
     let insertedCount = 0;
     if (toInsert.length > 0) {
-      const inserted = await db.insert(Stickers).values(toInsert).returning();
-      insertedCount = inserted.length;
+      const transaction = new sql.Transaction(getSqlPool());
+      await transaction.begin();
+      try {
+        for (const record of toInsert) {
+          const request = new sql.Request(transaction);
+          Object.entries(record).forEach(([key, value]) => request.input(key, value as any));
+          request.input("StickerId", randomUUID());
+          await request.query(`INSERT INTO dbo.[Stickers] ([StickerId],[SerialNo],[ProductModelId],[Category],[SupplierName],[ProductGroup],[InvoiceNo],[InvoiceDate],[InvoiceLocation],[MfgDate],[Status],[PrintCount],[InsertedByUserId],[LastUpdatedByUserId],[InsertedOn],[LastUpdatedOn]) VALUES (@StickerId,@SerialNo,@ProductModelId,@Category,@SupplierName,@ProductGroup,@InvoiceNo,@InvoiceDate,@InvoiceLocation,@MfgDate,@Status,@PrintCount,@InsertedByUserId,@LastUpdatedByUserId,SYSUTCDATETIME(),SYSUTCDATETIME())`);
+          insertedCount++;
+        }
+        await transaction.commit();
+      } catch (error) { await transaction.rollback(); throw error; }
     }
 
     const skippedCount = internalDuplicates + existingSerialSet.size;

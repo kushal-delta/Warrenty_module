@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { db } from "@/db";
-import { ProductModels } from "@/db/schema";
+import { query } from "@/lib/sqlserver";
+import { randomUUID } from "crypto";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
@@ -32,28 +32,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const inserted = await db
-      .insert(ProductModels)
-      .values({
-        ModelCode: ModelCode.trim(),
-        ModelName: ModelName.trim(),
-        Category: Category.trim(),
-        Hp: Hp ? String(Hp) : null,
-        Kw: Kw ? String(Kw) : null,
-        Technology: Technology?.trim() || null,
-        VoltageRange: VoltageRange?.trim() || null,
-        HeadRange: HeadRange?.trim() || null,
-        Discharge: Discharge?.trim() || null,
-        SizeInch: SizeInch?.trim() || null,
-        WarrantyMonths: WarrantyMonths ? Number(WarrantyMonths) : 24,
-        Description: Description?.trim() || null,
-        IsActive: IsActive !== undefined ? Boolean(IsActive) : true,
-        InsertedByUserId: sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056",
-        LastUpdatedByUserId: sessionUser?.UserId || "242b2d94-7e53-4b78-8ee0-f31c9ddb7056",
-      })
-      .returning();
-
-    const newRecord = inserted[0];
+    if (!sessionUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const newRecord = (await query<any>(`INSERT INTO dbo.[ProductModels] ([ProductModelId], [ModelCode], [ModelName], [Category], [Hp], [Kw], [Technology], [VoltageRange], [HeadRange], [Discharge], [SizeInch], [WarrantyMonths], [Description], [IsActive], [InsertedByUserId], [LastUpdatedByUserId], [InsertedOn], [LastUpdatedOn]) OUTPUT INSERTED.* VALUES (@p0,@p1,@p2,@p3,@p4,@p5,@p6,@p7,@p8,@p9,@p10,@p11,@p12,@p13,@p14,@p14,SYSUTCDATETIME(),SYSUTCDATETIME())`, [randomUUID(), ModelCode.trim(), ModelName.trim(), Category.trim(), Hp ? String(Hp) : null, Kw ? String(Kw) : null, Technology?.trim() || null, VoltageRange?.trim() || null, HeadRange?.trim() || null, Discharge?.trim() || null, SizeInch?.trim() || null, WarrantyMonths ? Number(WarrantyMonths) : 24, Description?.trim() || null, IsActive !== undefined ? Boolean(IsActive) : true, sessionUser.UserId]))[0];
 
     await saveAuditLog({
       userId: sessionUser?.UserId,
@@ -66,7 +46,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, productModel: newRecord });
   } catch (err: any) {
-    if (err.code === "23505") {
+    if (String(err.number) === "2627" || String(err.number) === "2601") {
       return NextResponse.json(
         { error: "A product model with this model code already exists." },
         { status: 409 }
