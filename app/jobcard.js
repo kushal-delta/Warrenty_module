@@ -135,7 +135,7 @@ function jcEditor(row, callId) {
       DB.all('labour_master').filter(function (s) { return s.is_active == 1; }).map(function (s) { return '<option value="' + s.labour_id + '">' + esc(s.labour_name + ' — ₹' + inr(s.rate)) + '</option>'; }).join('') + '</select>' +
       '<button class="btn sm" onclick="jcImportLines()">' + ICO.imp + ' Import lines (Excel)</button><button class="btn sm" onclick="jcLinesTemplate()">' + ICO.xls + ' Template</button></span></h3>' +
       '<div class="cbody" style="padding:0" id="jc_lines"></div></div>' +
-      '<div class="grid2" style="grid-template-columns:1fr 360px"><div class="card" style="margin:0"><h3>Photos</h3><div class="cbody"><div class="frm">' + photoPicker('jc_photos') + '</div>' + (isEdit ? galleryHtml('jobcard', row.jobcard_id, true) : '') + '</div></div>' +
+      '<div class="grid2" style="grid-template-columns:1fr 360px"><div class="card" style="margin:0"><h3>Photos</h3><div class="cbody"><div class="frm">' + photoPicker('jc_photos', true) + '</div>' + (isEdit ? galleryHtml('jobcard', row.jobcard_id, true) : '') + '</div></div>' +
       '<div class="card" style="margin:0"><h3>Estimate summary</h3><div class="cbody" id="jc_totals"></div></div></div>',
     after: function () {
       var sc = $('#jc_sc'), eng = $('#jc_eng');
@@ -266,6 +266,7 @@ function jcSave(submit) {
   var sc = +$('#jc_sc').value; if (!sc) return toast('Select the service center', 'err');
   var date = $('#jc_date').value || today(); if (date > today()) return toast('Job card date cannot be in the future', 'err');
   if (!JC.lines.length) return toast('Add at least one spare or labour line', 'err');
+  if (!((row ? photosOf('jobcard', row.jobcard_id).length : 0) + pendCount('jc_photos'))) return toast('Attach at least one photo — photos are mandatory for a job card', 'err');
   for (var i = 0; i < JC.lines.length; i++) {
     var l = JC.lines[i]; if (!(+l.qty > 0)) return toast('Line ' + (i + 1) + ': quantity must be more than zero', 'err');
     if (!(+l.rate >= 0) || l.rate === '') return toast('Line ' + (i + 1) + ': rate is required', 'err');

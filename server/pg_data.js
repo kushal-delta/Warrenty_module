@@ -26,6 +26,74 @@ function getPool() {
   return pool;
 }
 
+/* Same type mapping as server/generate_postgres_sql.js */
+function pgType(t) {
+  if (t === 'pk') return 'SERIAL PRIMARY KEY';
+  if (t === 'int') return 'INTEGER';
+  if (t === 'bit') return 'SMALLINT';
+  if (t === 'txt') return 'TEXT';
+  if (t === 'date') return 'DATE';
+  if (t === 'dt') return 'TIMESTAMP';
+  if (t === 'dec') return 'NUMERIC(18,2)';
+  if (t.startsWith('s')) return `VARCHAR(${t.slice(1)})`;
+  if (t.startsWith('d')) {
+    const parts = t.slice(1).split(',');
+    return `NUMERIC(${parts[0]},${parts[1]})`;
+  }
+  return 'TEXT';
+}
+
+function colDefault(c) {
+  if (c.def === null || c.def === undefined) return '';
+  return /^-?\d+(\.\d+)?$/.test(c.def) ? ` DEFAULT ${c.def}` : ` DEFAULT '${String(c.def).replace(/'/g, "''")}'`;
+}
+
+/*
+ * Creates any table / column that app/schema.js has and the database does not (e.g. a new release deployed to
+ * Vercel before `npm run db:migrate` was run on its database). Only adds — never drops or alters existing columns.
+ * New columns on existing tables are added nullable (NOT NULL only when they carry a default), so rows already
+ * there stay valid. Runs once per server process.
+ */
+let schemaReady = null;
+function ensureSchema(client) {
+  if (!schemaReady) {
+    schemaReady = (async () => {
+      const res = await client.query(`SELECT table_name, column_name FROM information_schema.columns WHERE table_schema = 'public'`);
+      const have = new Map();
+      for (const r of res.rows) {
+        if (!have.has(r.table_name)) have.set(r.table_name, new Set());
+        have.get(r.table_name).add(r.column_name);
+      }
+      const created = [];
+      for (const t of SCHEMA.tables) {
+        const cols = have.get(t.name);
+        if (!cols) {
+          const lines = t.cols.map(c => {
+            let line = `"${c.n}" ${pgType(c.t)}`;
+            if (c.t !== 'pk') {
+              line += colDefault(c);
+              if (c.req) line += ' NOT NULL';
+              if (c.uq) line += ` CONSTRAINT uq_${t.name}_${c.n} UNIQUE`;
+            }
+            return line;
+          });
+          await client.query(`CREATE TABLE IF NOT EXISTS "${t.name}" (${lines.join(', ')})`);
+          created.push(t.name);
+        } else {
+          for (const c of t.cols) {
+            if (cols.has(c.n)) continue;
+            const notNull = c.req && colDefault(c) ? ' NOT NULL' : '';
+            await client.query(`ALTER TABLE "${t.name}" ADD COLUMN IF NOT EXISTS "${c.n}" ${c.t === 'pk' ? 'INTEGER' : pgType(c.t)}${colDefault(c)}${notNull}`);
+            created.push(`${t.name}.${c.n}`);
+          }
+        }
+      }
+      if (created.length) console.log('PostgreSQL schema: added ' + created.join(', '));
+    })().catch(err => { schemaReady = null; throw err; });
+  }
+  return schemaReady;
+}
+
 function formatRowForClient(row, tableDef) {
   if (!row) return row;
   const out = {};
@@ -99,6 +167,7 @@ async function getDbData() {
   const p = getPool();
   const client = await p.connect();
   try {
+    await ensureSchema(client);
     const data = { v: 1, t: {}, seq: {} };
     let totalRows = 0;
 
@@ -136,6 +205,7 @@ async function saveDbData(payload) {
   const p = getPool();
   const client = await p.connect();
   try {
+    await ensureSchema(client);
     await client.query('BEGIN');
     await client.query("SET session_replication_role = 'replica'");
 

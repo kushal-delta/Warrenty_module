@@ -83,13 +83,14 @@
   T('service_center', 'Masters', 'sc_id', 'Service Center Master', [
     'sc_code s20 u', 'sc_name s120 *', 'contact_person s80', 'mobile s15', 'email s100', 'address s250',
     'city s60', 'district s60', 'state_code s2 >state_master.state_code', 'pincode s10', 'gstin s20',
-    'is_active bit * =1'
+    'is_active bit * =1',
+    'password s40 | Service center login password (login = center code)', 'last_login dt'
   ]);
 
   T('app_user', 'Masters', 'user_id', 'Users / Engineers', [
     'first_name s60 *', 'last_name s60', 'username s40 * u', 'password s40 * | Demo only - store a salted hash in production',
     'phone s15', 'email s100', 'address s250',
-    'role s20 * | SUPER / HO / MANAGER / ENGINEER',
+    'role s20 * | SUPER / HO / MANAGER / ENGINEER / WAREHOUSE',
     'state_rights s250 | Comma separated state codes - data visibility',
     'district_rights s500 | Comma separated districts (optional)',
     'form_rights s250 | Comma separated menu groups', 'is_admin bit * =0',
@@ -156,7 +157,8 @@
     'receipt_date date', 'transporter s80', 'lr_no s40', 'lr_date date',
     'replacement_type s20 | Invoice / Delivery Challan / Credit Note', 'make_sales_invoice bit =0',
     'no_of_articles int', 'reason s250', 'status s20 * =Open | Open / Received / Closed / Cancelled',
-    'cn_no s30', 'cn_amount dec', 'remarks s250', 'created_by s60', 'created_on dt'
+    'cn_no s30', 'cn_amount dec', 'remarks s250', 'created_by s60', 'created_on dt',
+    'warranty_status s20 | In Warranty / Out of Warranty / Partial  (Without Serial No = Out of Warranty)'
   ]);
   T('replacement_item', 'Warranty', 'ritem_id', 'Replacement (Lines)', [
     'repl_id int * >replacement.repl_id', 'line_no int', 'category s12', 'invoice_item s120', 'received_item s120',
@@ -232,12 +234,48 @@
   ]);
   T('stock_txn', 'Stock', 'txn_id', 'Stock Ledger (Service Center / Engineer)', [
     'txn_date date *', 'spare_id int * >spare_master.spare_id',
-    'loc_type s3 * | SC = service center store, ENG = engineer van stock', 'loc_id int * | sc_id or user_id',
+    'loc_type s3 * | WH = central warehouse, SC = service center store, ENG = engineer van stock', 'loc_id int * | sc_id or user_id',
     'bucket s10 * =GOOD | GOOD / DAMAGED',
     'txn_type s20 * | Opening / Receipt / Issue-Out / Transfer-In / Consume / Return-Good / Return-Damaged / Adjust',
     'qty dec * | Signed: + adds to the location, - removes', 'ref_type s20', 'ref_no s40', 'remarks s250',
     'created_by s60', 'created_on dt', 'jitem_id int >jobcard_item.jitem_id | Job card line that consumed this stock (set automatically)'
   ], 'Balance = SUM(qty) per location, spare and bucket. Job card approval posts the Consume rows automatically.');
+
+  /* Material request -> HO approval -> delivery challan -> receipts (add-on v1.1; same definitions as app/addon.js,
+     kept here so the server loads and saves these tables in PostgreSQL) */
+  T('material_request', 'Stock', 'mr_id', 'Material Request (Service Center -> HO)', [
+    'mr_no s30 * u', 'mr_date date *', 'req_from s10 * =SC | SC = service center request to the warehouse / WAREHOUSE = warehouse indent to HO', 'sc_id int >service_center.sc_id | Requesting service center (blank for a warehouse indent)', 'purpose s40 * | Stock replenishment / Job card requirement / Replacement / Breakdown',
+    'complaint_id int >complaint.complaint_id', 'required_by date', 'priority s10 =Medium',
+    'status s20 * =Draft | Draft / Pending Approval / Approved / Partly Approved / Rejected / Partly Issued / Issued / Closed',
+    'requested_by s60', 'submitted_on dt', 'approved_by s60', 'approved_on dt', 'approval_remarks s250', 'remarks s250', 'created_on dt'
+  ], 'Service center requests are approved by HO and issued by the warehouse; warehouse indents are approved and dispatched by HO and received into warehouse stock.');
+  T('material_request_item', 'Stock', 'mritem_id', 'Material Request (Lines)', [
+    'mr_id int * >material_request.mr_id', 'line_no int', 'spare_id int * >spare_master.spare_id', 'spare_code s30', 'particulars s120',
+    'qty_req dec * | Requested by the service center', 'qty_appr dec | Approved by HO', 'qty_issued dec * =0 | Issued on delivery challans', 'remarks s150'
+  ]);
+  T('delivery_challan', 'Stock', 'dc_id', 'Delivery Challan (HO -> Service Center)', [
+    'dc_no s30 * u', 'dc_date date *', 'challan_type s20 * | Returnable / Non-Returnable (warehouse -> service center) / Stock Transfer (HO -> warehouse)', 'mr_id int >material_request.mr_id',
+    'issue_to s10 * =SC | SC / WAREHOUSE', 'sc_id int >service_center.sc_id', 'expected_return date | Returnable challans only', 'transporter s80', 'vehicle_no s20', 'lr_no s40',
+    'status s20 * =Issued | Issued / Partly Returned / Returned / In Transit / Partly Received / Received / Closed / Cancelled', 'remarks s250', 'created_by s60', 'created_on dt'
+  ], 'RDC / NRDC: warehouse -> service center (posts warehouse -> center stock). STN: HO -> warehouse (stock is posted when the warehouse books the GRN).');
+  T('delivery_challan_item', 'Stock', 'dcitem_id', 'Delivery Challan (Lines)', [
+    'dc_id int * >delivery_challan.dc_id', 'line_no int', 'mritem_id int >material_request_item.mritem_id', 'spare_id int * >spare_master.spare_id',
+    'particulars s120', 'qty dec *', 'rate dec', 'amount dec', 'qty_fresh_ret dec * =0 | Received back as fresh (unused) stock', 'qty_def_ret dec * =0 | Received back as defective', 'qty_recd dec * =0 | Stock transfer: quantity received at the warehouse'
+  ]);
+  T('wh_grn', 'Stock', 'grn_id', 'Warehouse Goods Receipt (against HO stock transfer)', [
+    'grn_no s30 * u', 'grn_date date *', 'dc_id int * >delivery_challan.dc_id', 'received_by s60', 'remarks s250', 'created_on dt'
+  ], 'Booked in the warehouse login; adds the received quantity to warehouse good stock.');
+  T('wh_grn_item', 'Stock', 'grnitem_id', 'Warehouse Goods Receipt (Lines)', [
+    'grn_id int * >wh_grn.grn_id', 'dcitem_id int * >delivery_challan_item.dcitem_id', 'spare_id int * >spare_master.spare_id', 'qty_recd dec *', 'remarks s150'
+  ]);
+  T('dc_receipt', 'Stock', 'rcv_id', 'Fresh / Defective Receipt against Returnable Challan', [
+    'rcv_no s30 * u', 'rcv_date date *', 'dc_id int * >delivery_challan.dc_id', 'sc_id int >service_center.sc_id',
+    'received_through s80 | Courier / transporter / by hand', 'remarks s250', 'created_by s60', 'created_on dt'
+  ], 'Booked in the warehouse / HO login. Fresh units go to warehouse good stock, defective units to warehouse damaged stock.');
+  T('dc_receipt_item', 'Stock', 'rcvitem_id', 'Fresh / Defective Receipt (Lines)', [
+    'rcv_id int * >dc_receipt.rcv_id', 'dcitem_id int * >delivery_challan_item.dcitem_id', 'spare_id int * >spare_master.spare_id',
+    'qty_fresh dec * =0', 'qty_defective dec * =0', 'defect_serial s60 | Serial / tag of the defective part', 'remarks s150'
+  ]);
 
   /* ------------------------------------------------------------------- SYSTEM */
   T('notification_log', 'System', 'notif_id', 'WhatsApp / SMS Log', [

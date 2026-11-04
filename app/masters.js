@@ -222,7 +222,7 @@ function userFields(engOnly) {
   var f = [{ k: 'first_name', l: 'First name', req: 1 }, { k: 'last_name', l: 'Last name' },
     { k: 'username', l: 'User name (login)', req: 1, unique: 1, hint: 'Used to sign in' }, { k: 'password', l: 'Password', req: 1, type: 'pwd', hint: 'Demo only — stored as a salted hash in production' },
     { k: 'phone', l: 'Mobile', type: 'tel', pattern: /^[6-9]\d{9}$/, patMsg: 'Enter a valid 10-digit mobile number' }, { k: 'email', l: 'E-mail', type: 'email' }];
-  if (!engOnly) f.push({ k: 'role', l: 'Role', type: 'select', req: 1, opts: ['SUPER', 'HO', 'MANAGER', 'ENGINEER'] });
+  if (!engOnly) f.push({ k: 'role', l: 'Role', type: 'select', req: 1, opts: ['SUPER', 'HO', 'MANAGER', 'ENGINEER', 'WAREHOUSE'] });
   f.push({ k: 'sc_id', l: 'Service center', type: 'select', lk: 1, opts: optsFrom('service_center', 'sc_name', function (s) { return s.is_active == 1; }), hint: 'Required for service managers and engineers' });
   f.push({ k: 'state_rights', l: 'State rights', type: 'multi', full: 1, opts: function () { return stateOpts().filter(function (s) { return ['09', '08', '23', '24', '06', '07', '05', '27', '03', '10'].indexOf(s.v) >= 0; }).concat(stateOpts().filter(function (s) { return ['09', '08', '23', '24', '06', '07', '05', '27', '03', '10'].indexOf(s.v) < 0; })); }, hint: 'Blank = all states. Data is limited to the ticked states.' });
   if (!engOnly) f.push({ k: 'form_rights', l: 'Menu rights (HO users)', type: 'multi', full: 1, opts: FORM_GROUPS, hint: 'Blank = all menus' });
@@ -263,7 +263,7 @@ defEntity({
   before: function (v) { if ((v.role === 'MANAGER' || v.role === 'ENGINEER') && !v.sc_id) return 'Select the service center for a ' + v.role.toLowerCase(); return null; },
   guard: userGuard, cols: userCols(true),
   imp: { key: 'username', cols: [{ h: 'First Name', k: 'first_name', req: 1, sample: 'Neha' }, { h: 'Last Name', k: 'last_name', sample: 'Agarwal' }, { h: 'User Name', k: 'username', req: 1, sample: 'ho.mh' }, { h: 'Password', k: 'password', sample: 'delta@2026' },
-    { h: 'Role', k: 'role', req: 1, enumv: ['SUPER', 'HO', 'MANAGER', 'ENGINEER'], upper: 1, sample: 'HO' }, { h: 'Mobile', k: 'phone', sample: '9810012345' }, { h: 'Service Center', k: 'sc_id', lk: { t: 'service_center', f: ['sc_code', 'sc_name'] }, sample: '' },
+    { h: 'Role', k: 'role', req: 1, enumv: ['SUPER', 'HO', 'MANAGER', 'ENGINEER', 'WAREHOUSE'], upper: 1, sample: 'HO' }, { h: 'Mobile', k: 'phone', sample: '9810012345' }, { h: 'Service Center', k: 'sc_id', lk: { t: 'service_center', f: ['sc_code', 'sc_name'] }, sample: '' },
     { h: 'State Rights', k: 'state_rights', sample: '27,24' }, { h: 'Menu Rights', k: 'form_rights', sample: 'Warranty,Service' }],
     check: function (o) { return (o.role === 'MANAGER' || o.role === 'ENGINEER') && !o.sc_id ? 'Service center is required for a ' + o.role.toLowerCase() : null; },
     make: function (o) { o.is_admin = o.role === 'SUPER' ? 1 : 0; o.is_active = 1; if (!o.password) o.password = 'delta@2026'; return o; } }

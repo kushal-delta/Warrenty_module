@@ -106,7 +106,9 @@ CREATE TABLE IF NOT EXISTS service_center (
     state_code VARCHAR(2),
     pincode VARCHAR(10),
     gstin VARCHAR(20),
-    is_active SMALLINT DEFAULT 1 NOT NULL
+    is_active SMALLINT DEFAULT 1 NOT NULL,
+    password VARCHAR(40),
+    last_login TIMESTAMP
 );
 
 -- Users / Engineers: HO users, service managers and field engineers. Engineers are users with role ENGINEER.
@@ -284,7 +286,8 @@ CREATE TABLE IF NOT EXISTS replacement (
     cn_amount NUMERIC(18,2),
     remarks VARCHAR(250),
     created_by VARCHAR(60),
-    created_on TIMESTAMP
+    created_on TIMESTAMP,
+    warranty_status VARCHAR(20)
 );
 
 -- Replacement (Lines)
@@ -509,6 +512,122 @@ CREATE TABLE IF NOT EXISTS stock_txn (
     created_by VARCHAR(60),
     created_on TIMESTAMP,
     jitem_id INTEGER
+);
+
+-- Material Request (Service Center -> HO): Service center requests are approved by HO and issued by the warehouse; warehouse indents are approved and dispatched by HO and received into warehouse stock.
+CREATE TABLE IF NOT EXISTS material_request (
+    mr_id SERIAL PRIMARY KEY,
+    mr_no VARCHAR(30) NOT NULL CONSTRAINT uq_material_request_mr_no UNIQUE,
+    mr_date DATE NOT NULL,
+    req_from VARCHAR(10) DEFAULT 'SC' NOT NULL,
+    sc_id INTEGER,
+    purpose VARCHAR(40) NOT NULL,
+    complaint_id INTEGER,
+    required_by DATE,
+    priority VARCHAR(10) DEFAULT 'Medium',
+    status VARCHAR(20) DEFAULT 'Draft' NOT NULL,
+    requested_by VARCHAR(60),
+    submitted_on TIMESTAMP,
+    approved_by VARCHAR(60),
+    approved_on TIMESTAMP,
+    approval_remarks VARCHAR(250),
+    remarks VARCHAR(250),
+    created_on TIMESTAMP
+);
+
+-- Material Request (Lines)
+CREATE TABLE IF NOT EXISTS material_request_item (
+    mritem_id SERIAL PRIMARY KEY,
+    mr_id INTEGER NOT NULL,
+    line_no INTEGER,
+    spare_id INTEGER NOT NULL,
+    spare_code VARCHAR(30),
+    particulars VARCHAR(120),
+    qty_req NUMERIC(18,2) NOT NULL,
+    qty_appr NUMERIC(18,2),
+    qty_issued NUMERIC(18,2) DEFAULT 0 NOT NULL,
+    remarks VARCHAR(150)
+);
+
+-- Delivery Challan (HO -> Service Center): RDC / NRDC: warehouse -> service center (posts warehouse -> center stock). STN: HO -> warehouse (stock is posted when the warehouse books the GRN).
+CREATE TABLE IF NOT EXISTS delivery_challan (
+    dc_id SERIAL PRIMARY KEY,
+    dc_no VARCHAR(30) NOT NULL CONSTRAINT uq_delivery_challan_dc_no UNIQUE,
+    dc_date DATE NOT NULL,
+    challan_type VARCHAR(20) NOT NULL,
+    mr_id INTEGER,
+    issue_to VARCHAR(10) DEFAULT 'SC' NOT NULL,
+    sc_id INTEGER,
+    expected_return DATE,
+    transporter VARCHAR(80),
+    vehicle_no VARCHAR(20),
+    lr_no VARCHAR(40),
+    status VARCHAR(20) DEFAULT 'Issued' NOT NULL,
+    remarks VARCHAR(250),
+    created_by VARCHAR(60),
+    created_on TIMESTAMP
+);
+
+-- Delivery Challan (Lines)
+CREATE TABLE IF NOT EXISTS delivery_challan_item (
+    dcitem_id SERIAL PRIMARY KEY,
+    dc_id INTEGER NOT NULL,
+    line_no INTEGER,
+    mritem_id INTEGER,
+    spare_id INTEGER NOT NULL,
+    particulars VARCHAR(120),
+    qty NUMERIC(18,2) NOT NULL,
+    rate NUMERIC(18,2),
+    amount NUMERIC(18,2),
+    qty_fresh_ret NUMERIC(18,2) DEFAULT 0 NOT NULL,
+    qty_def_ret NUMERIC(18,2) DEFAULT 0 NOT NULL,
+    qty_recd NUMERIC(18,2) DEFAULT 0 NOT NULL
+);
+
+-- Warehouse Goods Receipt (against HO stock transfer): Booked in the warehouse login; adds the received quantity to warehouse good stock.
+CREATE TABLE IF NOT EXISTS wh_grn (
+    grn_id SERIAL PRIMARY KEY,
+    grn_no VARCHAR(30) NOT NULL CONSTRAINT uq_wh_grn_grn_no UNIQUE,
+    grn_date DATE NOT NULL,
+    dc_id INTEGER NOT NULL,
+    received_by VARCHAR(60),
+    remarks VARCHAR(250),
+    created_on TIMESTAMP
+);
+
+-- Warehouse Goods Receipt (Lines)
+CREATE TABLE IF NOT EXISTS wh_grn_item (
+    grnitem_id SERIAL PRIMARY KEY,
+    grn_id INTEGER NOT NULL,
+    dcitem_id INTEGER NOT NULL,
+    spare_id INTEGER NOT NULL,
+    qty_recd NUMERIC(18,2) NOT NULL,
+    remarks VARCHAR(150)
+);
+
+-- Fresh / Defective Receipt against Returnable Challan: Booked in the warehouse / HO login. Fresh units go to warehouse good stock, defective units to warehouse damaged stock.
+CREATE TABLE IF NOT EXISTS dc_receipt (
+    rcv_id SERIAL PRIMARY KEY,
+    rcv_no VARCHAR(30) NOT NULL CONSTRAINT uq_dc_receipt_rcv_no UNIQUE,
+    rcv_date DATE NOT NULL,
+    dc_id INTEGER NOT NULL,
+    sc_id INTEGER,
+    received_through VARCHAR(80),
+    remarks VARCHAR(250),
+    created_by VARCHAR(60),
+    created_on TIMESTAMP
+);
+
+-- Fresh / Defective Receipt (Lines)
+CREATE TABLE IF NOT EXISTS dc_receipt_item (
+    rcvitem_id SERIAL PRIMARY KEY,
+    rcv_id INTEGER NOT NULL,
+    dcitem_id INTEGER NOT NULL,
+    spare_id INTEGER NOT NULL,
+    qty_fresh NUMERIC(18,2) DEFAULT 0 NOT NULL,
+    qty_defective NUMERIC(18,2) DEFAULT 0 NOT NULL,
+    defect_serial VARCHAR(60),
+    remarks VARCHAR(150)
 );
 
 -- ------------------------------------------------------------------ SYSTEM
@@ -828,6 +947,114 @@ END $$;
 DO $$ BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_stock_txn_jitem_id') THEN
     ALTER TABLE stock_txn ADD CONSTRAINT fk_stock_txn_jitem_id FOREIGN KEY (jitem_id) REFERENCES jobcard_item(jitem_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_material_request_sc_id') THEN
+    ALTER TABLE material_request ADD CONSTRAINT fk_material_request_sc_id FOREIGN KEY (sc_id) REFERENCES service_center(sc_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_material_request_complaint_id') THEN
+    ALTER TABLE material_request ADD CONSTRAINT fk_material_request_complaint_id FOREIGN KEY (complaint_id) REFERENCES complaint(complaint_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_material_request_item_mr_id') THEN
+    ALTER TABLE material_request_item ADD CONSTRAINT fk_material_request_item_mr_id FOREIGN KEY (mr_id) REFERENCES material_request(mr_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_material_request_item_spare_id') THEN
+    ALTER TABLE material_request_item ADD CONSTRAINT fk_material_request_item_spare_id FOREIGN KEY (spare_id) REFERENCES spare_master(spare_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_delivery_challan_mr_id') THEN
+    ALTER TABLE delivery_challan ADD CONSTRAINT fk_delivery_challan_mr_id FOREIGN KEY (mr_id) REFERENCES material_request(mr_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_delivery_challan_sc_id') THEN
+    ALTER TABLE delivery_challan ADD CONSTRAINT fk_delivery_challan_sc_id FOREIGN KEY (sc_id) REFERENCES service_center(sc_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_delivery_challan_item_dc_id') THEN
+    ALTER TABLE delivery_challan_item ADD CONSTRAINT fk_delivery_challan_item_dc_id FOREIGN KEY (dc_id) REFERENCES delivery_challan(dc_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_delivery_challan_item_mritem_id') THEN
+    ALTER TABLE delivery_challan_item ADD CONSTRAINT fk_delivery_challan_item_mritem_id FOREIGN KEY (mritem_id) REFERENCES material_request_item(mritem_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_delivery_challan_item_spare_id') THEN
+    ALTER TABLE delivery_challan_item ADD CONSTRAINT fk_delivery_challan_item_spare_id FOREIGN KEY (spare_id) REFERENCES spare_master(spare_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_wh_grn_dc_id') THEN
+    ALTER TABLE wh_grn ADD CONSTRAINT fk_wh_grn_dc_id FOREIGN KEY (dc_id) REFERENCES delivery_challan(dc_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_wh_grn_item_grn_id') THEN
+    ALTER TABLE wh_grn_item ADD CONSTRAINT fk_wh_grn_item_grn_id FOREIGN KEY (grn_id) REFERENCES wh_grn(grn_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_wh_grn_item_dcitem_id') THEN
+    ALTER TABLE wh_grn_item ADD CONSTRAINT fk_wh_grn_item_dcitem_id FOREIGN KEY (dcitem_id) REFERENCES delivery_challan_item(dcitem_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_wh_grn_item_spare_id') THEN
+    ALTER TABLE wh_grn_item ADD CONSTRAINT fk_wh_grn_item_spare_id FOREIGN KEY (spare_id) REFERENCES spare_master(spare_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_dc_receipt_dc_id') THEN
+    ALTER TABLE dc_receipt ADD CONSTRAINT fk_dc_receipt_dc_id FOREIGN KEY (dc_id) REFERENCES delivery_challan(dc_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_dc_receipt_sc_id') THEN
+    ALTER TABLE dc_receipt ADD CONSTRAINT fk_dc_receipt_sc_id FOREIGN KEY (sc_id) REFERENCES service_center(sc_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_dc_receipt_item_rcv_id') THEN
+    ALTER TABLE dc_receipt_item ADD CONSTRAINT fk_dc_receipt_item_rcv_id FOREIGN KEY (rcv_id) REFERENCES dc_receipt(rcv_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_dc_receipt_item_dcitem_id') THEN
+    ALTER TABLE dc_receipt_item ADD CONSTRAINT fk_dc_receipt_item_dcitem_id FOREIGN KEY (dcitem_id) REFERENCES delivery_challan_item(dcitem_id) ON UPDATE CASCADE ON DELETE RESTRICT;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_dc_receipt_item_spare_id') THEN
+    ALTER TABLE dc_receipt_item ADD CONSTRAINT fk_dc_receipt_item_spare_id FOREIGN KEY (spare_id) REFERENCES spare_master(spare_id) ON UPDATE CASCADE ON DELETE RESTRICT;
   END IF;
 END $$;
 

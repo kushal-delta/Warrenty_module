@@ -9,6 +9,8 @@ node_modules/
 
 # Vercel deployment artifacts
 .vercel/
+.next/
+.next-dev/
 
 # Temporary and backup data files
 *.tmp

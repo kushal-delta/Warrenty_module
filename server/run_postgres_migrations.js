@@ -32,6 +32,15 @@ async function runMigration() {
     await client.query(sql);
     console.log('Successfully executed PostgreSQL schema script!');
 
+    // Upgrade scripts for an existing database (new columns etc.), in file-name order: 03_..._postgres.sql, 04_...
+    const upgrades = fs.readdirSync(path.join(__dirname, '../database'))
+      .filter(f => /^\d+_.*_postgres\.sql$/.test(f) && f !== '01_create_tables_postgres.sql')
+      .sort();
+    for (const f of upgrades) {
+      console.log(`Applying upgrade database/${f}...`);
+      await client.query(fs.readFileSync(path.join(__dirname, '../database', f), 'utf8'));
+    }
+
     const tablesRes = await client.query(`
       SELECT table_name 
       FROM information_schema.tables 

@@ -3,7 +3,7 @@
    ============================================================ */
 'use strict';
 
-var APP = { name: 'Delta iERP', sub: 'Warranty & Service', ver: '1.0.0', build: '20261031', vendor: 'Delta Infosoft Pvt. Ltd.', user: null, login: null };
+var APP = { name: 'Delta iERP', sub: 'Warranty & Service', ver: '1.1.0', build: '20261104', vendor: 'Delta Infosoft Pvt. Ltd.', user: null, login: null };
 var ROUTES = {};
 var ALL = ['SUPER', 'HO', 'MANAGER', 'ENGINEER', 'DEALER', 'CUSTOMER'];
 var STAFF = ['SUPER', 'HO', 'MANAGER'];
@@ -137,11 +137,11 @@ function paintLogin() {
   var f = $('#loginForm'), h = '';
   if (LOGIN.tab === 'ho') {
     var chips = [];
-    ['SUPER', 'HO', 'MANAGER', 'ENGINEER'].forEach(function (r) {
+    ['SUPER', 'HO', 'MANAGER', 'ENGINEER', 'WAREHOUSE'].forEach(function (r) {
       var u = DB.find('app_user', function (x) { return x.role === r && x.is_active == 1 && (r !== 'HO' || x.state_rights); }) || DB.find('app_user', function (x) { return x.role === r && x.is_active == 1; });
-      if (u) chips.push('<span class="chip" data-u="' + esc(u.username) + '" data-p="' + esc(u.password) + '">' + ({ SUPER: 'Super Admin', HO: 'HO User (UP rights)', MANAGER: 'Service Manager', ENGINEER: 'Service Engineer' })[r] + '</span>');
+      if (u) chips.push('<span class="chip" data-u="' + esc(u.username) + '" data-p="' + esc(u.password) + '">' + ({ SUPER: 'Super Admin', HO: 'HO User (UP rights)', MANAGER: 'Service Manager', ENGINEER: 'Service Engineer', WAREHOUSE: 'Warehouse / Store' })[r] + '</span>');
     });
-    h = '<h2>Sign in</h2><div class="sub">Head office, service managers and engineers</div>' +
+    h = '<h2>Sign in</h2><div class="sub">Head office, warehouse, service managers and engineers</div>' +
       '<label>User name</label><input id="lgU" type="text" value="admin" autocomplete="off">' +
       '<label>Password</label><input id="lgP" type="password" value="delta@2026">' +
       '<button class="btn-login" id="lgGo">Sign in</button>' +

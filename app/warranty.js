@@ -802,7 +802,7 @@ function replaceInWarranty(o) {
   var days = daysBetween(today(), ow.end_date), cust = DB.get('customer', ow.customer_id), oldM = DB.get('product_model', ow.model_id);
   var rep = DB.add('replacement', {
     repl_no: DB.nextNo('REPL', 'REP/{n}/{fy}'), repl_date: today(), source: o.source || 'Dealer', complaint_id: o.complaintId || null, dealer_id: o.dealerId || ow.dealer_id || null,
-    voucher_type: 'With Serial No', dealer_invoice_no: null, receipt_date: today(), replacement_type: o.type || 'Invoice', make_sales_invoice: 0, no_of_articles: 1,
+    voucher_type: 'With Serial No', warranty_status: 'In Warranty', dealer_invoice_no: null, receipt_date: today(), replacement_type: o.type || 'Invoice', make_sales_invoice: 0, no_of_articles: 1,
     reason: o.reason || null, status: 'Closed', created_by: myName(), created_on: nowIso()
   }, true);
   var it = DB.add('replacement_item', {

@@ -43,10 +43,10 @@ ROUTES['k/stock'] = function () {
       mountGrid('#stkGrid', {
         title: 'Stock_availability', rows: rows, sortI: 0, sortD: 'asc', pageSize: 50, searchPlaceholder: 'Search spare, location…',
         search: function (r) { return [r.spare.spare_name, r.spare.spare_code, locName(r.loc_type, r.loc_id)].join(' '); },
-        filters: [{ label: 'Location type', get: function (r) { return r.loc_type === 'SC' ? 'Service center store' : 'Engineer'; } }, { label: 'Location', get: function (r) { return locName(r.loc_type, r.loc_id); } },
+        filters: [{ label: 'Location type', get: function (r) { return r.loc_type === 'SC' ? 'Service center store' : r.loc_type === 'WH' ? 'Warehouse' : 'Engineer'; } }, { label: 'Location', get: function (r) { return locName(r.loc_type, r.loc_id); } },
           { label: 'Category', get: function (r) { return r.spare.category; } }, { label: 'Level', get: function (r) { return r.good <= 0 ? 'Out of stock' : r.good <= (r.spare.min_stock || 0) ? 'Low' : 'OK'; }, opts: ['OK', 'Low', 'Out of stock'] }],
         cols: [
-          { h: 'Location', val: function (r) { return locName(r.loc_type, r.loc_id); }, cell: function (r) { return (r.loc_type === 'SC' ? tag('Store', 'pur') : tag('Engineer', 'info')) + ' ' + esc(locName(r.loc_type, r.loc_id)); } },
+          { h: 'Location', val: function (r) { return locName(r.loc_type, r.loc_id); }, cell: function (r) { return (r.loc_type === 'SC' ? tag('Store', 'pur') : r.loc_type === 'WH' ? tag('Warehouse', 'acc') : tag('Engineer', 'info')) + ' ' + esc(locName(r.loc_type, r.loc_id)); } },
           { h: 'Spare code', val: function (r) { return r.spare.spare_code; }, cls: 'mono' }, { h: 'Spare', val: function (r) { return r.spare.spare_name; } },
           { h: 'Category', val: function (r) { return r.spare.category; }, cell: function (r) { return catTag(r.spare.category); } },
           { h: 'Good', val: function (r) { return r.good; }, cls: 'n', cell: function (r) { return '<b' + (r.good < 0 ? ' style="color:var(--dang)"' : '') + '>' + r.good + '</b>'; } },
@@ -109,7 +109,7 @@ defEntity({
   cols: [
     { h: 'Date', val: function (t) { return t.txn_date + String(t.txn_id).padStart(6, '0'); }, cell: function (t) { return dmy(t.txn_date); } },
     { h: 'Spare', val: function (t) { return nameOf('spare_master', t.spare_id, 'spare_name'); }, cell: function (t) { return '<b>' + esc(nameOf('spare_master', t.spare_id, 'spare_name')) + '</b> <span class="hint">' + esc(nameOf('spare_master', t.spare_id, 'spare_code')) + '</span>'; } },
-    { h: 'Location', val: function (t) { return locName(t.loc_type, t.loc_id); }, cell: function (t) { return (t.loc_type === 'SC' ? tag('Store', 'pur') : tag('Engineer', 'info')) + ' ' + esc(locName(t.loc_type, t.loc_id)); } },
+    { h: 'Location', val: function (t) { return locName(t.loc_type, t.loc_id); }, cell: function (t) { return (t.loc_type === 'SC' ? tag('Store', 'pur') : t.loc_type === 'WH' ? tag('Warehouse', 'acc') : tag('Engineer', 'info')) + ' ' + esc(locName(t.loc_type, t.loc_id)); } },
     { h: 'Bucket', val: function (t) { return t.bucket; }, cell: function (t) { return t.bucket === 'GOOD' ? tag('Good', 'ok') : tag('Damaged', 'dang'); } },
     { h: 'Type', val: function (t) { return t.txn_type; } },
     { h: 'Qty', val: function (t) { return t.qty; }, cls: 'n', cell: function (t) { return '<b style="color:var(--' + (t.qty < 0 ? 'dang' : 'ok') + ')">' + (t.qty > 0 ? '+' : '') + t.qty + '</b>'; } },
@@ -300,20 +300,21 @@ function replForm(row, pre) {
     '<div class="f"><label>Status</label><select id="rf_status">' + ['Open', 'Received', 'Closed', 'Cancelled'].map(function (s) { return '<option' + (d.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>' +
     '<div class="f"><label>Service call</label><select id="rf_call"><option value="">— none —</option>' + calls.map(function (x) { return '<option value="' + x.complaint_id + '"' + (c && c.complaint_id === x.complaint_id ? ' selected' : '') + '>' + esc(x.complaint_no + ' — ' + x.customer_name) + '</option>'; }).join('') + '</select></div>' +
     '<div class="f"><label>Dealer</label><select id="rf_dealer"><option value="">— none —</option>' + DB.all('dealer').filter(function (x) { return x.status === 'Approved'; }).map(function (x) { return '<option value="' + x.dealer_id + '"' + (d.dealer_id == x.dealer_id ? ' selected' : '') + '>' + esc(x.firm_name) + '</option>'; }).join('') + '</select></div>' +
-    '<div class="f"><label>Voucher type</label><select id="rf_vt"><option' + (d.voucher_type === 'With Serial No' ? ' selected' : '') + '>With Serial No</option><option' + (d.voucher_type === 'Without Serial No' ? ' selected' : '') + '>Without Serial No</option></select></div>' +
+    '<div class="f"><label>Voucher type <span class="rq">*</span></label><select id="rf_vt"><option' + (d.voucher_type === 'With Serial No' ? ' selected' : '') + '>With Serial No</option><option' + (d.voucher_type === 'Without Serial No' ? ' selected' : '') + '>Without Serial No</option></select></div>' +
     '<div class="f"><label>Dealer invoice no</label><input id="rf_inv" value="' + esc(d.dealer_invoice_no || '') + '"></div><div class="f"><label>Dealer invoice date</label><input id="rf_invd" type="date" value="' + esc(d.dealer_invoice_date || '') + '"></div>' +
     '<div class="f"><label>Receipt date</label><input id="rf_recd" type="date" value="' + esc(d.receipt_date || '') + '"></div>' +
     '<div class="f"><label>Transporter</label><input id="rf_tr" value="' + esc(d.transporter || '') + '"></div><div class="f"><label>LR no</label><input id="rf_lr" value="' + esc(d.lr_no || '') + '"></div><div class="f"><label>LR date</label><input id="rf_lrd" type="date" value="' + esc(d.lr_date || '') + '"></div>' +
     '<div class="f"><label>Replacement type</label><select id="rf_type">' + REPL_TYPES.map(function (s) { return '<option' + (d.replacement_type === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') + '</select></div>' +
     '<div class="f chk"><label class="cb"><input type="checkbox" id="rf_inv_chk"' + (d.make_sales_invoice == 1 ? ' checked' : '') + '> Make sales invoice</label></div>' +
     '<div class="f"><label>Credit note no</label><input id="rf_cn" value="' + esc(d.cn_no || '') + '"></div><div class="f"><label>Credit note amount ₹</label><input id="rf_cna" type="number" step="any" value="' + esc(d.cn_amount == null ? '' : d.cn_amount) + '"><div class="hint">Blank = total of net values when type is Credit Note</div></div>' +
-    '<div class="f full"><label>Reason</label><input id="rf_reason" value="' + esc(d.reason || '') + '"></div></div>' +
+    '<div class="f"><label>Warranty status</label><input id="rf_ws" readonly></div>' +
+    '<div class="f full"><label>Reason</label><input id="rf_reason" value="' + esc(d.reason || '') + '"></div></div><div id="rf_wsbox"></div>' +
     '<div class="sec-h">2 · Pumps / components <span class="sm2">old (faulty) serial → new serial. In-warranty balance moves to the new serial automatically.</span></div><div id="rf_lines"></div>' +
-    '<button class="btn sm" style="margin-top:6px" onclick="rpAdd()">' + ICO.plus + ' Add line</button>';
+    '<button class="btn sm" style="margin-top:6px" onclick="rpAdd()">' + ICO.plus + ' Add line</button>' + rpPdfBlock(row);
   modal(isEdit ? 'Edit replacement — ' + esc(row.repl_no) : 'New replacement / return pump', body,
     '<button class="btn" onclick="closeModal()">Cancel</button>' + (isEdit ? '<button class="btn dang-o" onclick="closeModal();deleteEntity(\'servrepl\',DB.get(\'replacement\',' + row.repl_id + '))">' + ICO.trash + ' Delete</button>' : '') + '<button class="btn pri" onclick="rpSave()">' + ICO.save + ' ' + (isEdit ? 'Update' : 'Save replacement') + '</button>', 'wide sticky');
   $('#rf_call').addEventListener('change', function () { var cc = DB.get('complaint', this.value); if (cc && cc.dealer_id) $('#rf_dealer').value = cc.dealer_id; if (cc) $('#rf_src').value = 'Service'; });
-  rpPaint();
+  $('#rf_vt').addEventListener('change', rpVtChanged); rpVtChanged();
 }
 function rpAdd() { RP.lines.push({ cat: 'PUMP', old: '', nw: '', qty: 1, val: 0, loc: 'Greater Noida HO', chg: 0, done: false }); rpPaint(); }
 function rpPaint() {
@@ -333,6 +334,7 @@ function rpPaint() {
 function rpCheck(i) {
   var l = RP.lines[i], box = document.getElementById('rpchk' + i); if (!box) return;
   if (l.done) { box.innerHTML = '<span class="tag ok">Warranty transferred</span>' + (l.days != null ? ' <span class="hint">' + l.days + ' d carried</span>' : ''); return; }
+  if ($('#rf_vt') && $('#rf_vt').value === 'Without Serial No') { l.canTransfer = false; box.innerHTML = '<span class="tag dang">Out of warranty</span><div class="hint">Without serial no. — no warranty transfer</div>'; return; }
   var m = '', ow = l.old ? wBySerial(l.old) : null, ns = l.nw ? serialCheck(l.nw) : null, ok = true;
   if (l.old) {
     if (!stickerBySerial(l.old)) { m += '<div style="color:var(--dang)">✗ old serial not in register</div>'; ok = false; }
@@ -353,6 +355,8 @@ function rpSave() {
   /* "Without Serial No" vouchers carry quantity + value only, so lines with no serial are valid there */
   var lines = RP.lines.filter(function (l) { return vwt ? (l.old || l.nw) : true; });
   if (!lines.length) return toast('Add at least one pump / component line', 'err');
+  if (!vwt) lines.forEach(function (l) { if (!l.done) l.canTransfer = false; });
+  if (!rpPdfCount(row)) return toast('Attach at least one PDF document — it is mandatory for a replacement entry', 'err');
   for (var i = 0; i < lines.length; i++) {
     var l = lines[i]; if (!(+l.qty >= 1)) return toast('Line ' + (i + 1) + ': quantity must be at least 1', 'err');
     if (vwt && (!l.old || !l.nw)) return toast('Line ' + (i + 1) + ': both serial numbers are required for “With Serial No”', 'err');
@@ -364,6 +368,7 @@ function rpSave() {
   }
   var typ = g('rf_type'), total = sum(lines, function (l) { return +l.val || 0; });
   var h = { repl_date: g('rf_date'), source: g('rf_src'), complaint_id: g('rf_call') ? +g('rf_call') : null, dealer_id: g('rf_dealer') ? +g('rf_dealer') : null, voucher_type: g('rf_vt'), dealer_invoice_no: g('rf_inv') || null, dealer_invoice_date: g('rf_invd') || null, receipt_date: g('rf_recd') || null, transporter: g('rf_tr') || null, lr_no: g('rf_lr') || null, lr_date: g('rf_lrd') || null, replacement_type: typ, make_sales_invoice: $('#rf_inv_chk').checked ? 1 : 0, no_of_articles: lines.length, reason: g('rf_reason') || null, status: g('rf_status'), cn_no: g('rf_cn') || null, cn_amount: g('rf_cna') !== '' ? +g('rf_cna') : (typ === 'Credit Note' ? total : null) };
+  h.warranty_status = rpWs(lines, vwt);
   var rep;
   if (row) { DB.upd('replacement', row.repl_id, h); rep = row; }
   else { h.repl_no = DB.nextNo('REPL', 'REP/{n}/{fy}'); h.created_by = myName(); rep = DB.add('replacement', h); }
@@ -379,7 +384,8 @@ function rpSave() {
   });
   if (lines.every(function (l) { return l.done; }) && !row && rep.status === 'Open') rep.status = 'Closed';
   if (moved) { var cu = lines.filter(function (l) { return l.done; })[0], w0 = cu && wBySerial(cu.nw); if (w0) { var cust = DB.get('customer', w0.customer_id); if (cust) notify({ channel: 'WhatsApp', to: cust.mobile, tpl: 'REPLACEMENT', msg: MSG.replacement(rep, DB.find('replacement_item', function (x) { return x.repl_id === rep.repl_id && x.new_serial_no === cu.nw; })), refType: 'replacement', refNo: rep.repl_no }); } }
-  DB.log(row ? 'Modified' : 'Created', 'replacement', rep.repl_no, moved + ' warranty transfer(s)');
+  rpSavePdfs(rep);
+  DB.log(row ? 'Modified' : 'Created', 'replacement', rep.repl_no, moved + ' warranty transfer(s)' + (h.warranty_status === 'Out of Warranty' ? ' · out of warranty' : ''));
   DB.save(); closeModal(); route(true); toast('Replacement ' + rep.repl_no + ' saved' + (moved ? ' — balance warranty moved to ' + moved + ' new serial(s)' : '') + (errs.length ? ' · not transferred: ' + errs[0] : ''), errs.length ? 'err' : 'ok');
 }
 
