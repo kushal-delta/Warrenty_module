@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { randomUUID } from "crypto";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 import { InputError, fail, handleApiError, inTransaction, nextDocNo, requireUser, runQuery, text } from "@/lib/services/apiHelpers";
-import { CHALLAN_TYPES, TRANSPORT_MODES, challanScope, erpLocs, loadChallan, resolveChallanItems } from "@/lib/services/challans";
+import { CHALLAN_TYPES, TRANSPORT_MODES, challanHasReceipts, challanScope, erpLocs, loadChallan, resolveChallanItems } from "@/lib/services/challans";
 import { OUT_OF_SCOPE } from "@/lib/auth/scope";
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
       DispatchLocName: null as string | null,
       ExpectedBackBy: body.ExpectedBackBy ? String(body.ExpectedBackBy) : null,
       PartyKind: text(body.PartyKind, 120),
+      WarehouseId: body.WarehouseId || null,
       ServiceCenterId: body.ServiceCenterId || null,
       MaterialRequestId: body.MaterialRequestId || null,
       TransporterName: text(body.TransporterName, 150),
@@ -46,7 +47,7 @@ export async function POST(request: NextRequest) {
       if (!v.ExpectedBackBy || !DATE.test(v.ExpectedBackBy)) throw new InputError("Expected back by is required for a returnable challan");
       if (v.ExpectedBackBy < v.ChallanDate) throw new InputError("Expected back by cannot be before the challan date");
     } else v.ExpectedBackBy = null;
-    if (!v.ServiceCenterId) throw new InputError("Select the job worker");
+    if (!v.WarehouseId) throw new InputError("Select the job worker (warehouse)");
     if (v.TransportMode && !TRANSPORT_MODES.includes(v.TransportMode)) throw new InputError("Select the mode of transport");
 
     const loc = (await erpLocs()).find((l) => String(l.LocId).toLowerCase() === String(v.DispatchLocId).toLowerCase());
@@ -74,7 +75,8 @@ export async function POST(request: NextRequest) {
     const values: Record<string, unknown> = {};
     const scope = challanScope(user, "d", values);
     const saved = await inTransaction(async (run) => {
-      if (!(await run(`SELECT TOP 1 1 AS [x] FROM dbo.[ServiceCenters] WHERE [ServiceCenterId] = @id`, { id: v.ServiceCenterId })).length) throw new InputError("Selected job worker was not found");
+      if (!(await run(`SELECT TOP 1 1 AS [x] FROM dbo.[Warehouses] WHERE [WarehouseId] = @id`, { id: v.WarehouseId })).length) throw new InputError("Selected warehouse was not found");
+      if (v.ServiceCenterId && !(await run(`SELECT TOP 1 1 AS [x] FROM dbo.[ServiceCenters] WHERE [ServiceCenterId] = @id`, { id: v.ServiceCenterId })).length) v.ServiceCenterId = null;
       if (v.MaterialRequestId) {
         const req = (await run<any>(`SELECT [Status] FROM dbo.[MaterialRequests] WITH (UPDLOCK) WHERE [MaterialRequestId] = @id`, { id: v.MaterialRequestId }))[0];
         if (!req) throw new InputError("Material request not found");
@@ -87,6 +89,7 @@ export async function POST(request: NextRequest) {
         if (!current) throw new InputError("Delivery challan not found");
         if (scope && !(await run(`SELECT TOP 1 1 AS [ok] FROM dbo.[DeliveryChallans] d WHERE d.[DeliveryChallanId] = @id AND ${scope}`, { ...values, id })).length) throw new InputError(OUT_OF_SCOPE);
         if (current.Status !== "Dispatched") throw new InputError(`A challan that is ${String(current.Status).toLowerCase()} cannot be edited`);
+        if (await challanHasReceipts(run, id)) throw new InputError("Goods have already been received against this challan — it can no longer be edited");
         challanNo = current.ChallanNo;
         const keys = Object.keys(v) as (keyof typeof v)[];
         await run(`UPDATE dbo.[DeliveryChallans] SET ${keys.map((k) => `[${k}] = @${k}`).join(", ")}, [LastUpdatedOn] = SYSUTCDATETIME(), [LastUpdatedByUserId] = @userId WHERE [DeliveryChallanId] = @id`, { ...v, userId: user.UserId, id });

@@ -9,7 +9,7 @@
  * `roles` is only the suggested starting selection when an admin picks a role for a user
  * (Dealer / Customer suggestions follow the prototype's dealer and customer portal menus).
  */
-export type RoleCode = "SUPER" | "HO" | "MANAGER" | "ENGINEER" | "SERVICE_CENTER" | "DEALER" | "CUSTOMER";
+export type RoleCode = "SUPER" | "HO" | "MANAGER" | "ENGINEER" | "SERVICE_CENTER" | "WAREHOUSE" | "DEALER" | "CUSTOMER";
 
 const ALL_STAFF: RoleCode[] = ["SUPER", "HO", "MANAGER", "ENGINEER"];
 const STAFF: RoleCode[] = ["SUPER", "HO", "MANAGER"];
@@ -17,6 +17,7 @@ const HO: RoleCode[] = ["SUPER", "HO"];
 const DEALER: RoleCode[] = ["DEALER"];
 const CUSTOMER: RoleCode[] = ["CUSTOMER"];
 const CENTER: RoleCode[] = ["SERVICE_CENTER"];
+const WAREHOUSE: RoleCode[] = ["WAREHOUSE"];
 
 export interface FormDef { key: string; label: string; path: string; roles: RoleCode[]; /** Menu wording for portal / engineer roles (prototype dealer, customer and engineer menus). */ labels?: Partial<Record<RoleCode, string>> }
 export interface FormGroup { key: string; label: string; forms: FormDef[] }
@@ -57,13 +58,19 @@ export const FORM_GROUPS: FormGroup[] = [
       { key: "stock.requests", label: "Material Request", path: "/stock/material-requests", roles: [...STAFF, ...CENTER] },
       { key: "stock.request-approvals", label: "Material Approvals", path: "/stock/material-approvals", roles: HO },
       { key: "stock.challans", label: "Delivery Challan", path: "/stock/challans", roles: HO },
+      { key: "stock.grn", label: "Goods Receipt (GRN)", path: "/stock/grn", roles: [...HO, ...WAREHOUSE] },
+      { key: "stock.dcreturn", label: "Defective / Fresh Receipt", path: "/stock/dcreturn", roles: HO },
+      { key: "stock.issue", label: "Material Issue", path: "/stock/material-issues", roles: [...HO, ...WAREHOUSE] },
+      { key: "stock.material-reports", label: "Material & Challan Reports", path: "/stock/material-reports", roles: STAFF },
+      { key: "stock.warehouse-stock", label: "Warehouse Stock", path: "/stock/warehouse-stock", roles: [...HO, ...WAREHOUSE] },
+      { key: "stock.returnable", label: "Pending Returnable", path: "/stock/returnable-pending", roles: HO },
     ],
   },
   {
     key: "Masters", label: "Configuration", forms: [
       { key: "masters.company", label: "Company Profile", path: "/masters/company", roles: HO },
       { key: "masters.users", label: "User Management", path: "/admin/users", roles: HO },
-      { key: "masters.service-centers", label: "Service Centers", path: "/masters/service-centers", roles: HO },
+      { key: "masters.service-centers", label: "Service Centers / Warehouses", path: "/masters/service-centers", roles: HO },
       { key: "masters.service-engineers", label: "Service Engineers", path: "/masters/service-engineers", roles: HO },
       { key: "masters.spares", label: "Spares & Rates", path: "/masters/config/spares", roles: HO },
       { key: "masters.labour", label: "Labour / Service Charges", path: "/masters/config/labour", roles: HO },
@@ -109,6 +116,8 @@ const SUGGESTED: Partial<Record<RoleCode, string[]>> = {
   ENGINEER: ["warranty.search", "service.complaints", "service.visits", "service.jobcards", "stock.availability"],
   /** Service centre login: Service Calls · Job Cards (Estimate) · Serial Verification. */
   SERVICE_CENTER: ["service.complaints", "service.jobcards", "warranty.verify"],
+  /** Warehouse login: Serial No. Search · Material Request · Delivery Challan · Goods Receipt · Defective / Fresh Receipt · Material Issue · Material & Challan Reports · Warehouse Stock. */
+  WAREHOUSE: ["warranty.search", "stock.requests", "stock.challans", "stock.grn", "stock.dcreturn", "stock.issue", "stock.material-reports", "stock.warehouse-stock"],
 };
 
 /** Screens suggested for a role when an admin first sets up a user (they can then tick / untick freely). */
@@ -134,7 +143,7 @@ const API_RULES: [string, string[]][] = [
   ["/api/masters/company/get", [ANY]], ["/api/masters/company", ["masters.company"]],
   ["/api/masters/product-models/get", [ANY]], ["/api/masters/product-models", ["masters.company"]],
   ["/api/admin/users/get", ["masters.users", "masters.approval-rules"]], ["/api/admin/users", ["masters.users"]],
-  ["/api/masters/service-centers", ["masters.service-centers", "masters.service-engineers"]], ["/api/masters/service-engineers", ["masters.service-engineers"]],
+  ["/api/masters/service-centers", ["masters.service-centers", "masters.service-engineers"]], ["/api/masters/warehouses", ["masters.service-centers"]], ["/api/masters/service-engineers", ["masters.service-engineers"]],
   ["/api/warranty/stickers/get", ["warranty.serials", "warranty.register", "warranty.verify"]], ["/api/warranty/stickers", ["warranty.serials"]],
   ["/api/warranty/installations", ["warranty.register"]],
   ["/api/warranty/warranties/verify", ["warranty.verify", "warranty.search", "warranty.register", "service.complaints", "service.replacements"]],
@@ -161,6 +170,12 @@ const API_RULES: [string, string[]][] = [
   ["/api/stock/material-requests/get", ["stock.requests", "stock.request-approvals"]],
   ["/api/stock/material-requests", ["stock.requests"]],
   ["/api/stock/challans", ["stock.challans"]],
+  ["/api/stock/grn", ["stock.grn"]],
+  ["/api/stock/dcreturn", ["stock.dcreturn"]],
+  ["/api/stock/material-issues", ["stock.issue"]],
+  ["/api/stock/material-reports", ["stock.material-reports"]],
+  ["/api/stock/warehouse-stock", ["stock.warehouse-stock"]],
+  ["/api/stock/returnable-pending", ["stock.returnable"]],
   ["/api/masters/text-lists", ["masters.text-lists"]],
   ["/api/system", ["system.activity"]],
 ];

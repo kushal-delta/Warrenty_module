@@ -235,7 +235,6 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
   const save = async (submit: boolean) => {
     try {
       const values = await form.validateFields();
-      if (!lines.length) { message.error("Add at least one spare or labour line"); return; }
       const keptPhotos = existingPhotos.filter((p) => !removedPhotoIds.includes(p.AttachmentId)).length;
       if (keptPhotos + photos.length < 1) { message.error("Attach at least one photo of the fault / site"); return; }
       if (keptPhotos + photos.length > MAX_JOBCARD_PHOTOS) { message.error(`A job card can have at most ${MAX_JOBCARD_PHOTOS} photos`); return; }

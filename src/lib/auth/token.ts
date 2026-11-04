@@ -28,6 +28,16 @@ export function readAuthToken(request: NextRequest | Request): string | null {
     }
   }
 
+  // 3. Photo / video links only: ?access_token=<token>. A mobile app's image and video players cannot send the
+  //    Authorization header, so they open GET /api/attachments/<id>?access_token=... instead. Nothing else accepts it.
+  try {
+    const url = new URL(request.url);
+    if (request.method === "GET" && /^\/api\/attachments\/[0-9a-f-]{36}$/i.test(url.pathname)) {
+      const fromQuery = url.searchParams.get("access_token");
+      if (fromQuery) return fromQuery;
+    }
+  } catch { /* not a full URL — no query token */ }
+
   return null;
 }
 

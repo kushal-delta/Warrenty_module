@@ -13,6 +13,7 @@ import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 import { canUseForm } from "@/lib/auth/forms";
 import { PortalHome } from "@/components/portal/PortalHome";
+import { WarehouseDashboard } from "@/components/dashboard/WarehouseDashboard";
 import { PageLoader } from "@/components/common/Loader";
 
 interface Overview {
@@ -66,7 +67,10 @@ export default function DashboardPage() {
 
   if (!user) return <PageLoader label="Loading your workspace…" minHeight="60vh" />;
   const portal = !user.IsAdmin && (user.Role === "DEALER" || user.Role === "CUSTOMER") ? user.Role : null;
-  return portal ? <PortalHome portal={portal as "DEALER" | "CUSTOMER"} /> : <StaffDashboard />;
+  if (portal) return <PortalHome portal={portal as "DEALER" | "CUSTOMER"} />;
+  // Warehouse logins get their own stock / receipt / return dashboard.
+  if (!user.IsAdmin && user.Role === "WAREHOUSE") return <WarehouseDashboard />;
+  return <StaffDashboard />;
 }
 
 function StaffDashboard() {

@@ -43,6 +43,8 @@ import {
   ShoppingCartOutlined,
   FileTextOutlined,
   OrderedListOutlined,
+  RollbackOutlined,
+  ExportOutlined,
   GlobalOutlined,
   HistoryOutlined,
   IdcardOutlined,
@@ -209,6 +211,11 @@ export default function DashboardLayout({
           label: <Link href="/stock/ledger">Stock Ledger & Entry</Link>,
         },
         {
+          key: "/stock/warehouse-stock",
+          icon: <DatabaseOutlined />,
+          label: <Link href="/stock/warehouse-stock">Warehouse Stock</Link>,
+        },
+        {
           key: "/stock/consumption",
           icon: <ExperimentOutlined />,
           label: <Link href="/stock/consumption">Parts Consumption</Link>,
@@ -227,6 +234,31 @@ export default function DashboardLayout({
           key: "/stock/challans",
           icon: <FileTextOutlined />,
           label: <Link href="/stock/challans">Delivery Challan</Link>,
+        },
+        {
+          key: "/stock/grn",
+          icon: <InboxOutlined />,
+          label: <Link href="/stock/grn">Goods Receipt (GRN)</Link>,
+        },
+        {
+          key: "/stock/dcreturn",
+          icon: <SwapOutlined />,
+          label: <Link href="/stock/dcreturn">Defective / Fresh Receipt</Link>,
+        },
+        {
+          key: "/stock/material-issues",
+          icon: <ExportOutlined />,
+          label: <Link href="/stock/material-issues">Material Issue</Link>,
+        },
+        {
+          key: "/stock/returnable-pending",
+          icon: <RollbackOutlined />,
+          label: <Link href="/stock/returnable-pending">Pending Returnable</Link>,
+        },
+        {
+          key: "/stock/material-reports",
+          icon: <BarChartOutlined />,
+          label: <Link href="/stock/material-reports">Material & Challan Reports</Link>,
         },
       ],
     },
@@ -248,7 +280,7 @@ export default function DashboardLayout({
         {
           key: "/masters/service-centers",
           icon: <ShopOutlined />,
-          label: <Link href="/masters/service-centers">Service Centers</Link>,
+          label: <Link href="/masters/service-centers">Service Centers / Warehouses</Link>,
         },
         {
           key: "/masters/service-engineers",

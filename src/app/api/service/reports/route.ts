@@ -15,19 +15,21 @@ export async function POST(request: NextRequest) {
   try {
     const user = await requireUser(request);
     if (!user) return fail("Unauthorized", 401);
-    const { fromDate, toDate, stateId, serviceCenterId } = await request.json().catch(() => ({}));
+    const { fromDate, toDate, stateId, serviceCenterId, projectId } = await request.json().catch(() => ({}));
     const values: Record<string, unknown> = { from: fromDate ? new Date(fromDate) : new Date("2000-01-01"), to: toDate ? new Date(toDate) : new Date("2100-01-01") };
     const scope = await getScope(user), add = namedParams(values);
     // Every figure follows the user's rights: calls by state / district (manager: centre, engineer: own calls).
     const callScope = callFilter(scope, "c", add), jobCallScope = callFilter(scope, "cs", add), replFilter = replacementFilter(scope, "r", add);
-    // Optional state / service-centre filters (the prototype's report filter bar) apply to calls and, through the call, to job cards.
+    // Optional state / service-centre / project filters (the prototype's report filter bar) apply to calls and, through the call, to job cards.
     if (stateId) values.fState = stateId;
     if (serviceCenterId) values.fCentre = serviceCenterId;
-    const extra = (alias: string) => `${stateId ? ` AND ${alias}.[StateId] = @fState` : ""}${serviceCenterId ? ` AND ${alias}.[ServiceCenterId] = @fCentre` : ""}`;
+    if (projectId) values.fProject = projectId;
+    const extra = (alias: string) => `${stateId ? ` AND ${alias}.[StateId] = @fState` : ""}${serviceCenterId ? ` AND ${alias}.[ServiceCenterId] = @fCentre` : ""}${projectId ? ` AND ${alias}.[ProjectId] = @fProject` : ""}`;
     const callRange = `c.[CallDate] BETWEEN @from AND @to${callScope ? ` AND ${callScope}` : ""}${extra("c")}`;
-    const jobCond = [jobCallScope, stateId || serviceCenterId ? `1 = 1${extra("cs")}` : ""].filter(Boolean).join(" AND ");
+    const jobCond = [jobCallScope, stateId || serviceCenterId || projectId ? `1 = 1${extra("cs")}` : ""].filter(Boolean).join(" AND ");
     const jobScope = jobCond ? ` AND j.[ComplaintId] IN (SELECT cs.[ComplaintId] FROM dbo.[Complaints] cs WHERE ${jobCond})` : "";
-    const replScope = replFilter ? ` AND ${replFilter}` : "";
+    // A replacement belongs to a project through its service call (replacements without a call have no project).
+    const replScope = `${replFilter ? ` AND ${replFilter}` : ""}${projectId ? " AND r.[ComplaintId] IN (SELECT cp.[ComplaintId] FROM dbo.[Complaints] cp WHERE cp.[ProjectId] = @fProject)" : ""}`;
     const [byStatus, byCenter, byEngineer, ageing, jobCards, jobCardLines, replacements, claims, statusMatrix, claimJobCards, claimByMonth, claimByComponent] = await Promise.all([
       runQuery(`SELECT c.[Status], COUNT(*) AS [Calls] FROM dbo.[Complaints] c WHERE ${callRange} GROUP BY c.[Status]`, values),
       runQuery(`SELECT COALESCE(sc.[ServiceCenterName], 'Not assigned') AS [Name], COUNT(*) AS [Total], SUM(CASE WHEN c.[Status] IN ('Closed','Resolved','Cancelled') THEN 0 ELSE 1 END) AS [Open], SUM(CASE WHEN c.[Status] IN ('Closed','Resolved') THEN 1 ELSE 0 END) AS [Closed], AVG(CASE WHEN c.[ClosedOn] IS NOT NULL THEN DATEDIFF(day, c.[CallDate], c.[ClosedOn]) END) AS [AvgDaysToClose] FROM dbo.[Complaints] c LEFT JOIN dbo.[ServiceCenters] sc ON c.[ServiceCenterId] = sc.[ServiceCenterId] WHERE ${callRange} GROUP BY sc.[ServiceCenterName] ORDER BY [Total] DESC`, values),

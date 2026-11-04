@@ -59,7 +59,6 @@ export async function POST(request: NextRequest) {
     const legacyLabour = !Array.isArray(body.lines) ? numberValue(body.LabourTotal, "Labour charges") ?? 0 : 0;
     const otherCharges = numberValue(body.OtherCharges, "Other charges") ?? 0;
     const faults = (Array.isArray(body.faults) ? body.faults : []).filter((f: any) => f?.FaultMasterId);
-    if (!lines.length && legacyLabour <= 0) throw new InputError("Add at least one spare or labour line");
 
     const sparesTotal = round2(lines.filter((l) => l.ItemType === "Spare").reduce((s, l) => s + l.Amount, 0));
     const labourTotal = round2(lines.filter((l) => l.ItemType === "Labour").reduce((s, l) => s + l.Amount, 0) + legacyLabour);

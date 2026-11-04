@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
 import { JOBCARD_SELECT, activeRules, canActOnRule, rulesFor } from "@/lib/services/jobCards";
-import { callFilter, getScope, namedParams } from "@/lib/auth/scope";
+import { callFilter, getScope, namedParams, ownEntriesOnly } from "@/lib/auth/scope";
 
 /** Lists job cards with approval progress. `pendingForMe: true` returns only cards waiting on the signed-in approver. */
 export async function POST(request: NextRequest) {
@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
     if (complaintId) { where.push("j.[ComplaintId] = @complaintId"); values.complaintId = complaintId; }
     const scopeFilter = callFilter(await getScope(user), "c", namedParams(values));
     if (scopeFilter) where.push(scopeFilter);
-    if (user.Role === "SERVICE_CENTER") { where.push("j.[InsertedByUserId] = @ownerId"); values.ownerId = user.UserId; }
+    if (ownEntriesOnly(user.Role)) { where.push("j.[InsertedByUserId] = @ownerId"); values.ownerId = user.UserId; }
     const [rows, rules] = await Promise.all([
       runQuery<any>(`${JOBCARD_SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY j.[JobCardDate] DESC, j.[InsertedOn] DESC`, values),
       activeRules(runQuery),

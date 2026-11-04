@@ -9,7 +9,7 @@ import { parseList } from "@/lib/auth/forms";
  *  - DistrictRights: comma-separated district names; blank = all districts of the allowed states
  *  - MANAGER with a service centre: calls of that centre (and calls not yet given a centre)
  *  - ENGINEER: only calls assigned to them
- *  - SERVICE_CENTER (centre login): only the calls and job cards it entered itself
+ *  - SERVICE_CENTER (centre login) / WAREHOUSE (warehouse login): only the records it entered itself
  *  - DEALER: only their own installations, warranties, customers, calls and replacements
  *    (login is linked to the dealer whose DealerCode or Mobile equals the user name)
  *  - CUSTOMER: only their own pumps, warranties and calls (login linked by mobile number = user name)
@@ -87,6 +87,10 @@ const list = (items: string[], add: AddParam) => items.map((v) => add(v)).join("
 
 const NOTHING = "1 = 0";
 
+/** Logins that see only the records they entered themselves (service centre and warehouse logins). */
+export const OWN_ENTRY_ROLES = ["SERVICE_CENTER", "WAREHOUSE"];
+export const ownEntriesOnly = (role?: string | null) => OWN_ENTRY_ROLES.includes(String(role || ""));
+
 /**
  * Row condition for a table with StateId / District columns. Empty string = no restriction.
  * Pass `dealer` / `customer` columns where the table has them so portal logins are limited to their own rows.
@@ -123,7 +127,7 @@ export function callFilter(scope: DataScope, alias: string, add: AddParam): stri
   const geo = geoFilter(scope, { state: `${alias}.[StateId]`, district: `${alias}.[District]` }, add);
   if (geo) parts.push(geo);
   if (scope.role === "ENGINEER") parts.push(`${alias}.[EngineerUserId] = ${add(scope.userId)}`);
-  else if (scope.role === "SERVICE_CENTER") parts.push(`${alias}.[InsertedByUserId] = ${add(scope.userId)}`);
+  else if (ownEntriesOnly(scope.role)) parts.push(`${alias}.[InsertedByUserId] = ${add(scope.userId)}`);
   else if (scope.role === "MANAGER" && scope.serviceCenterId) parts.push(`(${alias}.[ServiceCenterId] = ${add(scope.serviceCenterId)} OR ${alias}.[ServiceCenterId] IS NULL)`);
   return parts.length ? `(${parts.join(" AND ")})` : "";
 }
@@ -142,6 +146,7 @@ export function warrantyFilter(scope: DataScope, alias: string, add: AddParam): 
  */
 export function replacementFilter(scope: DataScope, alias: string, add: AddParam): string {
   if (scope.unrestricted) return "";
+  if (ownEntriesOnly(scope.role)) return `${alias}.[InsertedByUserId] = ${add(scope.userId)}`;
   if (scope.portal === "DEALER") return scope.dealerId ? `${alias}.[DealerId] = ${add(scope.dealerId)}` : NOTHING;
   if (scope.portal === "CUSTOMER") {
     const calls = callFilter(scope, "rc", add);
@@ -183,9 +188,9 @@ export async function customerVisible(scope: DataScope, customerId: string) {
   return rows.length > 0;
 }
 
-/** A service centre login may only open / change job cards it entered itself; everyone else is unaffected. */
+/** A service centre / warehouse login may only open / change job cards it entered itself; everyone else is unaffected. */
 export function jobCardVisible(user: { UserId: string; Role: string }, job: { InsertedByUserId?: string | null }) {
-  return user.Role !== "SERVICE_CENTER" || String(job.InsertedByUserId || "").toLowerCase() === user.UserId.toLowerCase();
+  return !ownEntriesOnly(user.Role) || String(job.InsertedByUserId || "").toLowerCase() === user.UserId.toLowerCase();
 }
 
 export const OUT_OF_SCOPE ="This record is outside your access rights";

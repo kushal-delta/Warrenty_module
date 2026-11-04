@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
 import { activeRules, canActOnRule, rulesFor } from "@/lib/services/jobCards";
-import { callFilter, geoFilter, getScope, namedParams, warrantyFilter } from "@/lib/auth/scope";
+import { callFilter, geoFilter, getScope, namedParams, ownEntriesOnly, warrantyFilter } from "@/lib/auth/scope";
 
 const OPEN_CALL = "c.[Status] NOT IN ('Closed','Resolved','Cancelled')";
 const ACTIVE = "w.[Status] = 'Active' AND w.[EndDate] >= SYSUTCDATETIME()";
@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const jobCalls = callFilter(scope, "cs", add);
     let jScope = jobCalls ? ` AND j.[ComplaintId] IN (SELECT cs.[ComplaintId] FROM dbo.[Complaints] cs WHERE ${jobCalls})` : "";
     // Service centre login: only its own entries — pumps / warranties of the calls it booked, its own job cards, no dealers.
-    const centerLogin = scope.role === "SERVICE_CENTER" && !scope.unrestricted;
+    const centerLogin = ownEntriesOnly(scope.role) && !scope.unrestricted;
     if (centerLogin) {
       const me = add(user.UserId);
       const ownInstallations = `(SELECT oc.[InstallationId] FROM dbo.[Complaints] oc WHERE oc.[InsertedByUserId] = ${me} AND oc.[InstallationId] IS NOT NULL)`;

@@ -19,8 +19,8 @@ export const WITHOUT_SERIAL = "Without Serial No";
 export const MAX_REPLACEMENT_PDFS = 5;
 /** Videos on service calls and job cards (uploaded separately through /api/attachments/upload, then linked on save). */
 export const MAX_VIDEOS = 3;
-export const MAX_VIDEO_MB = 50;
-export const VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime,video/3gpp,.mp4,.webm,.mov,.3gp";
+export const MAX_VIDEO_MB = 100;
+export const VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime,video/3gpp,video/x-m4v,.mp4,.webm,.mov,.3gp,.m4v,.3g2";
 export const REPLACEMENT_STATUSES = ["Open", "Received", "Closed", "Cancelled"];
 export const PRODUCT_CATEGORIES = ["PUMP", "MOTOR", "CONTROLLER"];
 

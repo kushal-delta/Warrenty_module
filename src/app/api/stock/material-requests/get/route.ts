@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
-import { loadRequest, requestScope } from "@/lib/services/materialRequests";
+import { REQUEST_FOR_COLS, REQUEST_FOR_JOINS, loadRequest, requestScope } from "@/lib/services/materialRequests";
 import { OUT_OF_SCOPE } from "@/lib/auth/scope";
 
 /** Lists material requests in the user's scope, or one request with its lines when `MaterialRequestId` is sent. */
@@ -22,11 +22,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, request: head, items });
     }
 
-    const requests = await runQuery(`SELECT r.*, sc.[ServiceCenterName], sc.[ServiceCenterCode], CONCAT(u.[FirstName], ' ', u.[LastName]) AS [RequestedBy],
+    const requests = await runQuery(`SELECT r.*, sc.[ServiceCenterName], sc.[ServiceCenterCode], ${REQUEST_FOR_COLS}, CONCAT(u.[FirstName], ' ', u.[LastName]) AS [RequestedBy],
         (SELECT CONCAT(du.[FirstName], ' ', du.[LastName]) FROM dbo.[Users] du WHERE du.[UserId] = r.[DecisionByUserId]) AS [DecisionBy],
         (SELECT COUNT(*) FROM dbo.[MaterialRequestItemLns] l WHERE l.[MaterialRequestId] = r.[MaterialRequestId]) AS [ItemCount],
         (SELECT COALESCE(SUM(l.[Qty]), 0) FROM dbo.[MaterialRequestItemLns] l WHERE l.[MaterialRequestId] = r.[MaterialRequestId]) AS [TotalQty]
-      FROM dbo.[MaterialRequests] r LEFT JOIN dbo.[ServiceCenters] sc ON r.[ServiceCenterId] = sc.[ServiceCenterId] LEFT JOIN dbo.[Users] u ON r.[InsertedByUserId] = u.[UserId]
+      FROM dbo.[MaterialRequests] r ${REQUEST_FOR_JOINS} LEFT JOIN dbo.[Users] u ON r.[InsertedByUserId] = u.[UserId]
       ${scope ? `WHERE ${scope}` : ""} ORDER BY r.[RequestDate] DESC, r.[InsertedOn] DESC`, values);
     return NextResponse.json({ success: true, requests });
   } catch (err) {

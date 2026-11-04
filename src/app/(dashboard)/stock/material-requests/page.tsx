@@ -5,7 +5,6 @@ import axios from "axios";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tag, Tooltip, message } from "antd";
 import { CodeSandboxOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { useMasterStore } from "@/lib/store/useMasterStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
@@ -33,10 +32,8 @@ const itemLabel = (i: { code?: string | null; name: string }) => (i.code ? `${i.
 /** Spares Stock → Material Request: a service centre asks for product items or spare parts (iERP items + Spares master). */
 export default function MaterialRequestsPage() {
   const [form] = Form.useForm();
-  const { serviceCenters } = useMasterStore();
   const user = useAuthStore((s) => s.user);
   const headOffice = Boolean(user?.IsAdmin) || user?.Role === "SUPER" || user?.Role === "HO";
-  const ownCenter = headOffice ? null : user?.ServiceCenterId || null;
 
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -51,6 +48,7 @@ export default function MaterialRequestsPage() {
   const [lines, setLines] = useState<Line[]>([newLine()]);
   const [focusKey, setFocusKey] = useState<string>();
   const [items, setItems] = useState<CatalogueItem[]>([]);
+  const [warehouses, setWarehouses] = useState<any[]>([]);
   const [itemsLoading, setItemsLoading] = useState(false);
   const requestType: string | undefined = Form.useWatch("RequestType", form);
   const requestDate = Form.useWatch("RequestDate", form);
@@ -63,6 +61,9 @@ export default function MaterialRequestsPage() {
     finally { setLoading(false); }
   }, []);
   useEffect(() => { load(); }, [load]);
+  // Warehouses for the request (a warehouse login gets only its own, so it is picked for it).
+  useEffect(() => { axios.post("/api/stock/material-requests/warehouses", {}).then(({ data }) => setWarehouses(data.warehouses)).catch(() => undefined); }, []);
+  const ownWarehouse = warehouses.length === 1 && user?.Role === "WAREHOUSE" && !headOffice ? warehouses[0].WarehouseId : null;
 
   // The item list follows the request type: product items or spare parts.
   const loadItems = useCallback(async (type?: string) => {
@@ -79,7 +80,7 @@ export default function MaterialRequestsPage() {
     setEditing(row || null);
     setFocusKey(undefined);
     if (!row) {
-      form.setFieldsValue({ RequestType: "Spare", ServiceCenterId: ownCenter || undefined, RequestDate: dayjs(), Priority: "Normal" });
+      form.setFieldsValue({ RequestType: "Spare", WarehouseId: ownWarehouse || undefined, RequestDate: dayjs(), Priority: "Normal" });
       setLines([newLine()]);
       setDrawerOpen(true);
       loadItems("Spare");
@@ -89,7 +90,7 @@ export default function MaterialRequestsPage() {
       const { data } = await axios.post("/api/stock/material-requests/get", { MaterialRequestId: row.MaterialRequestId });
       const r = data.request;
       setEditing(r);
-      form.setFieldsValue({ RequestType: r.RequestType, ServiceCenterId: r.ServiceCenterId, RequestDate: dayjs(r.RequestDate), RequiredBy: r.RequiredBy ? dayjs(r.RequiredBy) : undefined, Priority: r.Priority, Remarks: r.Remarks || undefined });
+      form.setFieldsValue({ RequestType: r.RequestType, WarehouseId: r.WarehouseId || undefined, RequestDate: dayjs(r.RequestDate), RequiredBy: r.RequiredBy ? dayjs(r.RequiredBy) : undefined, Priority: r.Priority, Remarks: r.Remarks || undefined });
       setLines(data.items.map((i: any) => ({ key: `l${++lineSeq}`, ItemKey: `${i.ItemSource}|${i.ItemSource === "ERP" ? i.ErpItmId : i.SpareId}`.toUpperCase(), Qty: Number(i.Qty), Remarks: i.Remarks || undefined, _name: i.ItemName, _code: i.ItemCode })));
       setDrawerOpen(true);
       loadItems(r.RequestType);
@@ -134,7 +135,7 @@ export default function MaterialRequestsPage() {
       const { data } = await axios.post("/api/stock/material-requests/save", {
         MaterialRequestId: editing?.MaterialRequestId,
         RequestType: values.RequestType,
-        ServiceCenterId: values.ServiceCenterId,
+        WarehouseId: values.WarehouseId,
         RequestDate: values.RequestDate.format("YYYY-MM-DD"),
         RequiredBy: values.RequiredBy ? values.RequiredBy.format("YYYY-MM-DD") : null,
         Priority: values.Priority,
@@ -153,7 +154,7 @@ export default function MaterialRequestsPage() {
 
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!q || [r.RequestNo, r.ServiceCenterName, r.Remarks, r.RequestedBy].some((v) => v?.toLowerCase().includes(q)))
+    return (!q || [r.RequestNo, r.RequestForName, r.Remarks, r.RequestedBy].some((v) => v?.toLowerCase().includes(q)))
       && (!statusFilter || r.Status === statusFilter) && (!typeFilter || r.RequestType === typeFilter);
   });
 
@@ -161,7 +162,7 @@ export default function MaterialRequestsPage() {
     { title: "Request no.", dataIndex: "RequestNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
     { title: "Date", dataIndex: "RequestDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
     { title: "Type", dataIndex: "RequestType", key: "type", width: 120, render: (v: string) => REQUEST_TYPES.find((t) => t.value === v)?.label || v },
-    { title: "Service center", dataIndex: "ServiceCenterName", key: "sc", render: (v: string) => v || "—" },
+    { title: "Warehouse", dataIndex: "RequestForName", key: "sc", render: (v: string) => v || "—" },
     { title: "Required by", dataIndex: "RequiredBy", key: "req", width: 115, render: (v: string) => (v ? formatDate(v) : "—") },
     { title: "Priority", dataIndex: "Priority", key: "priority", width: 95, render: (v: string) => <Tag color={PRIORITY_COLOR[v]}>{v}</Tag> },
     { title: "Items", key: "items", width: 90, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
@@ -175,12 +176,12 @@ export default function MaterialRequestsPage() {
     ) },
   ];
 
-  const centerOptions = serviceCenters.filter((c: any) => c.IsActive || c.ServiceCenterId === editing?.ServiceCenterId).map((c: any) => ({ value: c.ServiceCenterId, label: `${c.ServiceCenterName}${c.ServiceCenterCode ? ` (${c.ServiceCenterCode})` : ""}` }));
+  const warehouseOptions = warehouses.filter((w: any) => w.IsActive || w.WarehouseId === editing?.WarehouseId).map((w: any) => ({ value: w.WarehouseId, label: `${w.WarehouseName} (${w.WarehouseCode})` }));
   const typeHint = REQUEST_TYPES.find((t) => t.value === requestType)?.hint;
 
   return (
     <div className="space-y-4">
-      <PageHeader icon={<ShoppingCartOutlined />} title="Material Request" subtitle="Service centres request product items or spare parts · items come from the iERP and the Spares master"
+      <PageHeader icon={<ShoppingCartOutlined />} title="Material Request" subtitle="Product items or spare parts requested for a warehouse · items come from the iERP and the Spares master"
         actions={<>
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">New Material Request</Button>
@@ -195,7 +196,7 @@ export default function MaterialRequestsPage() {
       ]} />
 
       <div className="filter-toolbar">
-        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search request no., center, remarks..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search request no., warehouse, remarks..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
         <Select allowClear placeholder="Type: All" value={typeFilter} onChange={setTypeFilter} options={REQUEST_TYPES.map((t) => ({ value: t.value, label: t.label }))} className="w-44" />
         <Select allowClear placeholder="Status: All" value={statusFilter} onChange={setStatusFilter} options={Object.keys(STATUS_COLOR).map((s) => ({ value: s, label: s }))} className="w-36" />
       </div>
@@ -206,19 +207,19 @@ export default function MaterialRequestsPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={<ShoppingCartOutlined />} title={editing ? `${readOnly ? "View" : "Edit"} — ${editing.RequestNo}` : "New Material Request"} subtitle="Product items or spare parts needed at the service center"
+        title={<DrawerHeader icon={<ShoppingCartOutlined />} title={editing ? `${readOnly ? "View" : "Edit"} — ${editing.RequestNo}` : "New Material Request"} subtitle="Product items or spare parts needed at the warehouse"
           meta={<DrawerChip label={editing ? editing.Status : "New"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>{readOnly ? "Close" : "Cancel"}</Button>{!readOnly && <Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">{editing ? "Update" : "Save"}</Button>}</div>}
       >
         <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form" disabled={readOnly}>
           <p className="entry-form-hint"><span aria-hidden="true">*</span> Required fields · Choose the request type first — the item list follows it.</p>
-          <FormSection number="01" title="Request details" description="What kind of material, for which center, and by when.">
+          <FormSection number="01" title="Request details" description="What kind of material, for which warehouse, and by when.">
             <div className="form-grid form-grid-three">
               <Form.Item name="RequestType" label={fieldLabel("Request type")} extra={typeHint} rules={[{ required: true, message: "Select the request type" }]}>
                 <Select options={REQUEST_TYPES.map((t) => ({ value: t.value, label: t.label }))} onChange={changeType} />
               </Form.Item>
-              <Form.Item name="ServiceCenterId" label={fieldLabel("Service center")} rules={[{ required: true, message: "Select the service center" }]}>
-                <Select showSearch optionFilterProp="label" placeholder="Select service center" options={centerOptions} disabled={readOnly || Boolean(ownCenter)} />
+              <Form.Item name="WarehouseId" label={fieldLabel("Warehouse")} extra={editing && !editing.WarehouseId && editing.ServiceCenterName ? `Raised for ${editing.ServiceCenterName} — pick the warehouse` : undefined} rules={[{ required: true, message: "Select the warehouse" }]}>
+                <Select showSearch optionFilterProp="label" placeholder="Select warehouse" options={warehouseOptions} disabled={readOnly || Boolean(ownWarehouse)} notFoundContent="No warehouses — add one in Configuration → Service Centers / Warehouses" />
               </Form.Item>
               <Form.Item name="Priority" label={fieldLabel("Priority")} rules={[{ required: true, message: "Select the priority" }]}>
                 <Select options={PRIORITIES.map((p) => ({ value: p, label: p }))} />

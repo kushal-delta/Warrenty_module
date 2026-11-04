@@ -64,6 +64,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: "MANAGER", label: "Manager", color: "blue" },
   { value: "ENGINEER", label: "Field Engineer", color: "cyan" },
   { value: "SERVICE_CENTER", label: "Service Center", color: "geekblue" },
+  { value: "WAREHOUSE", label: "Warehouse", color: "gold" },
   { value: "DEALER", label: "Dealer", color: "orange" },
   { value: "CUSTOMER", label: "Customer", color: "green" },
 ];
@@ -84,6 +85,7 @@ const AVATAR_COLORS: Record<string, string> = {
   MANAGER: "#3b82f6",
   ENGINEER: "#06b6d4",
   SERVICE_CENTER: "#1d4ed8",
+  WAREHOUSE: "#ca8a04",
   DEALER: "#f97316",
   CUSTOMER: "#22c55e",
 };

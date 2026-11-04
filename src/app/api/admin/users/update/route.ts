@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "UserId, first name and role are required" }, { status: 400 });
     }
 
-    const VALID_ROLES = ["SUPER", "HO", "MANAGER", "ENGINEER", "SERVICE_CENTER", "DEALER", "CUSTOMER"];
+    const VALID_ROLES = ["SUPER", "HO", "MANAGER", "ENGINEER", "SERVICE_CENTER", "WAREHOUSE", "DEALER", "CUSTOMER"];
     if (!VALID_ROLES.includes(Role)) {
       return NextResponse.json({ error: "Invalid role specified" }, { status: 400 });
     }

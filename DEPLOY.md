@@ -41,4 +41,4 @@ The app stores every attachment (service call / job card photos and videos, repl
 
 - Time zone inside the container is `Asia/Kolkata` (date checks such as "cannot be in the future" follow India time).
 - Health check: `GET /api/health` (public) — Docker marks the container unhealthy if it stops answering.
-- Videos are up to 50 MB each; if a reverse proxy (nginx) sits in front, allow that size (`client_max_body_size 60m;`).
+- Videos are up to 100 MB each and photos up to 10 MB; if a reverse proxy (nginx) sits in front, allow that size (`client_max_body_size 110m;`).

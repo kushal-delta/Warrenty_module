@@ -70,7 +70,7 @@ export default function MaterialApprovalsPage() {
   const filtered = rows
     .filter((r) => {
       const q = search.toLowerCase();
-      return (view === "All" || r.Status === view) && (!q || [r.RequestNo, r.ServiceCenterName, r.RequestedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)));
+      return (view === "All" || r.Status === view) && (!q || [r.RequestNo, r.RequestForName, r.RequestedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)));
     })
     // Pending: most urgent first, then the oldest; decided: latest first (as loaded).
     .sort((a, b) => (view === "Pending" ? (PRIORITY_RANK[a.Priority] ?? 9) - (PRIORITY_RANK[b.Priority] ?? 9) || String(a.RequestDate).localeCompare(String(b.RequestDate)) : 0));
@@ -80,7 +80,7 @@ export default function MaterialApprovalsPage() {
   const columns = [
     { title: "Request no.", dataIndex: "RequestNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
     { title: "Date", dataIndex: "RequestDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
-    { title: "Service center", dataIndex: "ServiceCenterName", key: "sc", render: (v: string, r: any) => <div><b className="text-slate-800">{v || "—"}</b><div className="text-[11px] text-slate-400">{r.RequestedBy?.trim() || ""}</div></div> },
+    { title: "Warehouse", dataIndex: "RequestForName", key: "sc", render: (v: string, r: any) => <div><b className="text-slate-800">{v || "—"}</b><div className="text-[11px] text-slate-400">{r.RequestedBy?.trim() || ""}</div></div> },
     { title: "Type", dataIndex: "RequestType", key: "type", width: 120, render: (v: string) => TYPE_LABEL[v] || v },
     { title: "Items", key: "items", width: 80, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
     { title: "Required by", dataIndex: "RequiredBy", key: "req", width: 120, render: (v: string, r: any) => (v ? <span className={overdue(r) ? "font-semibold text-red-600" : ""}>{formatDate(v)}</span> : "—") },
@@ -108,7 +108,7 @@ export default function MaterialApprovalsPage() {
 
       <div className="filter-toolbar">
         <Segmented value={view} onChange={(v) => setView(String(v))} options={VIEWS.map((v) => ({ value: v, label: v === "All" ? `All (${rows.length})` : `${v} (${count(v)})` }))} />
-        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search request no., center, requested by..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search request no., warehouse, requested by..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
       </div>
 
       <div className={TABLE_CARD}>
@@ -118,7 +118,7 @@ export default function MaterialApprovalsPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={!!open} onClose={() => setOpen(null)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={open && <DrawerHeader icon={<AuditOutlined />} title={`${pending ? "Review" : "View"} — ${open.RequestNo}`} subtitle={`${TYPE_LABEL[open.RequestType] || open.RequestType} requested by ${open.ServiceCenterName || "service center"}`}
+        title={open && <DrawerHeader icon={<AuditOutlined />} title={`${pending ? "Review" : "View"} — ${open.RequestNo}`} subtitle={`${TYPE_LABEL[open.RequestType] || open.RequestType} for ${open.RequestForName || "warehouse"}`}
           meta={<><DrawerChip label={open.Priority} tone="outline" /><DrawerChip label={open.Status} tone="solid" /></>} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setOpen(null)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2">
           <Button onClick={() => setOpen(null)} disabled={!!deciding}>{pending ? "Cancel" : "Close"}</Button>
@@ -132,7 +132,7 @@ export default function MaterialApprovalsPage() {
           <FormSection number="01" title="Request details" description="Raised on the Material Request screen.">
             <div className="form-grid form-grid-three">
               <Detail label="Request type">{TYPE_LABEL[open.RequestType] || open.RequestType}</Detail>
-              <Detail label="Service center">{open.ServiceCenterName}{open.ServiceCenterCode ? ` (${open.ServiceCenterCode})` : ""}</Detail>
+              <Detail label="Warehouse">{open.RequestForName}{open.RequestForCode ? ` (${open.RequestForCode})` : ""}</Detail>
               <Detail label="Requested by">{open.RequestedBy?.trim()}</Detail>
               <Detail label="Request date">{formatDate(open.RequestDate)}</Detail>
               <Detail label="Required by">{open.RequiredBy ? <span className={overdue(open) ? "font-semibold text-red-600" : ""}>{formatDate(open.RequiredBy)}{overdue(open) ? " · past due" : ""}</span> : null}</Detail>

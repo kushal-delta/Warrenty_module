@@ -2,6 +2,7 @@ import type { AuthSessionUser } from "@/lib/auth/jwt";
 import { isHeadOffice, runQuery, type Run } from "@/lib/services/apiHelpers";
 import { erpRun } from "@/lib/services/erpLedgers";
 import { stockBalances, visibleStockLocations } from "@/lib/services/stock";
+import { ownEntriesOnly } from "@/lib/auth/scope";
 
 /**
  * Material Request item catalogue.
@@ -85,12 +86,12 @@ export async function resolveItems(user: AuthSessionUser, type: string, keys: st
 }
 
 /**
- * Which requests a user sees: head office all; a service centre login only the ones it entered;
+ * Which requests a user sees: head office all; a service centre / warehouse login only the ones it entered;
  * managers / engineers those of their own centre.
  */
 export function requestScope(user: AuthSessionUser, alias: string, values: Record<string, unknown>) {
   if (isHeadOffice(user)) return "";
-  if (user.Role === "SERVICE_CENTER") { values.scopeUser = user.UserId; return `${alias}.[InsertedByUserId] = @scopeUser`; }
+  if (ownEntriesOnly(user.Role)) { values.scopeUser = user.UserId; return `${alias}.[InsertedByUserId] = @scopeUser`; }
   if (user.ServiceCenterId) { values.scopeCenter = user.ServiceCenterId; return `${alias}.[ServiceCenterId] = @scopeCenter`; }
   return "";
 }
@@ -98,7 +99,20 @@ export function requestScope(user: AuthSessionUser, alias: string, values: Recor
 /** The centre a non-head-office user may raise requests for (null = any). */
 export const fixedCenter = (user: AuthSessionUser) => (isHeadOffice(user) ? null : user.ServiceCenterId || null);
 
+/**
+ * "Requested for" columns of a request query (aliases r, sc = ServiceCenters, rw = Warehouses): the warehouse,
+ * or — on requests raised before warehouses — the service centre.
+ */
+export const REQUEST_FOR_COLS = `rw.[WarehouseName], rw.[WarehouseCode], COALESCE(rw.[WarehouseName], sc.[ServiceCenterName]) AS [RequestForName], COALESCE(rw.[WarehouseCode], sc.[ServiceCenterCode]) AS [RequestForCode]`;
+export const REQUEST_FOR_JOINS = `LEFT JOIN dbo.[ServiceCenters] sc ON r.[ServiceCenterId] = sc.[ServiceCenterId] LEFT JOIN dbo.[Warehouses] rw ON r.[WarehouseId] = rw.[WarehouseId]`;
+
+/** Warehouses a user may raise requests for: a warehouse login its own warehouse(s), everyone else every active one. */
+export function requestWarehouses(user: AuthSessionUser) {
+  if (user.Role === "WAREHOUSE" && !isHeadOffice(user)) return runQuery<any>(`SELECT [WarehouseId], [WarehouseCode], [WarehouseName], [IsActive] FROM dbo.[Warehouses] WHERE [LoginUserId] = @u ORDER BY [WarehouseName]`, { u: user.UserId });
+  return runQuery<any>(`SELECT [WarehouseId], [WarehouseCode], [WarehouseName], [IsActive] FROM dbo.[Warehouses] ORDER BY [WarehouseName]`);
+}
+
 export async function loadRequest(run: Run, id: string, lock = false) {
-  return (await run<any>(`SELECT r.*, sc.[ServiceCenterName], sc.[ServiceCenterCode] FROM dbo.[MaterialRequests] r${lock ? " WITH (UPDLOCK)" : ""}
-    LEFT JOIN dbo.[ServiceCenters] sc ON r.[ServiceCenterId] = sc.[ServiceCenterId] WHERE r.[MaterialRequestId] = @id`, { id }))[0] || null;
+  return (await run<any>(`SELECT r.*, sc.[ServiceCenterName], sc.[ServiceCenterCode], ${REQUEST_FOR_COLS} FROM dbo.[MaterialRequests] r${lock ? " WITH (UPDLOCK)" : ""}
+    ${REQUEST_FOR_JOINS} WHERE r.[MaterialRequestId] = @id`, { id }))[0] || null;
 }

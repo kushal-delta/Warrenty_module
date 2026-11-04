@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
-import { callFilter, geoFilter, getScope, namedParams, replacementFilter } from "@/lib/auth/scope";
+import { callFilter, geoFilter, getScope, namedParams, ownEntriesOnly, replacementFilter } from "@/lib/auth/scope";
 import { canUseForm } from "@/lib/auth/forms";
 
 const LIMIT = 6;
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     const dealerScope = pre(geoFilter(scope, { state: "d.[StateId]", district: "d.[District]", dealer: "d.[DealerId]" }, add));
     const replScope = pre(replacementFilter(scope, "r", add));
     // Service centre login: only its own entries — serials on calls it booked, its own calls and job cards; no customers / dealers / replacements.
-    const centerLogin = scope.role === "SERVICE_CENTER" && !scope.unrestricted;
+    const centerLogin = ownEntriesOnly(scope.role) && !scope.unrestricted;
     const me = centerLogin ? add(user.UserId) : "";
     const serialScope = centerLogin ? ` AND s.[SerialNo] IN (SELECT ol.[SerialNo] FROM dbo.[ComplaintItemLns] ol JOIN dbo.[Complaints] oc ON ol.[ComplaintId] = oc.[ComplaintId] WHERE oc.[InsertedByUserId] = ${me} AND ol.[SerialNo] IS NOT NULL)` : "";
     const jobScope = centerLogin ? ` AND j.[InsertedByUserId] = ${me}` : "";

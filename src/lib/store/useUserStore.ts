@@ -8,7 +8,7 @@ const API = {
   DELETE: "/api/admin/users/delete",
 };
 
-export type UserRole = "SUPER" | "HO" | "MANAGER" | "ENGINEER" | "SERVICE_CENTER" | "DEALER" | "CUSTOMER";
+export type UserRole = "SUPER" | "HO" | "MANAGER" | "ENGINEER" | "SERVICE_CENTER" | "WAREHOUSE" | "DEALER" | "CUSTOMER";
 
 export interface AppUser {
   UserId: string;

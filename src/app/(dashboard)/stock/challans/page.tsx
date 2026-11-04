@@ -4,9 +4,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import axios from "axios";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tag, Tooltip, message } from "antd";
 import type { InputRef } from "antd";
-import { CodeSandboxOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CodeSandboxOutlined, DeleteOutlined, EditOutlined, FilePdfOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { useMasterStore } from "@/lib/store/useMasterStore";
+import { openChallanPrint } from "@/lib/print/challanPrint";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { FormSection } from "@/components/common/FormSection";
@@ -102,7 +102,6 @@ const lineKey = (i: { ItemSource: string; ErpItmId?: string; SpareId?: string })
 /** Spares Stock → Delivery Challan: material dispatched to a job worker / service center, usually against an approved material request. */
 export default function DeliveryChallansPage() {
   const [form] = Form.useForm();
-  const { serviceCenters } = useMasterStore();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -113,11 +112,11 @@ export default function DeliveryChallansPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<any>(null);
   const [lines, setLines] = useState<Line[]>([newLine()]);
-  const [lookups, setLookups] = useState<{ textLists: Record<string, string[]>; locs: any[]; transporters: any[]; items: CatalogueItem[]; approvedRequests: any[] }>({ textLists: {}, locs: [], transporters: [], items: [], approvedRequests: [] });
+  const [lookups, setLookups] = useState<{ textLists: Record<string, string[]>; locs: any[]; transporters: any[]; items: CatalogueItem[]; approvedRequests: any[]; warehouses: any[] }>({ textLists: {}, locs: [], transporters: [], items: [], approvedRequests: [], warehouses: [] });
   const [lookupsLoading, setLookupsLoading] = useState(false);
   const challanType = Form.useWatch("ChallanType", form);
   const challanDate = Form.useWatch("ChallanDate", form);
-  const readOnly = Boolean(editing && editing.Status !== "Dispatched");
+  const readOnly = Boolean(editing && (editing.Status !== "Dispatched" || Number(editing.ReceiptCount) > 0));
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -131,7 +130,7 @@ export default function DeliveryChallansPage() {
     setLookupsLoading(true);
     try {
       const { data } = await axios.post("/api/stock/challans/lookups", { DeliveryChallanId: challanId });
-      setLookups({ textLists: data.textLists, locs: data.locs, transporters: data.transporters, items: data.items, approvedRequests: data.approvedRequests });
+      setLookups({ textLists: data.textLists, locs: data.locs, transporters: data.transporters, items: data.items, approvedRequests: data.approvedRequests, warehouses: data.warehouses || [] });
     } catch (err) {
       reportFormError(err, { fallback: "Could not load the challan lists" });
     } finally {
@@ -154,10 +153,10 @@ export default function DeliveryChallansPage() {
     try {
       const { data } = await axios.post("/api/stock/challans/get", { DeliveryChallanId: row.DeliveryChallanId });
       const c = data.challan;
-      setEditing(c);
+      setEditing({ ...c, ReceiptCount: row.ReceiptCount });
       form.setFieldsValue({
         ChallanDate: dayjs(c.ChallanDate), ChallanType: c.ChallanType, Purpose: c.Purpose, DispatchLocId: c.DispatchLocId?.toUpperCase(), ExpectedBackBy: c.ExpectedBackBy ? dayjs(c.ExpectedBackBy) : undefined,
-        PartyKind: c.PartyKind || undefined, ServiceCenterId: c.ServiceCenterId, MaterialRequestId: c.MaterialRequestId || undefined, TransporterName: c.TransporterName || undefined,
+        PartyKind: c.PartyKind || undefined, WarehouseId: c.WarehouseId || undefined, ServiceCenterId: c.ServiceCenterId || undefined, MaterialRequestId: c.MaterialRequestId || undefined, TransporterName: c.TransporterName || undefined,
         TransportMode: c.TransportMode || undefined, VehicleNo: c.VehicleNo || undefined, LrNo: c.LrNo || undefined, Remarks: c.Remarks || undefined,
       });
       setLines(data.items.map((i: any) => newLine({ ItemKey: lineKey(i), Qty: Number(i.Qty), Rate: Number(i.Rate), Remarks: i.Remarks || undefined, _name: i.ItemName, _code: i.ItemCode })));
@@ -167,12 +166,12 @@ export default function DeliveryChallansPage() {
     }
   };
 
-  // Picking an approved material request fills the job worker and the items (value per unit from the carried cost).
+  // Picking an approved material request fills the job worker (its warehouse) and the items (value per unit from the carried cost), and keeps its service centre on the challan.
   const pickRequest = async (requestId?: string) => {
     if (!requestId) return;
     try {
       const { data } = await axios.post("/api/stock/challans/lookups", { MaterialRequestId: requestId });
-      form.setFieldsValue({ ServiceCenterId: data.request.ServiceCenterId });
+      form.setFieldsValue({ ServiceCenterId: data.request.ServiceCenterId, ...(data.request.WarehouseId ? { WarehouseId: data.request.WarehouseId } : {}) });
       setLines(data.requestItems.length ? data.requestItems.map((i: any) => {
         const key = lineKey(i);
         return newLine({ ItemKey: key, Qty: Number(i.Qty), Rate: itemByKey.get(key)?.rate ?? 0, Remarks: i.Remarks || undefined, _name: i.ItemName, _code: i.ItemCode });
@@ -216,7 +215,8 @@ export default function DeliveryChallansPage() {
         DispatchLocId: values.DispatchLocId,
         ExpectedBackBy: values.ChallanType === "Returnable" && values.ExpectedBackBy ? values.ExpectedBackBy.format("YYYY-MM-DD") : null,
         PartyKind: values.PartyKind,
-        ServiceCenterId: values.ServiceCenterId,
+        WarehouseId: values.WarehouseId,
+        ServiceCenterId: values.ServiceCenterId || null,
         MaterialRequestId: values.MaterialRequestId || null,
         TransporterName: values.TransporterName,
         TransportMode: values.TransportMode,
@@ -235,31 +235,46 @@ export default function DeliveryChallansPage() {
     }
   };
 
+  // Print / PDF: the challan in the delivery-challan print format, in its own window.
+  const [printing, setPrinting] = useState<string | null>(null);
+  const printChallan = async (r: any, pdf: boolean) => {
+    setPrinting(r.DeliveryChallanId + (pdf ? "-pdf" : ""));
+    try {
+      const { data } = await axios.post("/api/stock/challans/print", { DeliveryChallanId: r.DeliveryChallanId });
+      if (!openChallanPrint(data)) message.warning("Allow pop-ups for this site to print the challan");
+    } catch (err) {
+      reportFormError(err, { fallback: "Could not prepare the challan print" });
+    } finally {
+      setPrinting(null);
+    }
+  };
+
   const overdue = (r: any) => r.ChallanType === "Returnable" && r.Status === "Dispatched" && r.ExpectedBackBy && new Date(r.ExpectedBackBy) < new Date(new Date().toDateString());
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!typeFilter || r.ChallanType === typeFilter) && (!q || [r.ChallanNo, r.ServiceCenterName, r.Purpose, r.TransporterName, r.VehicleNo, r.RequestNo, r.DispatchLocName].some((v) => v?.toLowerCase().includes(q)));
+    return (!typeFilter || r.ChallanType === typeFilter) && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.TransporterName, r.VehicleNo, r.RequestNo, r.DispatchLocName].some((v) => v?.toLowerCase().includes(q)));
   });
 
   const columns = [
     { title: "Challan no.", dataIndex: "ChallanNo", key: "no", width: 150, render: (v: string, r: any) => <div><span className="font-mono font-bold text-blue-700">{v}</span>{r.RequestNo && <div className="text-[11px] font-mono text-slate-400">{r.RequestNo}</div>}</div> },
     { title: "Date", dataIndex: "ChallanDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
     { title: "Type", dataIndex: "ChallanType", key: "type", width: 130, render: (v: string) => <Tag color={TYPE_COLOR[v]}>{v}</Tag> },
-    { title: "Job worker", dataIndex: "ServiceCenterName", key: "sc", render: (v: string, r: any) => <div><b className="text-slate-800">{v || "—"}</b><div className="text-[11px] text-slate-400">{r.Purpose}</div></div> },
+    { title: "Job worker", dataIndex: "JobWorkerName", key: "sc", render: (v: string, r: any) => <div><b className="text-slate-800">{v || "—"}</b><div className="text-[11px] text-slate-400">{r.Purpose}</div></div> },
     { title: "From store", dataIndex: "DispatchLocName", key: "loc", render: (v: string) => v || "—" },
     { title: "Transport", key: "transport", render: (_: any, r: any) => <div className="text-xs"><div>{[r.TransportMode, r.TransporterName].filter(Boolean).join(" · ") || "—"}</div>{r.VehicleNo && <div className="font-mono text-slate-400">{r.VehicleNo}</div>}</div> },
     { title: "Expected back", dataIndex: "ExpectedBackBy", key: "back", width: 120, render: (v: string, r: any) => (v ? <span className={overdue(r) ? "font-semibold text-red-600" : ""}>{formatDate(v)}</span> : "—") },
     { title: "Items", key: "items", width: 75, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
     { title: "Value ₹", dataIndex: "TotalValue", key: "value", width: 110, align: "right" as const, render: (v: number) => inr(v, 2) },
-    { title: "Actions", key: "actions", width: 90, render: (_: any, r: any) => (
+    { title: "Actions", key: "actions", width: 120, render: (_: any, r: any) => (
       <div className="flex gap-1">
-        <Tooltip title="Edit"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openForm(r)} /></Tooltip>
-        {r.Status === "Dispatched" && <Tooltip title="Delete"><Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleting(r)} /></Tooltip>}
+        <Tooltip title="Export to PDF"><Button type="text" size="small" className="!text-red-600" icon={<FilePdfOutlined />} loading={printing === r.DeliveryChallanId + "-pdf"} onClick={() => printChallan(r, true)} /></Tooltip>
+        <Tooltip title={Number(r.ReceiptCount) ? "Goods received — view only" : "Edit"}><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openForm(r)} /></Tooltip>
+        {r.Status === "Dispatched" && !Number(r.ReceiptCount) && <Tooltip title="Delete"><Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleting(r)} /></Tooltip>}
       </div>
     ) },
   ];
 
-  const centerOptions = serviceCenters.filter((c: any) => c.IsActive || c.ServiceCenterId === editing?.ServiceCenterId).map((c: any) => ({ value: c.ServiceCenterId, label: `${c.ServiceCenterName}${c.ServiceCenterCode ? ` (${c.ServiceCenterCode})` : ""}` }));
+  const warehouseOptions = lookups.warehouses.filter((w: any) => w.IsActive || w.WarehouseId === editing?.WarehouseId).map((w: any) => ({ value: w.WarehouseId, label: `${w.WarehouseName} (${w.WarehouseCode})` }));
   const transporterOptions = Array.from(new Set([...lookups.transporters.map((t) => t.Name), ...(lookups.textLists.Transporter || [])])).sort((a, b) => a.localeCompare(b));
 
   return (
@@ -284,7 +299,7 @@ export default function DeliveryChallansPage() {
       </div>
 
       <div className={TABLE_CARD}>
-        <Table dataSource={filtered} columns={columns} rowKey="DeliveryChallanId" size="middle" loading={loading} scroll={{ x: 1350 }} pagination={{ defaultPageSize: 20, showSizeChanger: true }}
+        <Table dataSource={filtered} columns={columns} rowKey="DeliveryChallanId" size="middle" loading={loading} scroll={{ x: 1410 }} pagination={{ defaultPageSize: 20, showSizeChanger: true }}
           locale={{ emptyText: "No delivery challans yet" }} />
       </div>
 
@@ -323,14 +338,15 @@ export default function DeliveryChallansPage() {
             <div className="form-grid form-grid-three">
               <Form.Item name="MaterialRequestId" label={fieldLabel("Against material request")} extra="Approved requests only — fills the job worker and items">
                 <Select showSearch allowClear optionFilterProp="label" loading={lookupsLoading} placeholder="Select approved request (optional)" onChange={pickRequest}
-                  options={lookups.approvedRequests.map((r) => ({ value: r.MaterialRequestId, label: `${r.RequestNo} · ${r.ServiceCenterName || ""} · ${formatDate(r.RequestDate)}` }))} />
+                  options={lookups.approvedRequests.map((r) => ({ value: r.MaterialRequestId, label: `${r.RequestNo} · ${r.RequestForName || ""} · ${formatDate(r.RequestDate)}` }))} />
               </Form.Item>
               <Form.Item name="PartyKind" label={fieldLabel("Party kind")}>
                 <TextListSelect group="PartyKind" noun="party kind" placeholder="Job worker, service center..." options={lookups.textLists.PartyKind || []} onAdded={addToList("PartyKind")} disabled={readOnly} />
               </Form.Item>
-              <Form.Item name="ServiceCenterId" label={fieldLabel("Job worker")} rules={[{ required: true, message: "Select the job worker" }]}>
-                <Select showSearch optionFilterProp="label" placeholder="Select service center" options={centerOptions} />
+              <Form.Item name="WarehouseId" label={fieldLabel("Job worker")} extra="Warehouse the material is sent to" rules={[{ required: true, message: "Select the warehouse" }]}>
+                <Select showSearch optionFilterProp="label" loading={lookupsLoading} placeholder="Select warehouse" options={warehouseOptions} notFoundContent="No warehouses — add one in Configuration → Service Centers / Warehouses" />
               </Form.Item>
+              <Form.Item name="ServiceCenterId" hidden><Input /></Form.Item>
             </div>
           </FormSection>
 

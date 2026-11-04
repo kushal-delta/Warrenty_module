@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
-import { challanCatalogue, erpLocs, erpTransporters, textLists } from "@/lib/services/challans";
+import { activeWarehouses, challanCatalogue, erpLocs, erpTransporters, textLists } from "@/lib/services/challans";
 
 /**
  * Everything the Delivery Challan form needs: text lists, iERP stores and transporters, the item catalogue and
@@ -14,24 +14,25 @@ export async function POST(request: NextRequest) {
     const { MaterialRequestId, DeliveryChallanId } = await request.json().catch(() => ({}));
 
     if (MaterialRequestId) {
-      const [head] = await runQuery<any>(`SELECT [MaterialRequestId], [ServiceCenterId], [Status] FROM dbo.[MaterialRequests] WHERE [MaterialRequestId] = @id`, { id: MaterialRequestId });
+      const [head] = await runQuery<any>(`SELECT [MaterialRequestId], [ServiceCenterId], [WarehouseId], [Status] FROM dbo.[MaterialRequests] WHERE [MaterialRequestId] = @id`, { id: MaterialRequestId });
       if (!head || head.Status !== "Approved") return fail("Only an approved material request can be dispatched", 400);
       const requestItems = await runQuery(`SELECT [ItemSource], [ErpItmId], [SpareId], [ItemCode], [ItemName], [Uom], [Qty], [Remarks] FROM dbo.[MaterialRequestItemLns] WHERE [MaterialRequestId] = @id ORDER BY [LineNo]`, { id: MaterialRequestId });
       return NextResponse.json({ success: true, request: head, requestItems });
     }
 
-    const [lists, locs, transporters, items, requests] = await Promise.all([
+    const [lists, locs, transporters, items, requests, warehouses] = await Promise.all([
       textLists(),
       erpLocs(),
       erpTransporters(),
       challanCatalogue(user),
       // Approved requests not yet on a challan (plus the one already on the challan being edited).
-      runQuery(`SELECT r.[MaterialRequestId], r.[RequestNo], r.[RequestType], r.[RequestDate], r.[ServiceCenterId], sc.[ServiceCenterName]
-        FROM dbo.[MaterialRequests] r LEFT JOIN dbo.[ServiceCenters] sc ON r.[ServiceCenterId] = sc.[ServiceCenterId]
+      runQuery(`SELECT r.[MaterialRequestId], r.[RequestNo], r.[RequestType], r.[RequestDate], r.[ServiceCenterId], r.[WarehouseId], sc.[ServiceCenterName], COALESCE(rw.[WarehouseName], sc.[ServiceCenterName]) AS [RequestForName]
+        FROM dbo.[MaterialRequests] r LEFT JOIN dbo.[ServiceCenters] sc ON r.[ServiceCenterId] = sc.[ServiceCenterId] LEFT JOIN dbo.[Warehouses] rw ON r.[WarehouseId] = rw.[WarehouseId]
         WHERE r.[Status] = 'Approved' AND NOT EXISTS (SELECT 1 FROM dbo.[DeliveryChallans] d WHERE d.[MaterialRequestId] = r.[MaterialRequestId] AND (@editing IS NULL OR d.[DeliveryChallanId] <> @editing))
         ORDER BY r.[RequestDate] DESC`, { editing: DeliveryChallanId || null }),
+      activeWarehouses(),
     ]);
-    return NextResponse.json({ success: true, textLists: lists, locs, transporters, items, approvedRequests: requests });
+    return NextResponse.json({ success: true, textLists: lists, locs, transporters, items, approvedRequests: requests, warehouses });
   } catch (err) {
     return handleApiError(err, "Could not load the challan lists");
   }
