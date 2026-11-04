@@ -63,6 +63,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: "HO", label: "Head Office", color: "purple" },
   { value: "MANAGER", label: "Manager", color: "blue" },
   { value: "ENGINEER", label: "Field Engineer", color: "cyan" },
+  { value: "SERVICE_CENTER", label: "Service Center", color: "geekblue" },
   { value: "DEALER", label: "Dealer", color: "orange" },
   { value: "CUSTOMER", label: "Customer", color: "green" },
 ];
@@ -82,6 +83,7 @@ const AVATAR_COLORS: Record<string, string> = {
   HO: "#8b5cf6",
   MANAGER: "#3b82f6",
   ENGINEER: "#06b6d4",
+  SERVICE_CENTER: "#1d4ed8",
   DEALER: "#f97316",
   CUSTOMER: "#22c55e",
 };
@@ -781,7 +783,7 @@ export default function UsersPage() {
                 name="ServiceCenterId"
                 label={<span className="text-xs font-semibold text-slate-700">Service Center</span>}
                 extra={<span className="text-[11px]">Managers see calls of this centre; engineers' van stock belongs to it.</span>}
-                rules={[{ required: watchedRole === "MANAGER" || watchedRole === "ENGINEER", message: "Service center is required for managers and engineers" }]}
+                rules={[{ required: watchedRole === "MANAGER" || watchedRole === "ENGINEER" || watchedRole === "SERVICE_CENTER", message: "Service center is required for managers, engineers and service center logins" }]}
                 className="!mb-3"
               >
                 <Select allowClear showSearch optionFilterProp="label" placeholder="Select service center" options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} />

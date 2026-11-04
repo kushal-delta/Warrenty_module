@@ -6,11 +6,9 @@ node_modules
 out
 tsconfig.tsbuildinfo
 
-# Secrets — passed to the container with --env-file, never baked into the image
-.env
-.env.*
-!.env.example
-*.env
+# .env / .env.production are kept: `next build` copies them into the standalone
+# server, so the image carries its DB settings and runs without --env-file.
+# Deploy credentials stay out.
 deploy.config.sh
 
 # Uploaded files live in the host volume, not in the image
@@ -26,6 +24,7 @@ postman
 Import Templates
 server
 *.tar.gz
+*.tar
 *.log
 README.md
 Dockerfile

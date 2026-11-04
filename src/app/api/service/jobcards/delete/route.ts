@@ -5,6 +5,7 @@ import { InputError, fail, handleApiError, inTransaction, isHeadOffice, requireU
 import { loadJobCard, revertCallStatus } from "@/lib/services/jobCards";
 import { unpostJobCardStock } from "@/lib/services/stock";
 import { removeAttachmentFiles } from "@/lib/services/attachments";
+import { OUT_OF_SCOPE, jobCardVisible } from "@/lib/auth/scope";
 
 /** Deletes a job card with its lines and trail. Drafts / rejected cards by anyone; other states by head office only (stock postings are reversed). */
 export async function POST(request: NextRequest) {
@@ -17,6 +18,7 @@ export async function POST(request: NextRequest) {
     const job = await inTransaction(async (run) => {
       const row = await loadJobCard(run, JobCardId, true);
       if (!row) throw new InputError("Job card not found");
+      if (!jobCardVisible(user, row)) throw new InputError(OUT_OF_SCOPE);
       if (!["Draft", "Rejected"].includes(row.Status) && !isHeadOffice(user)) throw new InputError(`Only head office can delete a job card that is ${row.Status.toLowerCase()}`);
       await unpostJobCardStock(run, JobCardId);
       await run(`DELETE FROM dbo.[JobCardApprovalLns] WHERE [JobCardId] = @id`, { id: JobCardId });

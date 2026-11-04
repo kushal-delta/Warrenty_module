@@ -6,7 +6,7 @@ import type { AuthSessionUser } from "@/lib/auth/jwt";
 /** Location ids a user may see: HO everything (undefined), a manager their centre and its engineers, an engineer their own van. */
 export async function visibleStockLocations(user: AuthSessionUser): Promise<string[] | undefined> {
   if (user.Role === "ENGINEER") return [user.UserId];
-  if (user.Role === "MANAGER" && user.ServiceCenterId) {
+  if ((user.Role === "MANAGER" || user.Role === "SERVICE_CENTER") && user.ServiceCenterId) {
     const engineers = await query<any>(`SELECT [UserId] FROM dbo.[Users] WHERE [Role] = 'ENGINEER' AND [ServiceCenterId] = @p0`, [user.ServiceCenterId]);
     return [user.ServiceCenterId, ...engineers.map((e) => e.UserId)];
   }

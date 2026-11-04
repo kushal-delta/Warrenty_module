@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sessionFromRequest, signAuthToken } from "@/lib/auth/jwt";
+import { isHttpsRequest } from "@/lib/auth/token";
 import { query } from "@/lib/sqlserver";
 import { erpAdminStillValid, isErpUser } from "@/lib/services/erpUsers";
 
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     });
     response.cookies.set("authToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttpsRequest(request),
       sameSite: "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60,

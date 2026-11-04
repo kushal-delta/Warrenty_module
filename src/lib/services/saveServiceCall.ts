@@ -98,7 +98,8 @@ export async function saveServiceCall(request: NextRequest, editing: boolean) {
       const customerId = scope.portal === "CUSTOMER" ? scope.customerId : body.customerId || existingCustomer?.CustomerId || firstRegistered?.CustomerId || null;
       const dealerId = scope.portal === "DEALER" ? scope.dealerId : body.dealerId || firstRegistered?.DealerId || null;
       const engineerUserId = scope.portal ? null : body.engineerUserId || null;
-      const serviceCenterId = body.serviceCenterId || (engineerUserId ? (await run<any>(`SELECT [ServiceCenterId] FROM dbo.[Users] WHERE [UserId] = @id`, { id: engineerUserId }))[0]?.ServiceCenterId : null) || null;
+      // A service centre login books / edits calls only for its own centre.
+      const serviceCenterId = (scope.role === "SERVICE_CENTER" ? scope.serviceCenterId : null) || body.serviceCenterId || (engineerUserId ? (await run<any>(`SELECT [ServiceCenterId] FROM dbo.[Users] WHERE [UserId] = @id`, { id: engineerUserId }))[0]?.ServiceCenterId : null) || null;
       const states = lines.filter((l) => l.state).map((l) => l.state as SerialState);
       const warrantyStatus = states.length ? overallWarranty(states) : text(body.warrantyStatus, 30) || "Not Registered";
       const dueDate = body.dueDate ? dateValue(body.dueDate, "Due date") : new Date(callDate.getTime() + Number(callType.ValidDays || 3) * DAY);

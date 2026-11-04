@@ -30,3 +30,14 @@ export function readAuthToken(request: NextRequest | Request): string | null {
 
   return null;
 }
+
+/**
+ * Whether the browser reached us over HTTPS (directly or via a proxy).
+ * Browsers drop `Secure` cookies on plain http://server-ip:port, which would
+ * leave the user stuck on /login, so the cookie is only marked Secure on HTTPS.
+ */
+export function isHttpsRequest(request: NextRequest): boolean {
+  const forwarded = request.headers.get("x-forwarded-proto");
+  if (forwarded) return forwarded.split(",")[0].trim() === "https";
+  return request.nextUrl.protocol === "https:";
+}

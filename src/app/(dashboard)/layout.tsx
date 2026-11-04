@@ -40,6 +40,9 @@ import {
   SettingOutlined,
   FileSearchOutlined,
   ExperimentOutlined,
+  ShoppingCartOutlined,
+  FileTextOutlined,
+  OrderedListOutlined,
   GlobalOutlined,
   HistoryOutlined,
   IdcardOutlined,
@@ -210,6 +213,21 @@ export default function DashboardLayout({
           icon: <ExperimentOutlined />,
           label: <Link href="/stock/consumption">Parts Consumption</Link>,
         },
+        {
+          key: "/stock/material-requests",
+          icon: <ShoppingCartOutlined />,
+          label: <Link href="/stock/material-requests">Material Request</Link>,
+        },
+        {
+          key: "/stock/material-approvals",
+          icon: <AuditOutlined />,
+          label: <Link href="/stock/material-approvals">Material Approvals</Link>,
+        },
+        {
+          key: "/stock/challans",
+          icon: <FileTextOutlined />,
+          label: <Link href="/stock/challans">Delivery Challan</Link>,
+        },
       ],
     },
     {
@@ -249,6 +267,11 @@ export default function DashboardLayout({
           icon: <SettingOutlined />,
           label: <Link href={`/masters/config/${resource}`}>{title}</Link>,
         })),
+        {
+          key: "/masters/text-lists",
+          icon: <OrderedListOutlined />,
+          label: <Link href="/masters/text-lists">Text Lists</Link>,
+        },
         {
           key: "/system/activity",
           icon: <HistoryOutlined />,

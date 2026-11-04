@@ -40,7 +40,10 @@ export default function LoginPage() {
       const user = await login({ username: String(values.username).trim(), password: values.password });
       const name = [user?.FirstName, user?.LastName].filter(Boolean).join(" ") || user?.Username || "";
       message.success({ content: `Login successful — welcome${name ? `, ${name}` : ""}!`, duration: 3 });
-      router.push("/");
+      // Back to the page the middleware sent us from (same-site paths only), else the dashboard
+      const redirect = new URLSearchParams(window.location.search).get("redirect");
+      const target = redirect && /^\/(?![\/\\])/.test(redirect) &&!redirect.startsWith("/login") ? redirect : "/";
+      router.replace(target);
     } catch (err: any) {
       reportFormError(err, { form, fallback: "Invalid username or password" });
     } finally {

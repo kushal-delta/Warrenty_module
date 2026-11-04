@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
     if (complaintId) { where.push("j.[ComplaintId] = @complaintId"); values.complaintId = complaintId; }
     const scopeFilter = callFilter(await getScope(user), "c", namedParams(values));
     if (scopeFilter) where.push(scopeFilter);
+    if (user.Role === "SERVICE_CENTER") { where.push("j.[InsertedByUserId] = @ownerId"); values.ownerId = user.UserId; }
     const [rows, rules] = await Promise.all([
       runQuery<any>(`${JOBCARD_SELECT}${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY j.[JobCardDate] DESC, j.[InsertedOn] DESC`, values),
       activeRules(runQuery),

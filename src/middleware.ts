@@ -17,10 +17,12 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // 2. Allow public auth endpoints and upload streaming path (RULES §50)
+  // 2. Allow public auth endpoints and upload streaming path (RULES §50).
+  // Logout stays open so an expired/invalid cookie can still be cleared.
   if (
     pathname === "/login" ||
     pathname === "/api/Auth/login" ||
+    pathname === "/api/Auth/logout" ||
     pathname === "/api/health" ||
     pathname === "/api/upload/local"
   ) {

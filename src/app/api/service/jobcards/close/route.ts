@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
     if (user.Role === "ENGINEER") return fail("Engineers cannot close job cards", 403);
     const { JobCardId, remarks, resolveCall } = await request.json().catch(() => ({}));
     if (!JobCardId) return fail("JobCardId is required");
-    const updated = await query<any>(`UPDATE dbo.[JobCards] SET [Status] = 'Closed', [ClosedOn] = SYSUTCDATETIME(), [Remarks] = COALESCE(@p0, [Remarks]), [LastUpdatedOn] = SYSUTCDATETIME(), [LastUpdatedByUserId] = @p1 OUTPUT INSERTED.[JobCardNo], INSERTED.[ComplaintId] WHERE [JobCardId] = @p2 AND [Status] = 'Approved'`, [text(remarks), user.UserId, JobCardId]);
+    const updated = await query<any>(`UPDATE dbo.[JobCards] SET [Status] = 'Closed', [ClosedOn] = SYSUTCDATETIME(), [Remarks] = COALESCE(@p0, [Remarks]), [LastUpdatedOn] = SYSUTCDATETIME(), [LastUpdatedByUserId] = @p1 OUTPUT INSERTED.[JobCardNo], INSERTED.[ComplaintId] WHERE [JobCardId] = @p2 AND [Status] = 'Approved'${user.Role === "SERVICE_CENTER" ? " AND [InsertedByUserId] = @p3" : ""}`, [text(remarks), user.UserId, JobCardId, user.UserId]);
     if (!updated.length) return fail("Only an approved job card can be closed", 409);
     if (resolveCall) {
       await query(`UPDATE dbo.[Complaints] SET [Status] = 'Resolved', [Resolution] = COALESCE([Resolution], @p0), [LastUpdatedOn] = SYSUTCDATETIME(), [LastUpdatedByUserId] = @p1 WHERE [ComplaintId] = @p2 AND [Status] NOT IN ('Closed','Cancelled')`, [text(remarks) || `Repaired under ${updated[0].JobCardNo}`, user.UserId, updated[0].ComplaintId]);

@@ -1,5 +1,6 @@
 # ── Build stage ───────────────────────────────────────────────────────────────
-FROM node:20-alpine AS builder
+# Node 22+: the SQL Server driver (tedious 20) uses Promise.withResolvers
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 # Install dependencies (cached while package files are unchanged)
@@ -12,7 +13,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
 # ── Production stage ──────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 WORKDIR /app
 
 # tzdata: "today" checks (future dates, due dates) follow India time, not UTC

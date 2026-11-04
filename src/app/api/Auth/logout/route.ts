@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sessionFromRequest } from "@/lib/auth/jwt";
+import { isHttpsRequest } from "@/lib/auth/token";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 
 export async function POST(request: NextRequest) {
+  // Audit is best-effort: a DB hiccup must never leave the user signed in.
   try {
     const user = await sessionFromRequest(request);
     if (user) {
@@ -15,11 +17,19 @@ export async function POST(request: NextRequest) {
         recordId: user.UserId,
       });
     }
-
-    const response = NextResponse.json({ success: true, message: "Logged out successfully" });
-    response.cookies.delete("authToken");
-    return response;
   } catch (err: any) {
-    return NextResponse.json({ error: "Logout failed" }, { status: 500 });
+    console.error("Logout audit failed:", err?.message || err);
   }
+
+  const response = NextResponse.json({ success: true, message: "Logged out successfully" });
+  // Same attributes as the login cookie so the browser overwrites (expires) that exact cookie
+  response.cookies.set("authToken", "", {
+    httpOnly: true,
+    secure: isHttpsRequest(request),
+    sameSite: "lax",
+    path: "/",
+    maxAge: 0,
+    expires: new Date(0),
+  });
+  return response;
 }

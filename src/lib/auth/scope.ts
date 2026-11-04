@@ -9,6 +9,7 @@ import { parseList } from "@/lib/auth/forms";
  *  - DistrictRights: comma-separated district names; blank = all districts of the allowed states
  *  - MANAGER with a service centre: calls of that centre (and calls not yet given a centre)
  *  - ENGINEER: only calls assigned to them
+ *  - SERVICE_CENTER (centre login): only the calls and job cards it entered itself
  *  - DEALER: only their own installations, warranties, customers, calls and replacements
  *    (login is linked to the dealer whose DealerCode or Mobile equals the user name)
  *  - CUSTOMER: only their own pumps, warranties and calls (login linked by mobile number = user name)
@@ -122,6 +123,7 @@ export function callFilter(scope: DataScope, alias: string, add: AddParam): stri
   const geo = geoFilter(scope, { state: `${alias}.[StateId]`, district: `${alias}.[District]` }, add);
   if (geo) parts.push(geo);
   if (scope.role === "ENGINEER") parts.push(`${alias}.[EngineerUserId] = ${add(scope.userId)}`);
+  else if (scope.role === "SERVICE_CENTER") parts.push(`${alias}.[InsertedByUserId] = ${add(scope.userId)}`);
   else if (scope.role === "MANAGER" && scope.serviceCenterId) parts.push(`(${alias}.[ServiceCenterId] = ${add(scope.serviceCenterId)} OR ${alias}.[ServiceCenterId] IS NULL)`);
   return parts.length ? `(${parts.join(" AND ")})` : "";
 }
@@ -181,4 +183,9 @@ export async function customerVisible(scope: DataScope, customerId: string) {
   return rows.length > 0;
 }
 
-export const OUT_OF_SCOPE = "This record is outside your access rights";
+/** A service centre login may only open / change job cards it entered itself; everyone else is unaffected. */
+export function jobCardVisible(user: { UserId: string; Role: string }, job: { InsertedByUserId?: string | null }) {
+  return user.Role !== "SERVICE_CENTER" || String(job.InsertedByUserId || "").toLowerCase() === user.UserId.toLowerCase();
+}
+
+export const OUT_OF_SCOPE ="This record is outside your access rights";

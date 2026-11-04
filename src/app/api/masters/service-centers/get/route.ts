@@ -11,6 +11,7 @@ export async function POST(request: NextRequest) {
     const [centers, ledgers] = await Promise.all([
       runQuery(`SELECT sc.*, s.[StateName],
           (SELECT COUNT(*) FROM dbo.[Users] u WHERE u.[Role] = 'ENGINEER' AND u.[ServiceCenterId] = sc.[ServiceCenterId]) AS [Engineers],
+          (SELECT TOP 1 u.[Username] FROM dbo.[Users] u WHERE u.[Role] = 'SERVICE_CENTER' AND u.[ServiceCenterId] = sc.[ServiceCenterId]) AS [LoginUsername],
           (SELECT COUNT(*) FROM dbo.[Complaints] c WHERE c.[ServiceCenterId] = sc.[ServiceCenterId] AND c.[Status] NOT IN ('Closed','Resolved','Cancelled')) AS [OpenCalls]
         FROM dbo.[ServiceCenters] sc LEFT JOIN dbo.[States] s ON sc.[StateId] = s.[StateId] ORDER BY sc.[ServiceCenterName]`),
       ledgerInfo(runQuery, erpRun, "center"),

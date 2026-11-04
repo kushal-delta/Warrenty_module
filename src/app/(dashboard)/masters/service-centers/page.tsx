@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { AutoComplete, Button, Drawer, Form, Input, Select, Space, Switch, Table, Tag, Tooltip, message } from "antd";
-import { CheckCircleOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ShopOutlined, StopOutlined } from "@ant-design/icons";
+import { CheckCircleOutlined, EditOutlined, LockOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ShopOutlined, StopOutlined } from "@ant-design/icons";
 import { useMasterStore } from "@/lib/store/useMasterStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
 import { FormSection } from "@/components/common/FormSection";
@@ -11,7 +11,7 @@ import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/comm
 import { districtOptions } from "@/lib/utils/selectOptions";
 import { reportFormError } from "@/lib/utils/formErrors";
 
-const FIELDS = ["ServiceCenterCode", "ServiceCenterName", "ContactPerson", "Mobile", "Email", "Gstin", "Address", "City", "StateId", "District", "Pincode", "IsActive"];
+const FIELDS = ["ServiceCenterCode", "ServiceCenterName", "ContactPerson", "Mobile", "Email", "Gstin", "Address", "City", "StateId", "District", "Pincode", "IsActive", "LoginUsername"];
 
 /** Service Centers master — every centre is also an iERP ledger ("Service Center" group) with its address in LgrAddresses. */
 export default function ServiceCentersPage() {
@@ -28,6 +28,8 @@ export default function ServiceCentersPage() {
   const [saving, setSaving] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const stateId = Form.useWatch("StateId", form);
+  const loginName = Form.useWatch("LoginUsername", form);
+  const hasLogin = Boolean(editing?.LoginUsername);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +93,7 @@ export default function ServiceCentersPage() {
     { title: "Mobile", dataIndex: "Mobile", key: "mobile", width: 120, render: (v: string) => v || "—" },
     { title: "City", dataIndex: "City", key: "city", render: (v: string) => v || "—" },
     { title: "State", dataIndex: "StateName", key: "state", render: (v: string) => v || "—" },
+    { title: "Login", dataIndex: "LoginUsername", key: "login", render: (v: string) => v ? <span className="font-mono text-xs">{v}</span> : <span className="text-slate-400">—</span> },
     { title: "Engineers", dataIndex: "Engineers", key: "eng", width: 95, align: "right" as const },
     { title: "Open calls", dataIndex: "OpenCalls", key: "open", width: 100, align: "right" as const },
     { title: "iERP ledger", key: "ledger", width: 130, render: (_: any, r: any) => r.LedgerCode ? <Tooltip title={r.LedgerGroup}><Tag color="geekblue" className="font-mono">{r.LedgerCode}</Tag></Tooltip> : <Tooltip title="Created in the iERP on the next save"><Tag color="warning">Not in iERP</Tag></Tooltip> },
@@ -128,7 +131,7 @@ export default function ServiceCentersPage() {
       </div>
 
       <div className={TABLE_CARD}>
-        <Table dataSource={filtered} columns={columns} rowKey="ServiceCenterId" size="middle" loading={loading} scroll={{ x: 1250 }} pagination={{ defaultPageSize: 20, showSizeChanger: true }} />
+        <Table dataSource={filtered} columns={columns} rowKey="ServiceCenterId" size="middle" loading={loading} scroll={{ x: 1370 }} pagination={{ defaultPageSize: 20, showSizeChanger: true }} />
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
@@ -158,6 +161,15 @@ export default function ServiceCentersPage() {
               <Form.Item name="District" label={fieldLabel("District")} rules={[{ max: 80 }]}><AutoComplete options={districtOptions(districts, stateId)} placeholder={stateId ? "Select or type district" : "Select state first"} filterOption={(input, o) => String(o?.value || "").toLowerCase().includes(input.toLowerCase())} /></Form.Item>
               <Form.Item name="Pincode" label={fieldLabel("Pin code")} rules={[{ pattern: /^\d{6}$/, message: "Pin code must be 6 digits" }]}><Input maxLength={6} /></Form.Item>
               <Form.Item name="IsActive" label={fieldLabel("Active")} valuePropName="checked"><Switch /></Form.Item>
+            </div>
+          </FormSection>
+
+          <FormSection number="03" title="Service center login" description="Optional sign-in for the centre (role Service Center) — shown in User Management. Sees only this centre's calls.">
+            <div className="form-grid form-grid-three">
+              <Form.Item name="LoginUsername" label={fieldLabel("User name (login)")} extra={hasLogin ? "Used to sign in" : "Leave blank for no login"} normalize={(v) => v?.toLowerCase().replace(/\s/g, "")}
+                rules={[{ required: hasLogin, message: "User name is required" }, { pattern: /^[a-z0-9._-]{3,50}$/, message: "3–50 lowercase letters, digits, dot, dash or underscore" }]}><Input prefix="@" placeholder="e.g. sc.pune" /></Form.Item>
+              <Form.Item name="LoginPassword" label={fieldLabel("Password")} extra={hasLogin ? "Leave blank to keep the current password" : "Stored as a salted hash"}
+                rules={[{ required: !hasLogin && Boolean(loginName), message: "Password is required" }, { min: 6, message: "At least 6 characters" }]}><Input.Password prefix={<LockOutlined className="text-slate-400" />} placeholder={hasLogin ? "Unchanged" : undefined} autoComplete="new-password" /></Form.Item>
             </div>
           </FormSection>
         </Form>

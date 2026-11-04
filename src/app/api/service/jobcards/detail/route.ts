@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
 import { activeRules, canActOnRule, loadJobCard, rulesFor } from "@/lib/services/jobCards";
-import { OUT_OF_SCOPE, callVisible, getScope } from "@/lib/auth/scope";
+import { OUT_OF_SCOPE, callVisible, getScope, jobCardVisible } from "@/lib/auth/scope";
 
 /** One job card with its fault lines, spare lines, approval chain and decision trail. */
 export async function POST(request: NextRequest) {
@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     if (!JobCardId) return fail("JobCardId is required");
     const job = await loadJobCard(runQuery, JobCardId);
     if (!job) return fail("Job card not found", 404);
-    if (!(await callVisible(await getScope(user), job.ComplaintId))) return fail(OUT_OF_SCOPE, 403);
+    if (!jobCardVisible(user, job) || !(await callVisible(await getScope(user), job.ComplaintId))) return fail(OUT_OF_SCOPE, 403);
     const [faults, items, approvals, rules, attachments, components] = await Promise.all([
       runQuery(`SELECT f.*, m.[FaultName], m.[Category] FROM dbo.[JobCardFaultLns] f JOIN dbo.[FaultMasters] m ON f.[FaultMasterId] = m.[FaultMasterId] WHERE f.[JobCardId] = @id ORDER BY m.[Category], m.[FaultName]`, { id: JobCardId }),
       runQuery(`SELECT i.*, s.[SpareCode], s.[SpareName], s.[Uom], lm.[LabourCode], lm.[LabourName],

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { execute, query } from "@/lib/sqlserver";
 import { signAuthToken } from "@/lib/auth/jwt";
+import { isHttpsRequest } from "@/lib/auth/token";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 import { hashPassword, needsRehash, verifyPassword } from "@/lib/auth/password";
 import { erpAdminDisabled, findErpAdmin, syncErpAdmin, verifyErpPassword } from "@/lib/services/erpUsers";
@@ -111,7 +112,7 @@ export async function POST(request: NextRequest) {
     // RULES §49: Set cookie for browser web app
     response.cookies.set("authToken", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isHttpsRequest(request),
       sameSite: "lax",
       path: "/",
       maxAge: 7 * 24 * 60 * 60, // 7 days

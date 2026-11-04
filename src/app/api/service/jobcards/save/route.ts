@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 import { InputError, dateValue, endOfToday, fail, handleApiError, inTransaction, isHeadOffice, nextDocNo, numberValue, requireUser, text } from "@/lib/services/apiHelpers";
 import { loadJobCard, submitJobCard } from "@/lib/services/jobCards";
-import { OUT_OF_SCOPE, callVisible, getScope } from "@/lib/auth/scope";
+import { OUT_OF_SCOPE, callVisible, getScope, jobCardVisible } from "@/lib/auth/scope";
 import { insertAttachments, removeAttachmentFiles, removeSavedPhotos, savePhotos, syncVideos, type SavedPhoto } from "@/lib/services/attachments";
 import { MAX_JOBCARD_PHOTOS, MAX_VIDEOS } from "@/lib/config/service";
 
@@ -85,8 +85,9 @@ export async function POST(request: NextRequest) {
       let jobCardId = body.JobCardId as string | undefined, wasInApproval = false, keptPhotos = 0;
       const header = { complaintId: complaint.ComplaintId, date: jobCardDate, spares: sparesTotal.toFixed(2), labour: labourTotal.toFixed(2), gst: gstTotal.toFixed(2), other: otherCharges.toFixed(2), total: totalEstimate.toFixed(2), remarks: text(body.Remarks), sc: centre, eng: engineer, userId: user.UserId };
       if (jobCardId) {
-        const existing = (await run<any>(`SELECT [Status] FROM dbo.[JobCards] WITH (UPDLOCK) WHERE [JobCardId] = @id`, { id: jobCardId }))[0];
+        const existing = (await run<any>(`SELECT [Status], [InsertedByUserId] FROM dbo.[JobCards] WITH (UPDLOCK) WHERE [JobCardId] = @id`, { id: jobCardId }))[0];
         if (!existing) throw new InputError("Job card not found");
+        if (!jobCardVisible(user, existing)) throw new InputError(OUT_OF_SCOPE);
         wasInApproval = existing.Status === "In Approval";
         const editable = ["Draft", "Rejected"].includes(existing.Status) || (wasInApproval && isHeadOffice(user));
         if (!editable) throw new InputError(`A job card that is ${existing.Status.toLowerCase()} cannot be edited`);

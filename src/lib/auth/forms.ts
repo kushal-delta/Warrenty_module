@@ -9,13 +9,14 @@
  * `roles` is only the suggested starting selection when an admin picks a role for a user
  * (Dealer / Customer suggestions follow the prototype's dealer and customer portal menus).
  */
-export type RoleCode = "SUPER" | "HO" | "MANAGER" | "ENGINEER" | "DEALER" | "CUSTOMER";
+export type RoleCode = "SUPER" | "HO" | "MANAGER" | "ENGINEER" | "SERVICE_CENTER" | "DEALER" | "CUSTOMER";
 
 const ALL_STAFF: RoleCode[] = ["SUPER", "HO", "MANAGER", "ENGINEER"];
 const STAFF: RoleCode[] = ["SUPER", "HO", "MANAGER"];
 const HO: RoleCode[] = ["SUPER", "HO"];
 const DEALER: RoleCode[] = ["DEALER"];
 const CUSTOMER: RoleCode[] = ["CUSTOMER"];
+const CENTER: RoleCode[] = ["SERVICE_CENTER"];
 
 export interface FormDef { key: string; label: string; path: string; roles: RoleCode[]; /** Menu wording for portal / engineer roles (prototype dealer, customer and engineer menus). */ labels?: Partial<Record<RoleCode, string>> }
 export interface FormGroup { key: string; label: string; forms: FormDef[] }
@@ -28,7 +29,7 @@ export const FORM_GROUPS: FormGroup[] = [
       { key: "warranty.active", label: "Active Warranties", path: "/warranty/active", roles: [...STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Active Warranty List", CUSTOMER: "My Warranty" } },
       { key: "warranty.replace", label: "Replacement Flow (In Warranty)", path: "/warranty/replace", roles: [...HO, ...DEALER], labels: { DEALER: "Replacement Flow (In Warranty)" } },
       { key: "warranty.search", label: "Serial No. Search Report", path: "/warranty/search", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER] },
-      { key: "warranty.verify", label: "Serial Verification", path: "/warranty/verify", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Serial No. Search Report", CUSTOMER: "Serial No. Search Report" } },
+      { key: "warranty.verify", label: "Serial Verification", path: "/warranty/verify", roles: [...ALL_STAFF, ...CENTER, ...DEALER, ...CUSTOMER], labels: { DEALER: "Serial No. Search Report", CUSTOMER: "Serial No. Search Report" } },
       { key: "warranty.dealers", label: "Dealers Master", path: "/warranty/dealers", roles: HO },
       { key: "warranty.customers", label: "Customers", path: "/warranty/customers", roles: [...STAFF, ...DEALER] },
       { key: "warranty.geo", label: "Geo-Graphical Report", path: "/warranty/geo", roles: HO },
@@ -38,10 +39,10 @@ export const FORM_GROUPS: FormGroup[] = [
     key: "Service", label: "Service Management", forms: [
       { key: "service.dashboard", label: "Service Dashboard", path: "/service", roles: ALL_STAFF },
       { key: "service.dashboard", label: "Service Dashboard", path: "/service/dashboard", roles: STAFF },
-      { key: "service.complaints", label: "Complaints Register", path: "/service/complaints", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Book / Track Service Calls", CUSTOMER: "My Service Calls", ENGINEER: "Service Calls" } },
+      { key: "service.complaints", label: "Complaints Register", path: "/service/complaints", roles: [...ALL_STAFF, ...CENTER, ...DEALER, ...CUSTOMER], labels: { DEALER: "Book / Track Service Calls", CUSTOMER: "My Service Calls", ENGINEER: "Service Calls", SERVICE_CENTER: "Service Calls" } },
       { key: "service.reminders", label: "Call Reminders", path: "/service/reminders", roles: STAFF },
       { key: "service.visits", label: "Visit Reports", path: "/service/visits", roles: ALL_STAFF },
-      { key: "service.jobcards", label: "Job Cards (Estimate)", path: "/service/jobcards", roles: ALL_STAFF },
+      { key: "service.jobcards", label: "Job Cards (Estimate)", path: "/service/jobcards", roles: [...ALL_STAFF, ...CENTER] },
       { key: "service.approvals", label: "Job Card Approvals", path: "/service/approvals", roles: STAFF },
       { key: "service.replacements", label: "Replacement / Return", path: "/service/replacements", roles: [...STAFF, ...DEALER], labels: { DEALER: "Replacement Flow (In Warranty)" } },
       { key: "service.reports", label: "Service Reports", path: "/service/reports", roles: STAFF },
@@ -53,6 +54,9 @@ export const FORM_GROUPS: FormGroup[] = [
       { key: "stock.engineer", label: "Engineer-wise Stock", path: "/stock/engineer", roles: STAFF },
       { key: "stock.ledger", label: "Stock Ledger & Entry", path: "/stock/ledger", roles: STAFF },
       { key: "stock.consumption", label: "Parts Consumption", path: "/stock/consumption", roles: STAFF },
+      { key: "stock.requests", label: "Material Request", path: "/stock/material-requests", roles: [...STAFF, ...CENTER] },
+      { key: "stock.request-approvals", label: "Material Approvals", path: "/stock/material-approvals", roles: HO },
+      { key: "stock.challans", label: "Delivery Challan", path: "/stock/challans", roles: HO },
     ],
   },
   {
@@ -67,6 +71,7 @@ export const FORM_GROUPS: FormGroup[] = [
       { key: "masters.call-types", label: "Call Types & Valid Days", path: "/masters/config/call-types", roles: HO },
       { key: "masters.projects", label: "Projects / Schemes", path: "/masters/config/projects", roles: HO },
       { key: "masters.approval-rules", label: "Approval Rules", path: "/masters/config/approval-rules", roles: HO },
+      { key: "masters.text-lists", label: "Text Lists", path: "/masters/text-lists", roles: HO },
       { key: "system.activity", label: "Activity & Message Log", path: "/system/activity", roles: STAFF },
     ],
   },
@@ -102,6 +107,8 @@ export function canUseForm(user: AccessUser | null | undefined, formKey: string)
 /** Prototype engineer login: Serial No. Search · Service Calls · Visit Reports · Job Cards (Estimate) · My Stock. */
 const SUGGESTED: Partial<Record<RoleCode, string[]>> = {
   ENGINEER: ["warranty.search", "service.complaints", "service.visits", "service.jobcards", "stock.availability"],
+  /** Service centre login: Service Calls · Job Cards (Estimate) · Serial Verification. */
+  SERVICE_CENTER: ["service.complaints", "service.jobcards", "warranty.verify"],
 };
 
 /** Screens suggested for a role when an admin first sets up a user (they can then tick / untick freely). */
@@ -150,6 +157,11 @@ const API_RULES: [string, string[]][] = [
   ["/api/stock/balance", ["stock.availability", "stock.engineer", "service.jobcards"]],
   ["/api/stock/consumption", ["stock.consumption"]],
   ["/api/stock/txns", ["stock.ledger"]],
+  ["/api/stock/material-requests/decide", ["stock.request-approvals"]],
+  ["/api/stock/material-requests/get", ["stock.requests", "stock.request-approvals"]],
+  ["/api/stock/material-requests", ["stock.requests"]],
+  ["/api/stock/challans", ["stock.challans"]],
+  ["/api/masters/text-lists", ["masters.text-lists"]],
   ["/api/system", ["system.activity"]],
 ];
 

@@ -20,11 +20,21 @@ export async function POST(request: NextRequest) {
     const scope = await getScope(user), values: Record<string, unknown> = {}, add = namedParams(values);
     const pre = (condition: string) => (condition ? ` AND ${condition}` : "");
     const callScope = pre(callFilter(scope, "c", add));
-    const wScope = pre(warrantyFilter(scope, "w", add));
-    const iScope = pre(geoFilter(scope, { state: "i.[StateId]", district: "i.[District]", dealer: "i.[DealerId]", customer: "i.[CustomerId]" }, add));
-    const dScope = pre(geoFilter(scope, { state: "d.[StateId]", district: "d.[District]", dealer: "d.[DealerId]" }, add));
+    let wScope = pre(warrantyFilter(scope, "w", add));
+    let iScope = pre(geoFilter(scope, { state: "i.[StateId]", district: "i.[District]", dealer: "i.[DealerId]", customer: "i.[CustomerId]" }, add));
+    let dScope = pre(geoFilter(scope, { state: "d.[StateId]", district: "d.[District]", dealer: "d.[DealerId]" }, add));
     const jobCalls = callFilter(scope, "cs", add);
-    const jScope = jobCalls ? ` AND j.[ComplaintId] IN (SELECT cs.[ComplaintId] FROM dbo.[Complaints] cs WHERE ${jobCalls})` : "";
+    let jScope = jobCalls ? ` AND j.[ComplaintId] IN (SELECT cs.[ComplaintId] FROM dbo.[Complaints] cs WHERE ${jobCalls})` : "";
+    // Service centre login: only its own entries — pumps / warranties of the calls it booked, its own job cards, no dealers.
+    const centerLogin = scope.role === "SERVICE_CENTER" && !scope.unrestricted;
+    if (centerLogin) {
+      const me = add(user.UserId);
+      const ownInstallations = `(SELECT oc.[InstallationId] FROM dbo.[Complaints] oc WHERE oc.[InsertedByUserId] = ${me} AND oc.[InstallationId] IS NOT NULL)`;
+      wScope = ` AND w.[InstallationId] IN ${ownInstallations}`;
+      iScope = ` AND i.[InstallationId] IN ${ownInstallations}`;
+      dScope = " AND 1 = 0";
+      jScope += ` AND j.[InsertedByUserId] = ${me}`;
+    }
 
     const [warrantyKpi, callKpi, dealerKpi, costKpi, months, position, byStatus, byDealer, pendingCards, rules, dealersPending, overdueCalls, unassigned, ending, remindersDue] = await Promise.all([
       runQuery(`SELECT
@@ -58,9 +68,9 @@ export async function POST(request: NextRequest) {
         WHERE 1 = 1${iScope}
         GROUP BY d.[FirmName] ORDER BY [Count] DESC, [Name]`, values),
       runQuery(`SELECT j.[JobCardId], j.[JobCardNo], j.[TotalEstimate], j.[CurrentLevel], c.[CustomerName], c.[ServiceCenterId]
-        FROM dbo.[JobCards] j JOIN dbo.[Complaints] c ON j.[ComplaintId] = c.[ComplaintId] WHERE j.[Status] = 'In Approval'${callScope} ORDER BY j.[JobCardDate]`, values),
+        FROM dbo.[JobCards] j JOIN dbo.[Complaints] c ON j.[ComplaintId] = c.[ComplaintId] WHERE j.[Status] = 'In Approval'${callScope}${centerLogin ? jScope : ""} ORDER BY j.[JobCardDate]`, values),
       activeRules(runQuery),
-      mine ? Promise.resolve([]) : runQuery(`SELECT TOP 5 [DealerId], [FirmName], [City], [Mobile] FROM dbo.[Dealers] d WHERE d.[Status] = 'Pending'${dScope} ORDER BY d.[InsertedOn]`, values),
+      mine || centerLogin ? Promise.resolve([]) : runQuery(`SELECT TOP 5 [DealerId], [FirmName], [City], [Mobile] FROM dbo.[Dealers] d WHERE d.[Status] = 'Pending'${dScope} ORDER BY d.[InsertedOn]`, values),
       runQuery(`SELECT TOP 6 c.[ComplaintId], c.[ComplaintNo], c.[CustomerName], c.[DueDate], CONCAT(u.[FirstName], ' ', u.[LastName]) AS [EngineerName]
         FROM dbo.[Complaints] c LEFT JOIN dbo.[Users] u ON c.[EngineerUserId] = u.[UserId]
         WHERE ${OPEN_CALL} AND c.[DueDate] < SYSUTCDATETIME()${callScope} ORDER BY c.[DueDate]`, values),
