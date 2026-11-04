@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { sessionFromRequest, signAuthToken } from "@/lib/auth/jwt";
 import { query } from "@/lib/sqlserver";
+import { erpAdminStillValid, isErpUser } from "@/lib/services/erpUsers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -24,7 +25,15 @@ export async function POST(request: NextRequest) {
     }
 
     const user = rows[0];
-    const response = NextResponse.json({ success: true, user });
+
+    // iERP admins: the iERP stays the source of truth — admin flag removed or account disabled there ends the session.
+    const fromErp = await isErpUser(user.UserId);
+    if (fromErp && !(await erpAdminStillValid(user.UserId))) {
+      await query(`UPDATE dbo.[Users] SET [IsActive] = 0, [LastUpdatedOn] = SYSUTCDATETIME() WHERE [UserId] = @p0`, [user.UserId]);
+      return NextResponse.json({ error: "Your iERP admin access has been removed", code: "UNAUTHENTICATED" }, { status: 401 });
+    }
+
+    const response = NextResponse.json({ success: true, user: { ...user, Source: fromErp ? "IERP" : "LOCAL" } });
 
     // Re-issue the session with the latest role and screen rights, so rights changed by an admin
     // apply on the user's next page load without signing out (the middleware reads them from the token).

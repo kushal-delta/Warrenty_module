@@ -1,9 +1,9 @@
 import React from "react";
 
 export function FormSection({ title, description, number, children }: {
-  title: string; description: string; number: string; children: React.ReactNode;
+  title: React.ReactNode; description: string; number: string; children: React.ReactNode;
 }) {
-  return <section className="entry-section" aria-label={title}>
+  return <section className="entry-section" aria-label={typeof title === "string" ? title : undefined}>
     <div className="entry-section-heading">
       <span className="entry-section-number" aria-hidden="true">{number}</span>
       <div><h3>{title}</h3><p>{description}</p></div>

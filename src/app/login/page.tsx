@@ -1,20 +1,21 @@
 "use client";
 
-import React, { useState } from "react";
-import { Form, Input, Button, Alert } from "antd";
-import {
-  UserOutlined,
-  LockOutlined,
-  SafetyCertificateOutlined,
-  CheckCircleFilled,
-  BarcodeOutlined,
-  ThunderboltOutlined,
-  CustomerServiceOutlined,
-  ArrowRightOutlined,
-} from "@ant-design/icons";
+import React, { useEffect, useState } from "react";
+import { Form, Input, Button, Alert, message } from "antd";
+import { UserOutlined, LockOutlined, ArrowRightOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useRouter } from "next/navigation";
+
+
+const FEATURES = [
+  "Excel sticker import & QR warranty cards",
+  "Dealer, customer & HO portals",
+  "Pump / Motor / Controller — own warranty each",
+  "Complaint → visit → job card → approval",
+  "Replacement with balance warranty",
+  "Engineer-wise spares stock",
+];
 
 export default function LoginPage() {
   const [form] = Form.useForm();
@@ -22,11 +23,23 @@ export default function LoginPage() {
   const { login, isLoading, error, clearError } = useAuthStore();
   const [submitting, setSubmitting] = useState(false);
 
+  // Arriving here right after "Sign Out" → confirm it.
+  useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem("logoutNotice")) {
+        window.sessionStorage.removeItem("logoutNotice");
+        message.success({ content: "You have been signed out successfully.", duration: 3 });
+      }
+    } catch {}
+  }, []);
+
   const handleFinish = async (values: any) => {
     try {
       setSubmitting(true);
       clearError();
-      await login(values);
+      const user = await login({ username: String(values.username).trim(), password: values.password });
+      const name = [user?.FirstName, user?.LastName].filter(Boolean).join(" ") || user?.Username || "";
+      message.success({ content: `Login successful — welcome${name ? `, ${name}` : ""}!`, duration: 3 });
       router.push("/");
     } catch (err: any) {
       reportFormError(err, { form, fallback: "Invalid username or password" });
@@ -36,191 +49,96 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="login-shell flex flex-col lg:flex-row bg-slate-100 font-sans">
-      {/* LEFT COLUMN: Premium Enterprise Showcase (Desktop) */}
-      <div className="lg:w-1/2 h-auto lg:h-full bg-gradient-to-br from-[#071329] via-[#0d2347] to-[#040c1a] p-6 lg:p-8 xl:p-12 flex flex-col justify-between text-white relative overflow-hidden shrink-0">
-        {/* Subtle decorative glow circles */}
-        <div className="absolute top-0 right-0 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl -ml-20 -mb-20 pointer-events-none" />
+    <div className="login-shell flex flex-col font-sans bg-slate-50">
+    <div className="relative flex-1 min-h-0 overflow-hidden flex flex-col lg:flex-row"
+      style={{ background: "linear-gradient(135deg, #082a33 0%, #0b3d47 38%, #0a6467 72%, #099089 100%)" }}>
+      {/* Soft glows, like the prototype backdrop */}
+      <div className="pointer-events-none absolute -top-40 right-[-10%] w-[640px] h-[640px] rounded-full bg-cyan-300/10 blur-3xl" />
+      <div className="pointer-events-none absolute bottom-[-120px] left-[-80px] w-[360px] h-[360px] rounded-full bg-amber-300/10 blur-3xl" />
 
-        {/* Top: Brand Headers */}
-        <div className="relative z-10 space-y-3 xl:space-y-4">
-          <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-            {/* Solartive Logo in crisp white pill */}
-            <div className="bg-white px-3.5 py-1.5 rounded-xl shadow-md flex items-center justify-center">
-              <img
-                src="/solartive-logo.png"
-                alt="Solartive Logo"
-                className="h-6 sm:h-7 w-auto object-contain"
-              />
-            </div>
-            <div className="h-5 w-px bg-slate-700 hidden sm:block" />
-            <div className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-blue-500/15 border border-blue-400/30 text-xs font-semibold text-blue-300">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span>Delta iERP System 2.0</span>
-            </div>
+      {/* LEFT: brand hero */}
+      <section className="relative z-10 lg:w-1/2 flex items-center px-6 sm:px-12 lg:px-[6%] py-10 lg:py-0 text-white">
+        <div className="max-w-xl">
+          <div className="inline-flex bg-white rounded-xl px-4 py-3 shadow-lg shadow-black/20">
+            <img src="/solartive-logo.png" alt="Solartive" className="h-9 sm:h-12 w-auto object-contain select-none" draggable={false} />
           </div>
 
-          <div>
-            <h1 className="text-xl sm:text-2xl xl:text-3xl font-extrabold text-white tracking-tight leading-snug">
-              Delta Warranty & Customer Service Management
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 mt-1.5 max-w-lg leading-relaxed">
-              Enterprise lifecycle management for solar submersible pump sets, motor components, MPPT controllers, dealer dispatches, and nationwide field complaints.
-            </p>
-          </div>
+          <h1 className="mt-6 text-3xl sm:text-[40px] font-black tracking-tight leading-none">
+            Warranty <span className="text-[#22c3c9]">&amp; Service</span>
+          </h1>
+          <p className="mt-3 text-[11px] sm:text-xs font-semibold tracking-[0.22em] uppercase text-slate-300/80">
+            Solar Submersible Pump · Motor · Controller
+          </p>
+
+          <p className="mt-8 text-xl sm:text-[26px] font-light leading-snug text-slate-100">
+            One QR sticker. <b className="font-bold text-[#f6a93b]">Warranty</b> registered in seconds,{" "}
+            <b className="font-bold text-[#f6a93b]">service</b> tracked to closure.
+          </p>
+
+          <ul className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-3 text-[13px] text-slate-200">
+            {FEATURES.map((f) => (
+              <li key={f} className="flex items-start gap-2.5">
+                <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#f6a93b]" />
+                <span>{f}</span>
+              </li>
+            ))}
+          </ul>
         </div>
+      </section>
 
-        {/* Middle: Core Platform Highlights */}
-        <div className="relative z-10 my-3 xl:my-6 space-y-2 xl:space-y-3 max-w-lg hidden sm:block">
-          <div className="p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-start space-x-3 hover:bg-white/10 transition-colors">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 text-base border border-blue-400/20">
-              <BarcodeOutlined />
-            </div>
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-white">
-                Serial & Sticker Tracking
-              </h4>
-              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-snug">
-                Manufacturing lot batches, QR sticker printing, and serial dispatch registry.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-start space-x-3 hover:bg-white/10 transition-colors">
-            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 text-base border border-emerald-400/20">
-              <ThunderboltOutlined />
-            </div>
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-white">
-                Atomic Installation Registration
-              </h4>
-              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-snug">
-                Register site details, the beneficiary, and pump set warranties in one step.
-              </p>
-            </div>
-          </div>
-
-          <div className="p-3 rounded-xl bg-white/5 border border-white/10 backdrop-blur-sm flex items-start space-x-3 hover:bg-white/10 transition-colors">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0 text-base border border-indigo-400/20">
-              <CustomerServiceOutlined />
-            </div>
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-white">
-                Service Helpdesk & Field Engineers
-              </h4>
-              <p className="text-[11px] sm:text-xs text-slate-300 mt-0.5 leading-snug">
-                Breakdown ticket allocation, service center escalation, spare consumption, and resolution audit.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom: Partner & Compliance Badge */}
-        <div className="relative z-10 pt-3 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
-          <div className="flex items-center space-x-2">
-            <span className="font-semibold text-slate-300">Client:</span>
-            <span>Solartive Techno Industries Pvt. Ltd.</span>
-          </div>
-          <div className="flex items-center space-x-1.5 text-emerald-400 font-medium">
-            <CheckCircleFilled className="text-xs" />
-            <span>Warranty & Service</span>
-          </div>
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN: Crisp, High-Contrast Authentication Panel */}
-      <div className="login-panel flex-1 lg:w-1/2 flex items-center justify-center p-4 sm:p-6 lg:p-8 xl:p-12 bg-slate-50">
-        <div className="w-full max-w-md bg-white p-6 sm:p-8 rounded-2xl shadow-xl shadow-slate-200/60 border border-slate-200/80 my-auto">
+      {/* RIGHT: sign-in card */}
+      <section className="login-panel relative z-10 flex items-center justify-center px-4 sm:px-8 py-10 lg:py-0 lg:w-1/2 bg-slate-50">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl shadow-slate-200/70 border border-slate-200/80 p-6 sm:p-8">
           {/* Header */}
           <div className="mb-5 sm:mb-6">
             <div className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[11px] font-bold uppercase tracking-wider mb-2.5 border border-blue-200/80">
               <SafetyCertificateOutlined className="text-xs" />
               <span>Authorized Portal Access</span>
             </div>
-            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">
-              Sign In
-            </h2>
-            <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1">
-              Enter your credentials to access the warranty & service workspace
-            </p>
+            <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Sign In</h2>
+            <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1">Enter your credentials to access the warranty &amp; service workspace</p>
           </div>
 
-          {/* Error Message */}
-          {error && (
-            <Alert
-              message={error}
-              type="error"
-              showIcon
-              closable
-              onClose={clearError}
-              className="mb-4 rounded-lg border-red-200 py-1.5 text-xs"
-            />
-          )}
+          {error && <Alert message={error} type="error" showIcon closable onClose={clearError} className="mb-4 rounded-lg border-red-200 py-1.5 text-xs" />}
 
-          {/* Form */}
-          <Form
-            form={form}
-            layout="vertical"
-            onFinish={handleFinish}
-            requiredMark={false}
-          >
-            <Form.Item
-              name="username"
-              className="!mb-4"
-              label={
-                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                  Username
-                </span>
-              }
-              rules={[{ required: true, message: "Username is required" }]}
-            >
-              <Input
-                prefix={<UserOutlined className="text-slate-400 text-sm mr-1.5" />}
-                placeholder="Enter username"
-                size="large"
-                className="h-11 rounded-lg border-slate-300 font-medium text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-              />
+          <Form form={form} layout="vertical" onFinish={handleFinish} requiredMark={false}>
+            <Form.Item name="username" className="!mb-4"
+              label={<span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Username</span>}
+              rules={[{ required: true, message: "Username is required" }]}>
+              <Input prefix={<UserOutlined className="text-slate-400 text-sm mr-1.5" />} placeholder="Enter username" size="large" autoComplete="username"
+                className="h-11 rounded-lg border-slate-300 font-medium text-sm text-slate-900" />
             </Form.Item>
-
-            <Form.Item
-              name="password"
-              className="!mb-4"
-              label={
-                <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                  Password
-                </span>
-              }
-              rules={[{ required: true, message: "Password is required" }]}
-            >
-              <Input.Password
-                prefix={<LockOutlined className="text-slate-400 text-sm mr-1.5" />}
-                placeholder="Enter password"
-                size="large"
-                className="h-11 rounded-lg border-slate-300 font-medium text-sm text-slate-900 placeholder:text-slate-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-              />
+            <Form.Item name="password" className="!mb-4"
+              label={<span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">Password</span>}
+              rules={[{ required: true, message: "Password is required" }]}>
+              <Input.Password prefix={<LockOutlined className="text-slate-400 text-sm mr-1.5" />} placeholder="Enter password" size="large" autoComplete="current-password"
+                className="h-11 rounded-lg border-slate-300 font-medium text-sm text-slate-900" />
             </Form.Item>
-
-            <Button
-              type="primary"
-              htmlType="submit"
-              size="large"
-              loading={submitting || isLoading}
-              icon={<ArrowRightOutlined />}
-              className="w-full h-11 text-sm font-bold shadow-md bg-blue-600 hover:bg-blue-700 border-none rounded-lg mt-2 flex items-center justify-center cursor-pointer"
-            >
+            <Button type="primary" htmlType="submit" size="large" loading={submitting || isLoading} icon={<ArrowRightOutlined />}
+              className="w-full h-11 text-sm font-bold shadow-md bg-blue-600 hover:bg-blue-700 border-none rounded-lg mt-2 flex items-center justify-center">
               Sign In to Workspace
             </Button>
           </Form>
 
-          {/* Footer Branding */}
           <div className="mt-6 pt-4 border-t border-slate-100 text-center">
-            <p className="text-[11px] font-medium text-slate-400">
-              © 2026 Delta Infosoft Pvt. Ltd. • All rights reserved.
-            </p>
+            <p className="text-[11px] font-medium text-slate-400">© 2026 Delta Infosoft Pvt. Ltd. • All rights reserved.</p>
           </div>
         </div>
-      </div>
+      </section>
+    </div>
+
+      {/* Vendor footer */}
+      <footer className="shrink-0 bg-white border-t border-slate-200 px-4 sm:px-8 py-3 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="flex items-center gap-4">
+          <img src="/logo-full.png" alt="Delta Infosoft" className="h-8 w-auto object-contain select-none" draggable={false} />
+          <div className="h-8 w-px bg-slate-200" />
+          <div className="leading-tight">
+            <div className="text-[13px] font-bold text-slate-800">Deltainfosoft Pvt. Ltd.</div>
+            <div className="text-xs font-medium text-[#0f8f95]">Enterprise Solutions Provider</div>
+          </div>
+        </div>
+        <p className="text-xs text-slate-500">© {new Date().getFullYear()} Deltainfosoft Pvt. Ltd. All rights reserved.</p>
+      </footer>
     </div>
   );
 }

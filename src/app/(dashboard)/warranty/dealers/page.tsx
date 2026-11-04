@@ -13,8 +13,10 @@ import {
   Tag,
   Space,
   Tooltip,
+  Modal,
   message,
 } from "antd";
+import axios from "axios";
 import {
   ShopOutlined,
   PlusOutlined,
@@ -23,9 +25,12 @@ import {
   DeleteOutlined,
   SearchOutlined,
   ReloadOutlined,
+  CheckCircleOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import { useWarrantyStore, Dealer } from "@/lib/store/useWarrantyStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
+import { useAuthStore } from "@/lib/store/useAuthStore";
 import {
   DrawerHeader,
   DrawerChip,
@@ -110,6 +115,29 @@ export default function DealersPage() {
     }
   };
 
+  // Dealer approval (head office): Pending sign-ups are approved or blocked; blocking needs a reason.
+  const role = useAuthStore((st) => st.user?.Role);
+  const isHO = role === "SUPER" || role === "HO";
+  const [decision, setDecision] = useState<{ dealer: Dealer; decision: "Approved" | "Blocked" } | null>(null);
+  const [decisionRemarks, setDecisionRemarks] = useState("");
+  const [deciding, setDeciding] = useState(false);
+  const submitDecision = async () => {
+    if (!decision) return;
+    if (decision.decision === "Blocked" && !decisionRemarks.trim()) { message.error("Enter the reason for blocking the dealer"); return; }
+    try {
+      setDeciding(true);
+      await axios.post("/api/warranty/dealers/decide", { DealerId: decision.dealer.DealerId, decision: decision.decision, remarks: decisionRemarks });
+      message.success(`${decision.dealer.FirmName} ${decision.decision === "Approved" ? "approved" : "blocked"}`);
+      setDecision(null);
+      setDecisionRemarks("");
+      await fetchDealers();
+    } catch (err) {
+      reportFormError(err, { fallback: "Could not update the dealer status" });
+    } finally {
+      setDeciding(false);
+    }
+  };
+
   const handleDeleteConfirm = async () => {
     if (!deletingDealer) return;
     try {
@@ -189,9 +217,19 @@ export default function DealersPage() {
     {
       title: "Actions",
       key: "actions",
-      width: 100,
+      width: 150,
       render: (_: any, record: Dealer) => (
         <Space size="small">
+          {isHO && record.Status !== "Approved" && (
+            <Tooltip title="Approve dealer">
+              <Button type="text" size="small" icon={<CheckCircleOutlined className="text-emerald-600" />} onClick={() => { setDecisionRemarks(""); setDecision({ dealer: record, decision: "Approved" }); }} />
+            </Tooltip>
+          )}
+          {isHO && record.Status !== "Blocked" && (
+            <Tooltip title="Block dealer">
+              <Button type="text" size="small" icon={<StopOutlined className="text-orange-600" />} onClick={() => { setDecisionRemarks(""); setDecision({ dealer: record, decision: "Blocked" }); }} />
+            </Tooltip>
+          )}
           <Tooltip title="Edit Dealer">
             <Button
               type="text"
@@ -424,6 +462,12 @@ export default function DealersPage() {
       </Drawer>
 
       {/* Delete Confirmation Modal */}
+      <Modal open={!!decision} title={decision?.decision === "Approved" ? `Approve ${decision?.dealer.FirmName}` : `Block ${decision?.dealer.FirmName}`} onCancel={() => setDecision(null)} confirmLoading={deciding}
+        okText={decision?.decision === "Approved" ? "Approve" : "Block dealer"} okButtonProps={{ danger: decision?.decision === "Blocked", className: decision?.decision === "Approved" ? "bg-green-600" : "" }} onOk={submitDecision} destroyOnClose>
+        <p className="text-xs text-slate-500 mb-2">{decision?.decision === "Approved" ? "The dealer can sign in and register warranties. Remarks are optional." : "A blocked dealer cannot sign in or register warranties. The reason is recorded."}</p>
+        <Input.TextArea rows={3} value={decisionRemarks} onChange={(e) => setDecisionRemarks(e.target.value)} maxLength={300} placeholder={decision?.decision === "Blocked" ? "Reason for blocking" : "Remarks (optional)"} />
+      </Modal>
+
       <ConfirmModal
         open={deleteModalOpen}
         title="Delete Dealer Profile"

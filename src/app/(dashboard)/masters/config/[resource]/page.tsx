@@ -48,6 +48,7 @@ export default function ConfigMasterPage({ params }: { params: { resource: strin
     if (value === null || value === undefined || value === "") return "-";
     if (field.kind === "boolean") return value ? <Tag color="green">Yes</Tag> : <Tag>No</Tag>;
     if (field.kind === "money") return `₹ ${inr(value, 2)}`;
+    if (field.kind === "percent") return `${Number(value)} %`;
     if (field.kind === "date") return formatDate(value);
     if (field.kind === "state") return states.find((s) => s.StateId === value)?.StateName || "-";
     if (field.kind === "user") { const u = users.find((x) => x.UserId === value); return u ? `${u.FirstName} ${u.LastName || ""}` : "-"; }
@@ -59,6 +60,7 @@ export default function ConfigMasterPage({ params }: { params: { resource: strin
       case "boolean": return <Switch />;
       case "number": return <InputNumber min={0} precision={0} className="w-full" />;
       case "money": return <InputNumber min={0} precision={2} className="w-full" prefix="₹" />;
+      case "percent": return <InputNumber min={0} max={100} precision={2} className="w-full" suffix="%" />;
       case "date": return <SmartDatePicker />;
       case "state": return <Select allowClear showSearch optionFilterProp="label" placeholder="Select state" options={states.map((s) => ({ value: s.StateId, label: s.StateName }))} />;
       case "user": return <Select allowClear showSearch optionFilterProp="label" placeholder="Any user with the role" options={users.map((u) => ({ value: u.UserId, label: `${u.FirstName} ${u.LastName || ""} (${u.Role})` }))} />;
@@ -73,7 +75,7 @@ export default function ConfigMasterPage({ params }: { params: { resource: strin
     const values: any = {};
     config.fields.forEach((f) => {
       const v = row?.[f.name];
-      values[f.name] = f.kind === "date" ? (v ? dayjs(v) : undefined) : f.kind === "money" && v != null ? Number(v) : v ?? (f.kind === "boolean" ? true : undefined);
+      values[f.name] = f.kind === "date" ? (v ? dayjs(v) : undefined) : (f.kind === "money" || f.kind === "percent") && v != null ? Number(v) : v ?? (f.kind === "boolean" ? true : undefined);
     });
     form.setFieldsValue(values);
     setDrawerOpen(true);
@@ -100,7 +102,7 @@ export default function ConfigMasterPage({ params }: { params: { resource: strin
 
   const filtered = rows.filter((r) => !search || config.fields.some((f) => String(r[f.name] ?? "").toLowerCase().includes(search.toLowerCase())));
   const columns = [
-    ...config.fields.filter((f) => f.kind !== "text").map((f) => ({ title: f.label, dataIndex: f.name, key: f.name, align: (f.kind === "money" || f.kind === "number" ? "right" : "left") as "right" | "left",
+    ...config.fields.filter((f) => f.kind !== "text").map((f) => ({ title: f.label, dataIndex: f.name, key: f.name, align: (f.kind === "money" || f.kind === "number" || f.kind === "percent" ? "right" : "left") as "right" | "left",
       render: (v: any) => f.name === config.display ? <b className="text-slate-800">{display(f, v)}</b> : display(f, v) })),
     { title: "Actions", key: "actions", width: 90, render: (_: any, row: any) => (
       <Space size="small">

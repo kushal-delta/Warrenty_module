@@ -4,7 +4,7 @@ import { masterConfigs } from "@/lib/config/masters";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { randomUUID } from "crypto";
 
-const resources: Record<string, string> = { spares: "Spares", labour: "LabourMasters", faults: "FaultMasters", "call-types": "CallTypes", projects: "Projects", "service-centers": "ServiceCenters", "approval-rules": "ApprovalRules", states: "States", districts: "Districts" };
+const resources: Record<string, string> = { spares: "Spares", labour: "LabourMasters", faults: "FaultMasters", "call-types": "CallTypes", projects: "Projects", "approval-rules": "ApprovalRules", states: "States", districts: "Districts" };
 const respond = (error: string, status: number) => NextResponse.json({ error }, { status });
 function resolved(resource: string) { const config = masterConfigs[resource], table = resources[resource]; return config && table ? { config, table } : null; }
 function valuesFor(body: Record<string, unknown>, config: NonNullable<ReturnType<typeof resolved>>["config"]) {
@@ -15,6 +15,7 @@ function valuesFor(body: Record<string, unknown>, config: NonNullable<ReturnType
     if (value === undefined) continue;
     if (value === null || value === "") { values[field.name] = null; continue; }
     if (field.kind === "boolean") values[field.name] = Boolean(value);
+    else if (field.kind === "percent") { const number = Number(value); if (!Number.isFinite(number) || number < 0 || number > 100) throw new Error(`${field.label} is invalid`); values[field.name] = number.toFixed(2); }
     else if (field.kind === "number" || field.kind === "money") { const number = Number(value); if (!Number.isFinite(number) || number < 0 || (field.kind === "number" && !Number.isInteger(number))) throw new Error(`${field.label} is invalid`); values[field.name] = field.kind === "money" ? number.toFixed(2) : number; }
     else if (field.kind === "date") { const date = new Date(String(value)); if (Number.isNaN(date.getTime())) throw new Error(`${field.label} is invalid`); values[field.name] = date; }
     else { const text = String(value).trim(); if (field.max && text.length > field.max) throw new Error(`${field.label} exceeds ${field.max} characters`); values[field.name] = text; }

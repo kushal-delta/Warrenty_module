@@ -363,3 +363,42 @@ button { cursor: pointer; }
 .row-status-alert td {
   background-color: #fff1f0 !important;
 }
+
+/* ---------- Loader (components/common/Loader.tsx) ---------- */
+.app-loader-ring {
+  display: inline-block;
+  box-sizing: border-box;
+  border-radius: 9999px;
+  border: 3px solid #e2e8f0;
+  border-top-color: #0a6467;
+  border-right-color: #1677ff;
+  animation: app-loader-spin 0.75s linear infinite;
+  vertical-align: middle;
+}
+.ant-spin .app-loader-ring { margin: 0 auto; }
+.ant-spin-sm .app-loader-ring { width: 18px !important; height: 18px !important; border-width: 2px; }
+.ant-spin-lg .app-loader-ring { width: 44px !important; height: 44px !important; }
+/* antd centres the indicator by its own size; keep the ring centred in overlays */
+.ant-spin-nested-loading > div > .ant-spin .app-loader-ring { position: absolute; top: 50%; left: 50%; margin: -15px 0 0 -15px; }
+.ant-spin-nested-loading > div > .ant-spin-sm .app-loader-ring { margin: -9px 0 0 -9px; }
+.ant-spin-nested-loading > div > .ant-spin-lg .app-loader-ring { margin: -22px 0 0 -22px; }
+.ant-spin-container { transition: opacity 0.2s ease; }
+.ant-spin-blur { opacity: 0.45; filter: blur(0.5px); }
+
+.app-page-loader {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  padding: 32px 16px;
+  text-align: center;
+}
+.app-page-loader-label { font-size: 13px; font-weight: 600; color: #334155; }
+.app-page-loader-hint { font-size: 12px; color: #94a3b8; }
+
+@keyframes app-loader-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-loader-ring { animation-duration: 1.6s; }
+}

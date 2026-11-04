@@ -2,6 +2,7 @@
 
 import React from "react";
 import { ConfigProvider, App as AntdApp } from "antd";
+import { LoaderRing } from "@/components/common/Loader";
 
 interface AntdPopupContainerProps {
   children: React.ReactNode;
@@ -29,6 +30,8 @@ export function AntdPopupContainer({ children }: AntdPopupContainerProps) {
   return (
     <ConfigProvider
       getPopupContainer={getPopupContainer}
+      // One loader everywhere: tables, forms and overlays all show the app ring instead of antd dots.
+      spin={{ indicator: <LoaderRing /> }}
       theme={{
         token: {
           colorPrimary: "#1677ff",

@@ -4,8 +4,11 @@ import { query } from "@/lib/sqlserver";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
 import { hashPassword } from "@/lib/auth/password";
+import { isErpUser } from "@/lib/services/erpUsers";
 import { isFormRight, rightsString } from "@/lib/auth/forms";
 import { clearScopeCache } from "@/lib/auth/scope";
+import { InputError, runQuery, type Run } from "@/lib/services/apiHelpers";
+import { hasUserLedger, inErpAndWarranty, syncEngineerLedger } from "@/lib/services/erpLedgers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -61,17 +64,23 @@ export async function POST(request: NextRequest) {
     if ("DistrictRights" in body) updatePayload.DistrictRights = rightsString(body.DistrictRights);
     if ("FormRights" in body) updatePayload.FormRights = rightsString(body.FormRights, isFormRight);
     if ("ServiceCenterId" in body) updatePayload.ServiceCenterId = body.ServiceCenterId || null;
+    if ("Address" in body) updatePayload.Address = String(body.Address || "").trim().slice(0, 255) || null;
 
     // Only update password if explicitly provided
-    if (Password && Password.trim().length > 0) {
+    // iERP admins keep their iERP password; a local password would never be used.
+    if (Password && Password.trim().length > 0 && !(await isErpUser(UserId))) {
       updatePayload.Password = await hashPassword(Password.trim());
     }
 
     const keys = Object.keys(updatePayload);
-    const updated = await query<any>(
+    const write = (run: Run) => run<any>(
       `UPDATE dbo.[Users] SET ${keys.map((key, index) => `[${key}] = @p${index}`).join(", ")} OUTPUT INSERTED.* WHERE [UserId] = @p${keys.length}`,
-      [...keys.map((key) => updatePayload[key]), UserId]
+      Object.fromEntries([...keys.map((key) => updatePayload[key]), UserId].map((value, index) => [`p${index}`, value]))
     );
+    // Engineers (or users that were engineers) keep their iERP ledger in step — same as the Service Engineers screen.
+    const updated = Role === "ENGINEER" || (await hasUserLedger(runQuery, UserId))
+      ? await inErpAndWarranty(async (run, erp, created) => { const rows = await write(run); if (rows.length) await syncEngineerLedger(run, erp, UserId, sessionUser.UserId, created); return rows; })
+      : await write(runQuery);
 
     if (updated.length === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -90,6 +99,7 @@ export async function POST(request: NextRequest) {
     const { Password: _pwd, ...safeUser } = updated[0];
     return NextResponse.json({ success: true, user: safeUser });
   } catch (err: any) {
+    if (err instanceof InputError) return NextResponse.json({ error: err.message }, { status: 400 });
     return NextResponse.json({ error: err.message || "Failed to update user" }, { status: 500 });
   }
 }

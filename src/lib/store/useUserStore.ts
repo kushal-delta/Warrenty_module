@@ -27,10 +27,17 @@ export interface AppUser {
   DistrictRights?: string | null;
   FormRights?: string | null;
   ServiceCenterId?: string | null;
+  ServiceCenterName?: string | null;
+  Address?: string | null;
+  /** Engineers: code of their iERP ledger (Service Engineers group); null when not yet in the iERP. */
+  LedgerCode?: string | null;
+  /** 1 when the account is a Delta iERP administrator (signs in with the iERP password). */
+  IsErpUser?: number | boolean;
 }
 
 /** Access rights sent with add / update; arrays are stored comma-separated, empty = all. */
 export interface UserRightsPayload {
+  Address?: string | null;
   StateRights?: string[];
   DistrictRights?: string[];
   FormRights?: string[];

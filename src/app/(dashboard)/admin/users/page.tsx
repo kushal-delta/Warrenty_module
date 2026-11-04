@@ -54,6 +54,9 @@ import { ALL_FORMS, FORM_GROUPS, defaultFormsForRole, parseList } from "@/lib/au
 /** Number of screens a FormRights list opens (module keys from older saves count as all their screens). */
 const countScreens = (rights: string[]) => new Set(rights.flatMap((r) => FORM_GROUPS.find((g) => g.key === r)?.forms.map((f) => f.key) || [r])).size;
 import { FormRightsPicker } from "@/components/admin/FormRightsPicker";
+import { districtOptions } from "@/lib/utils/selectOptions";
+import { useWarrantyStore } from "@/lib/store/useWarrantyStore";
+import { useCustomerStore } from "@/lib/store/useCustomerStore";
 
 const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: "SUPER", label: "Super Admin", color: "red" },
@@ -92,9 +95,37 @@ export default function UsersPage() {
   const watchedAdmin = Form.useWatch("IsAdmin", form);
   const watchedStates: string[] = Form.useWatch("StateRights", form) || [];
   const rightsUnrestricted = Boolean(watchedAdmin) || watchedRole === "SUPER";
+  const isPortalRole = watchedRole === "DEALER" || watchedRole === "CUSTOMER";
+  const { dealers, fetchDealers } = useWarrantyStore();
+  const { customers, fetchCustomers } = useCustomerStore();
+  useEffect(() => {
+    if (watchedRole === "DEALER" && !dealers.length) fetchDealers().catch(() => undefined);
+    if (watchedRole === "CUSTOMER" && !customers.length) fetchCustomers().catch(() => undefined);
+  }, [watchedRole]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Portal logins are linked by user name: dealer code (or dealer mobile) / customer mobile — same rule the server uses. */
+  const getLinkedRecord = () => {
+    const name = String(editingUser?.Username || "").toLowerCase();
+    if (!editingUser || !name) return null;
+    if (watchedRole === "DEALER") { const d = dealers.find((x) => String(x.DealerCode || "").toLowerCase() === name || x.Mobile === name); return d ? `${d.FirmName}${d.DealerCode ? ` (dealer code ${d.DealerCode})` : ""}` : null; }
+    const c = customers.find((x) => x.Mobile === name); return c ? `${c.CustomerName} · ${c.Mobile}` : null;
+  };
+
+  const linkRecord = (id?: string) => {
+    if (!id) return;
+    if (watchedRole === "DEALER") {
+      const d = dealers.find((x) => x.DealerId === id); if (!d) return;
+      const code = String(d.DealerCode || "").toLowerCase();
+      form.setFieldsValue({ Username: /^[a-z0-9._-]{3,}$/.test(code) ? code : d.Mobile, FirstName: d.ContactPerson || d.FirmName, LastName: d.ContactPerson ? d.FirmName : undefined, Phone: d.Mobile, Email: d.Email || undefined });
+    } else {
+      const c = customers.find((x) => x.CustomerId === id); if (!c) return;
+      form.setFieldsValue({ Username: c.Mobile, FirstName: c.CustomerName, LastName: undefined, Phone: c.Mobile, Email: c.Email || undefined });
+    }
+  };
 
   /** Rights fields → API payload; empty lists mean "all". */
   const rightsFrom = (values: any) => ({
+    Address: values.Address || null,
     ServiceCenterId: values.ServiceCenterId || null,
     StateRights: values.StateRights || [],
     DistrictRights: values.DistrictRights || [],
@@ -162,6 +193,7 @@ export default function UsersPage() {
       LastName: record.LastName || "",
       Email: record.Email || "",
       Phone: record.Phone || "",
+      Address: record.Address || "",
       Role: record.Role,
       IsActive: record.IsActive,
       IsAdmin: record.IsAdmin,
@@ -286,6 +318,14 @@ export default function UsersPage() {
                 Admin
               </Tag>
             )}
+            {Boolean(record.IsErpUser) && (
+              <Tooltip title="Administrator from Delta iERP — signs in with the iERP user name and password">
+                <Tag color="geekblue" className="text-[11px] font-semibold w-fit">iERP</Tag>
+              </Tooltip>
+            )}
+            {record.Role === "ENGINEER" && (record.LedgerCode
+              ? <Tooltip title="iERP ledger (Service Engineers group)"><Tag color="geekblue" className="text-[11px] font-mono w-fit">{record.LedgerCode}</Tag></Tooltip>
+              : <Tooltip title="Created in the iERP on the next save"><Tag color="warning" className="text-[11px] w-fit">Not in iERP</Tag></Tooltip>)}
           </div>
         );
       },
@@ -326,6 +366,7 @@ export default function UsersPage() {
         const forms = parseList(record.FormRights);
         return (
           <div className="text-xs space-y-0.5">
+            {record.ServiceCenterName && <div className="text-slate-600"><span className="text-slate-400">Centre:</span> {record.ServiceCenterName}</div>}
             <div className="text-slate-600"><span className="text-slate-400">States:</span> {stateNames.length ? stateNames.join(", ") : "All"}{districts.length ? ` · ${districts.length} district${districts.length > 1 ? "s" : ""}` : ""}</div>
             <div className="text-slate-600"><span className="text-slate-400">Screens:</span> {forms.length ? `${countScreens(forms)} of ${ALL_FORMS.length}` : <span className="text-amber-600">None (dashboard only)</span>}</div>
           </div>
@@ -518,7 +559,7 @@ export default function UsersPage() {
       <Drawer
         open={drawerOpen}
         onClose={closeDrawer}
-        width={maximized ? "100%" : "min(520px, 100vw)"}
+        width={maximized ? "100%" : "min(760px, 100vw)"}
         styles={{ header: DRAWER_HEADER_STYLE, body: { padding: 0 } }}
         closeIcon={null}
         title={
@@ -639,6 +680,15 @@ export default function UsersPage() {
                 />
               </Form.Item>
             </div>
+            <Form.Item
+              name="Address"
+              label={<span className="text-xs font-semibold text-slate-700">Address</span>}
+              extra={watchedRole === "ENGINEER" ? <span className="text-[11px]">Engineers are also saved as an iERP ledger (Service Engineers group) with this address.</span> : undefined}
+              rules={[{ max: 255 }]}
+              className="!mb-0 !mt-3"
+            >
+              <Input.TextArea rows={2} maxLength={255} className="rounded-lg border-slate-300 text-sm" />
+            </Form.Item>
 
             <Divider className="!my-4" />
 
@@ -712,6 +762,21 @@ export default function UsersPage() {
               {rightsUnrestricted && (
                 <Alert type="success" showIcon className="!mb-3 text-xs" message="Super Admin and administrator accounts see all states and every screen. The rights below are kept but not applied." />
               )}
+              {isPortalRole && !rightsUnrestricted && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 mb-3">
+                  <div className="text-xs font-semibold text-slate-700 mb-1.5">{watchedRole === "DEALER" ? "Linked Dealer" : "Linked Customer"}</div>
+                  {editingUser ? (
+                    <p className={`text-xs ${getLinkedRecord() ? "text-slate-700" : "text-red-600"}`}>{getLinkedRecord() || "Not linked — no " + (watchedRole === "DEALER" ? "dealer code or mobile" : "customer mobile") + " matches this user name, so the login sees nothing."}</p>
+                  ) : (
+                    <Select showSearch allowClear optionFilterProp="label" className="w-full" placeholder={watchedRole === "DEALER" ? "Select the dealer this login belongs to" : "Select the customer this login belongs to"}
+                      options={watchedRole === "DEALER"
+                        ? dealers.map((d) => ({ value: d.DealerId, label: `${d.FirmName}${d.DealerCode ? ` (${d.DealerCode})` : ""} · ${d.Mobile}` }))
+                        : customers.map((c) => ({ value: c.CustomerId, label: `${c.CustomerName} · ${c.Mobile}${c.Village ? ` · ${c.Village}` : ""}` }))}
+                      onChange={(id: string) => linkRecord(id)} />
+                  )}
+                  <p className="text-[11px] text-slate-500 mt-1.5">The login sees only {watchedRole === "DEALER" ? "this dealer's" : "this customer's"} own pumps, warranties and service calls. It is linked by user name = {watchedRole === "DEALER" ? "dealer code (or dealer mobile)" : "registered mobile number"}; choosing a record fills the user name, name and mobile.</p>
+                </div>
+              )}
               <Form.Item
                 name="ServiceCenterId"
                 label={<span className="text-xs font-semibold text-slate-700">Service Center</span>}
@@ -731,8 +796,8 @@ export default function UsersPage() {
                   options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))}
                   onChange={(ids: string[]) => {
                     // Drop districts that no longer belong to a selected state.
-                    const allowed = new Set(districts.filter((d: any) => ids.includes(d.StateId)).map((d: any) => d.DistrictName));
-                    form.setFieldValue("DistrictRights", ids.length ? (form.getFieldValue("DistrictRights") || []).filter((d: string) => allowed.has(d)) : form.getFieldValue("DistrictRights"));
+                    const allowed = new Set(districtOptions(districts, ids).map((o) => o.value.toLowerCase()));
+                    form.setFieldValue("DistrictRights", ids.length ? (form.getFieldValue("DistrictRights") || []).filter((d: string) => allowed.has(d.toLowerCase())) : form.getFieldValue("DistrictRights"));
                   }} />
               </Form.Item>
               <Form.Item
@@ -742,7 +807,7 @@ export default function UsersPage() {
                 className="!mb-3"
               >
                 <Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder={watchedStates.length ? "All districts of the selected states" : "Select states first to narrow the list"} maxTagCount="responsive"
-                  options={districts.filter((d: any) => !watchedStates.length || watchedStates.includes(d.StateId)).map((d: any) => ({ value: d.DistrictName, label: d.DistrictName }))} />
+                  options={districtOptions(districts, watchedStates)} />
               </Form.Item>
               <Form.Item
                 name="FormRights"
@@ -767,6 +832,9 @@ export default function UsersPage() {
                 <LockOutlined />
                 {editingUser ? "Change Password (Optional)" : "Set Password"}
               </div>
+              {Boolean(editingUser?.IsErpUser) && (
+                <Alert type="info" showIcon className="!mb-3 text-xs" message="This administrator signs in with their Delta iERP password. Change it in the iERP — a password set here is ignored." />
+              )}
 
               {editingUser ? (
                 <>

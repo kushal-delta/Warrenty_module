@@ -39,6 +39,9 @@ export interface Complaint {
   ClosedOn?: string;
   Resolution?: string;
   CreatedBy?: string;
+  /** e.g. "PUMP 2512PU30003, MOTOR 2512MO30003" */
+  Components?: string | null;
+  PhotoCount?: number;
   InsertedOn: string;
   LastUpdatedOn: string;
 }

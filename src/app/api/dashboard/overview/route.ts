@@ -38,7 +38,7 @@ export async function POST(request: NextRequest) {
           SUM(CASE WHEN c.[EngineerUserId] IS NULL THEN 1 ELSE 0 END) AS [Unassigned]
         FROM dbo.[Complaints] c WHERE ${OPEN_CALL}${callScope}`, values),
       runQuery(`SELECT SUM(CASE WHEN [Status] = 'Pending' THEN 1 ELSE 0 END) AS [Pending], SUM(CASE WHEN [Status] = 'Approved' THEN 1 ELSE 0 END) AS [Approved] FROM dbo.[Dealers] d WHERE 1 = 1${dScope}`, values),
-      runQuery(`SELECT COALESCE(SUM(i.[Amount]), 0) AS [WarrantyCost], COUNT(DISTINCT j.[JobCardId]) AS [JobCards]
+      runQuery(`SELECT COALESCE(SUM(i.[Amount] + i.[GstAmount]), 0) AS [WarrantyCost], COUNT(DISTINCT j.[JobCardId]) AS [JobCards]
         FROM dbo.[JobCardItemLns] i JOIN dbo.[JobCards] j ON i.[JobCardId] = j.[JobCardId] WHERE i.[IsWarranty] = 1 AND j.[Status] IN ('Approved','Closed')${jScope}`, values),
       runQuery(`WITH m AS (SELECT DATEFROMPARTS(YEAR(DATEADD(month, -n, SYSUTCDATETIME())), MONTH(DATEADD(month, -n, SYSUTCDATETIME())), 1) AS [MonthStart] FROM (VALUES (0),(1),(2),(3),(4),(5)) v(n))
         SELECT m.[MonthStart],

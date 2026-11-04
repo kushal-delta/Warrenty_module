@@ -17,6 +17,8 @@ export async function POST(request: NextRequest) {
     if (source) { where.push(`r.[Source] = @p${params.length}`); params.push(source); }
     const replacements = await query(
       `SELECT r.*, d.[FirmName] AS [DealerName], c.[ComplaintNo], c.[CustomerName],
+        CASE WHEN r.[VoucherType] = 'Without Serial No' THEN 1 ELSE 0 END AS [OutOfWarranty],
+        (SELECT COUNT(*) FROM dbo.[Attachments] a WHERE a.[ParentTable] = 'Replacements' AND a.[ParentId] = r.[ReplacementId]) AS [DocumentCount],
         COALESCE((SELECT SUM(i.[NetValue]) FROM dbo.[ReplacementItemLns] i WHERE i.[ReplacementId] = r.[ReplacementId]), 0) AS [NetValue],
         COALESCE((SELECT SUM(i.[Charges]) FROM dbo.[ReplacementItemLns] i WHERE i.[ReplacementId] = r.[ReplacementId]), 0) AS [Charges],
         STUFF((SELECT ', ' + CONCAT(COALESCE(i.[OldSerialNo], '—'), ' → ', COALESCE(i.[NewSerialNo], '—')) FROM dbo.[ReplacementItemLns] i WHERE i.[ReplacementId] = r.[ReplacementId] ORDER BY i.[LineNo] FOR XML PATH('')), 1, 2, '') AS [SerialSwaps]

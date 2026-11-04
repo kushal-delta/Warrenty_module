@@ -12,6 +12,8 @@ import { DonutChart, GroupedBarChart, Legend, RankedBars, VIZ } from "@/componen
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 import { canUseForm } from "@/lib/auth/forms";
+import { PortalHome } from "@/components/portal/PortalHome";
+import { PageLoader } from "@/components/common/Loader";
 
 interface Overview {
   kpis: Record<string, number>;
@@ -52,17 +54,26 @@ function Kpi({ label, value, sub, accent, href }: { label: string; value: React.
   );
 }
 
+/** Staff see the operations dashboard; dealer and customer logins get their portal home (Dealer Dashboard / My Products). */
 export default function DashboardPage() {
-  const company = useMasterStore((s) => s.company);
   const user = useAuthStore((s) => s.user);
-  const [data, setData] = useState<Overview | null>(null);
-  const [loading, setLoading] = useState(false);
 
   // The middleware sends users here with ?denied=<screen> when they open a screen they have no rights to.
   useUrlQuery("denied", (screen) => {
     message.warning(`You do not have rights to “${screen}”. Ask your administrator for access.`, 5);
     window.history.replaceState(null, "", "/");
   });
+
+  if (!user) return <PageLoader label="Loading your workspace…" minHeight="60vh" />;
+  const portal = !user.IsAdmin && (user.Role === "DEALER" || user.Role === "CUSTOMER") ? user.Role : null;
+  return portal ? <PortalHome portal={portal as "DEALER" | "CUSTOMER"} /> : <StaffDashboard />;
+}
+
+function StaffDashboard() {
+  const company = useMasterStore((s) => s.company);
+  const user = useAuthStore((s) => s.user);
+  const [data, setData] = useState<Overview | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,8 +116,9 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      <Spin spinning={loading && !data}>
-        <div className={`space-y-4 transition-opacity ${loading && data ? "opacity-70" : ""}`}>
+      {loading && !data ? <PageLoader label="Loading dashboard…" hint="Warranty, service calls and approvals" minHeight="50vh" /> : null}
+      <Spin spinning={false}>
+        <div className={`space-y-4 transition-opacity ${!data ? "hidden" : loading ? "opacity-70" : ""}`}>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6 gap-4">
             <Kpi label="Pump sets under warranty" value={k.pumpSets ?? "–"} sub={`${k.installations ?? 0} installations · ${k.serials ?? 0} serials registered`} accent="#0d9488" href="/warranty/active" />
             <Kpi label="Warranty ending in 45 days" value={k.ending45 ?? "–"} sub={`${k.expired ?? 0} already expired`} accent="#f59e0b" href="/warranty/active" />

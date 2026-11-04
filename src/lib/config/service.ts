@@ -1,9 +1,26 @@
 /** Shared option lists for service, stock and replacement forms (used by both API routes and pages). */
 export const VISIT_OUTCOMES = ["Resolved at site", "Spares required", "Job card required", "Replacement required", "Customer not available"];
 
+export const CALL_SOURCES = ["Customer", "Dealer", "Toll Free", "WhatsApp", "Marketing", "HO", "Mobile App"];
+export const CALL_PRIORITIES = ["Low", "Medium", "High", "Urgent"];
+/** Overall warranty of a call, from its components: every part in warranty / some / none / unknown serials. */
+export const CALL_WARRANTY_STATUSES = ["In Warranty", "Partial", "Out of Warranty", "Not Registered"];
+
+/** Job cards need at least one photo; up to this many. */
+export const MAX_JOBCARD_PHOTOS = 10;
+
 export const JOBCARD_STATUSES = ["Draft", "In Approval", "Approved", "Rejected", "Closed"];
 
 export const REPLACEMENT_TYPES = ["Invoice", "Delivery Challan", "Credit Note"];
+export const VOUCHER_TYPES = ["With Serial No", "Without Serial No"];
+/** A replacement booked "Without Serial No" cannot be traced to a warranty, so it is always out of warranty. */
+export const WITHOUT_SERIAL = "Without Serial No";
+/** Replacement documents: at least one PDF is mandatory, up to this many (5 MB each). */
+export const MAX_REPLACEMENT_PDFS = 5;
+/** Videos on service calls and job cards (uploaded separately through /api/attachments/upload, then linked on save). */
+export const MAX_VIDEOS = 3;
+export const MAX_VIDEO_MB = 50;
+export const VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime,video/3gpp,.mp4,.webm,.mov,.3gp";
 export const REPLACEMENT_STATUSES = ["Open", "Received", "Closed", "Cancelled"];
 export const PRODUCT_CATEGORIES = ["PUMP", "MOTOR", "CONTROLLER"];
 

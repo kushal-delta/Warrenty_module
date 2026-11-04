@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { query, getSqlPool, sql } from "@/lib/sqlserver";
+import { query, beginTransaction, sql } from "@/lib/sqlserver";
 import { randomUUID } from "crypto";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
@@ -84,8 +84,7 @@ export async function POST(request: NextRequest) {
 
     let insertedCount = 0;
     if (toInsert.length > 0) {
-      const transaction = new sql.Transaction(getSqlPool());
-      await transaction.begin();
+      const transaction = await beginTransaction();
       try {
         for (const record of toInsert) {
           const request = new sql.Request(transaction);
@@ -95,7 +94,7 @@ export async function POST(request: NextRequest) {
           insertedCount++;
         }
         await transaction.commit();
-      } catch (error) { await transaction.rollback(); throw error; }
+      } catch (error) { await transaction.rollback().catch(() => undefined); throw error; }
     }
 
     const skippedCount = internalDuplicates + existingSerialSet.size;

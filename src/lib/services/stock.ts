@@ -88,7 +88,7 @@ export async function jobCardShortage(run: Run, job: JobCardStockContext) {
 
 /** Posts consumption for an approved job card: engineer van first, the rest from the service-centre store. Warranty parts are held as faulty stock. */
 export async function postJobCardStock(run: Run, job: JobCardStockContext, userId: string) {
-  const items = await run<any>(`SELECT [JobCardItemLnId], [SpareId], [Qty], [Rate], [IsWarranty] FROM dbo.[JobCardItemLns] WHERE [JobCardId] = @id`, { id: job.JobCardId });
+  const items = await run<any>(`SELECT [JobCardItemLnId], [SpareId], [Qty], [Rate], [IsWarranty] FROM dbo.[JobCardItemLns] WHERE [JobCardId] = @id AND [SpareId] IS NOT NULL`, { id: job.JobCardId }); // labour lines move no stock
   for (const item of items) {
     const fromVan = job.EngineerUserId ? Math.min(item.Qty, Math.max(0, await balanceAt(run, item.SpareId, "ENG", job.EngineerUserId))) : 0;
     const fromStore = item.Qty - fromVan;

@@ -12,8 +12,6 @@ import {
   Spin,
   Drawer,
   Grid,
-  Badge,
-  Tooltip,
 } from "antd";
 import {
   DashboardOutlined,
@@ -40,7 +38,11 @@ import {
   InboxOutlined,
   DatabaseOutlined,
   SettingOutlined,
+  FileSearchOutlined,
+  ExperimentOutlined,
+  GlobalOutlined,
   HistoryOutlined,
+  IdcardOutlined,
 } from "@ant-design/icons";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -48,6 +50,7 @@ import { useAuthStore } from "@/lib/store/useAuthStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
 import { GlobalSearch } from "@/components/common/GlobalSearch";
 import { canUseForm, formForPath, parseList, type RoleCode } from "@/lib/auth/forms";
+import { PageLoader } from "@/components/common/Loader";
 
 const { Header, Sider, Content } = Layout;
 
@@ -81,7 +84,7 @@ export default function DashboardLayout({
     {
       key: "/",
       icon: <DashboardOutlined />,
-      label: <Link href="/">Dashboard</Link>,
+      label: <Link href="/">{user?.Role === "CUSTOMER" && !user?.IsAdmin ? "My Products" : "Dashboard"}</Link>,
     },
     {
       key: "sub-warranty",
@@ -96,12 +99,22 @@ export default function DashboardLayout({
         {
           key: "/warranty/register",
           icon: <PlusCircleOutlined />,
-          label: <Link href="/warranty/register">Register Installation</Link>,
+          label: <Link href="/warranty/register">Register Warranty</Link>,
         },
         {
           key: "/warranty/active",
           icon: <SafetyCertificateOutlined />,
           label: <Link href="/warranty/active">Active Warranties</Link>,
+        },
+        {
+          key: "/warranty/replace",
+          icon: <SwapOutlined />,
+          label: <Link href="/warranty/replace">Replacement Flow (In Warranty)</Link>,
+        },
+        {
+          key: "/warranty/search",
+          icon: <FileSearchOutlined />,
+          label: <Link href="/warranty/search">Serial No. Search Report</Link>,
         },
         {
           key: "/warranty/verify",
@@ -118,6 +131,11 @@ export default function DashboardLayout({
           icon: <TeamOutlined />,
           label: <Link href="/warranty/customers">Customers</Link>,
         },
+        {
+          key: "/warranty/geo",
+          icon: <GlobalOutlined />,
+          label: <Link href="/warranty/geo">Geo-Graphical Report</Link>,
+        },
       ],
     },
     {
@@ -126,9 +144,14 @@ export default function DashboardLayout({
       label: "Service Management",
       children: [
         {
+          key: "/service/dashboard",
+          icon: <DashboardOutlined />,
+          label: <Link href="/service/dashboard">Service Dashboard</Link>,
+        },
+        {
           key: "/service/complaints",
           icon: <CustomerServiceOutlined />,
-          label: <Link href="/service/complaints">Complaints Register</Link>,
+          label: <Link href="/service/complaints">Service Call</Link>,
         },
         {
           key: "/service/reminders",
@@ -173,9 +196,19 @@ export default function DashboardLayout({
           label: <Link href="/stock/availability">Stock Availability</Link>,
         },
         {
+          key: "/stock/engineer",
+          icon: <TeamOutlined />,
+          label: <Link href="/stock/engineer">Engineer-wise Stock</Link>,
+        },
+        {
           key: "/stock/ledger",
           icon: <DatabaseOutlined />,
           label: <Link href="/stock/ledger">Stock Ledger & Entry</Link>,
+        },
+        {
+          key: "/stock/consumption",
+          icon: <ExperimentOutlined />,
+          label: <Link href="/stock/consumption">Parts Consumption</Link>,
         },
       ],
     },
@@ -193,6 +226,16 @@ export default function DashboardLayout({
           key: "/admin/users",
           icon: <TeamOutlined />,
           label: <Link href="/admin/users">User Management</Link>,
+        },
+        {
+          key: "/masters/service-centers",
+          icon: <ShopOutlined />,
+          label: <Link href="/masters/service-centers">Service Centers</Link>,
+        },
+        {
+          key: "/masters/service-engineers",
+          icon: <IdcardOutlined />,
+          label: <Link href="/masters/service-engineers">Service Engineers</Link>,
         },
         ...[
           ["spares", "Spares & Rates"],
@@ -217,6 +260,8 @@ export default function DashboardLayout({
 
   // Dealers and customers see the prototype portal wording (e.g. "My Warranty") for the same screens.
   const roleLabel = (child: any) => { const custom = formForPath(child.key)?.labels?.[user?.Role as RoleCode]; return custom ? { ...child, label: <Link href={child.key}>{custom}</Link> } : child; };
+  // Groups start collapsed; only the group holding the current page opens so its link is visible.
+  const initialOpenKeys = menuItems.filter((item: any) => item.children?.some((child: any) => pathname === child.key || pathname.startsWith(`${child.key}/`))).map((item: any) => item.key);
   // Screen rights: hide links the user cannot open (the middleware also blocks them), and drop empty groups.
   const allowedPath = (path: string) => { const form = formForPath(path); return !form || canUseForm(user, form.key); };
   const visibleMenu = menuItems
@@ -269,7 +314,7 @@ export default function DashboardLayout({
   if (!mounted) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <Spin size="large" />
+        <PageLoader label="Starting Delta iERP…" hint="Warranty & Service" minHeight="100vh" />
       </div>
     );
   }
@@ -320,7 +365,7 @@ export default function DashboardLayout({
           <Menu
             mode="inline"
             selectedKeys={[pathname]}
-            defaultOpenKeys={["sub-warranty", "sub-service", "sub-stock", "sub-masters"]}
+            defaultOpenKeys={initialOpenKeys}
             items={visibleMenu}
             className="border-none text-slate-600 font-medium"
           />
@@ -355,7 +400,7 @@ export default function DashboardLayout({
         <Menu
           mode="inline"
           selectedKeys={[pathname]}
-          defaultOpenKeys={["sub-warranty", "sub-service", "sub-stock", "sub-masters"]}
+          defaultOpenKeys={initialOpenKeys}
           items={visibleMenu}
           onClick={() => setMobileMenuOpen(false)}
           className="border-none"
@@ -395,26 +440,8 @@ export default function DashboardLayout({
             <GlobalSearch />
           </div>
 
-          {/* Right section: System Status, Notification & Sleek Profile Card */}
+          {/* User account */}
           <div className="flex items-center space-x-3">
-           
-
-            {/* Quick Link / Notification Bell */}
-            <Link href="/service/complaints">
-              <Tooltip title="Service Complaints">
-                <Button
-                  type="text"
-                  icon={
-                    <Badge dot color="#ef4444" offset={[-2, 2]}>
-                      <BellOutlined className="text-slate-600 text-base" />
-                    </Badge>
-                  }
-                  className="h-9 w-9 flex items-center justify-center rounded-lg hover:bg-slate-100 text-slate-600"
-                />
-              </Tooltip>
-            </Link>
-
-            <div className="h-5 w-px bg-slate-200 hidden sm:block" />
 
             {/* Premium Profile Card Button */}
             <Dropdown menu={{ items: userDropdownItems }} placement="bottomRight" trigger={["click"]}>

@@ -76,8 +76,12 @@ export interface Warranty {
   CustomerMobile?: string;
   Village?: string;
   District?: string;
+  SiteStateId?: string;
+  StateName?: string;
+  StateShort?: string;
   DealerId?: string;
   DealerName?: string;
+  ReplacedFromSerial?: string | null;
   StartDate: string;
   WarrantyMonths: number;
   ExtendedMonths: number;

@@ -83,7 +83,6 @@ export default function StickersPage() {
       Category: "PUMP",
       Status: "Generated",
       SupplierName: "Solartive Techno Industries",
-      ProductGroup: "Solar Submersible Pump Set",
       InvoiceLocation: "Greater Noida HO",
       MfgDate: dayjs(),
       InvoiceDate: dayjs(),
@@ -448,6 +447,13 @@ export default function StickersPage() {
                   </Select.Option>
                 ))}
               </Select>
+            </Form.Item></div>
+<div className="entry-field-wide"><Form.Item
+              name="ProductGroup"
+              label={<span className="text-xs font-semibold text-slate-700">Product Group</span>}
+              rules={[{ max: 60, message: "Product group can be at most 60 characters" }]}
+            >
+              <Input placeholder="Enter Product Group" maxLength={60} />
             </Form.Item></div></div></FormSection>
 <FormSection number="02" title="Stock &amp; manufacturing" description="Set the current stock status and the manufacturing date."><div className="form-grid form-grid-two"><div className=""><Form.Item
               name="Status"

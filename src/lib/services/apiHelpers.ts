@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { getSqlPool, sql } from "@/lib/sqlserver";
+import { beginTransaction, getSqlPool, isRetryableConnectionError, resetSqlPool, sql } from "@/lib/sqlserver";
 import { sessionFromRequest, type AuthSessionUser } from "@/lib/auth/jwt";
 
 /** Thrown for user-correctable problems; answered as 400 with the message shown to the user. */
@@ -12,15 +12,23 @@ export type Run = <T = any>(statement: string, values?: Record<string, unknown>)
 
 /** Named-parameter query outside a transaction (same shape as the transaction `run`). */
 export const runQuery: Run = async (statement, values = {}) => {
-  const dbRequest = (await getSqlPool()).request();
-  Object.entries(values).forEach(([key, value]) => dbRequest.input(key, value as any));
-  return ((await dbRequest.query(statement)).recordset || []) as any[];
+  const attempt = async () => {
+    const dbRequest = (await getSqlPool()).request();
+    Object.entries(values).forEach(([key, value]) => dbRequest.input(key, value as any));
+    return ((await dbRequest.query(statement)).recordset || []) as any[];
+  };
+  try {
+    return await attempt();
+  } catch (err) {
+    if (!isRetryableConnectionError(err)) throw err;
+    resetSqlPool("warranty"); // connection dropped before the statement ran — retry once on a fresh pool
+    return attempt();
+  }
 };
 
 /** Runs the work inside one SQL Server transaction; rolls back on any error. */
 export async function inTransaction<T>(work: (run: Run) => Promise<T>): Promise<T> {
-  const transaction = new sql.Transaction(await getSqlPool());
-  await transaction.begin();
+  const transaction = await beginTransaction();
   const run: Run = async (statement, values = {}) => {
     const dbRequest = new sql.Request(transaction);
     Object.entries(values).forEach(([key, value]) => dbRequest.input(key, value as any));

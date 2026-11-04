@@ -80,6 +80,8 @@ export const useAuthStore = create<AuthState>((set) => ({
         isLoading: false,
       });
       if (typeof window !== "undefined") {
+        // The full page reload clears any toast, so the login page shows it from this flag.
+        try { window.sessionStorage.setItem("logoutNotice", "1"); } catch {}
         window.location.href = "/login";
       }
     }

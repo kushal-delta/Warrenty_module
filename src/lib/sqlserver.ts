@@ -77,6 +77,56 @@ const globalForSql = globalThis as typeof globalThis & {
   ierpSqlPool?: sql.ConnectionPool;
 };
 
+/* ---------- self-healing pools ----------
+ * A pool whose connection drops (SQL restart, network blip, idle kill) is thrown away and rebuilt on the next call.
+ * Requests that fail BEFORE reaching the server (connection closed / not open) are retried once on a fresh pool;
+ * other errors are never retried, so a write can't run twice.
+ */
+const RETRYABLE = new Set(["ECONNCLOSED", "ENOTOPEN", "ENOCONN"]);
+export function isRetryableConnectionError(err: any) {
+  return RETRYABLE.has(err?.code) || /connection is closed|not connected|no connection/i.test(String(err?.message || ""));
+}
+export function resetSqlPool(which: "warranty" | "ierp") {
+  const key = which === "warranty" ? "warrantySqlPool" : "ierpSqlPool";
+  const pool = globalForSql[key];
+  globalForSql[key] = undefined;
+  if (pool) pool.close().catch(() => undefined);
+}
+function watchPool(pool: sql.ConnectionPool, which: "warranty" | "ierp") {
+  pool.on("error", (err: any) => {
+    console.error(`[${which === "warranty" ? "Warranty" : "iERP"} SQL Server] pool error — reconnecting on next request:`, err?.message || err);
+    if ((which === "warranty" ? globalForSql.warrantySqlPool : globalForSql.ierpSqlPool) === pool) resetSqlPool(which);
+  });
+}
+async function withReconnect<T>(which: "warranty" | "ierp", work: () => Promise<T>): Promise<T> {
+  try {
+    return await work();
+  } catch (err) {
+    if (!isRetryableConnectionError(err)) throw err;
+    console.warn(`[${which} SQL Server] connection was closed — retrying once on a new connection`);
+    resetSqlPool(which);
+    return work();
+  }
+}
+
+/** Starts a transaction on the connected warranty pool (always use this — never `new sql.Transaction(getSqlPool())`, which is a Promise, not a pool). */
+export async function beginTransaction(): Promise<sql.Transaction> {
+  return withReconnect("warranty", async () => {
+    const transaction = new sql.Transaction(await getSqlPool());
+    await transaction.begin();
+    return transaction;
+  });
+}
+
+/** Same as beginTransaction, on the iERP (SolarativeiERP) database. */
+export async function beginIerpTransaction(): Promise<sql.Transaction> {
+  return withReconnect("ierp", async () => {
+    const transaction = new sql.Transaction(await getIerpSqlPool());
+    await transaction.begin();
+    return transaction;
+  });
+}
+
 let activeWarrantyPromise: Promise<sql.ConnectionPool> | null = null;
 let activeIerpPromise: Promise<sql.ConnectionPool> | null = null;
 
@@ -84,6 +134,7 @@ export async function getSqlPool(): Promise<sql.ConnectionPool> {
   if (globalForSql.warrantySqlPool?.connected) {
     return globalForSql.warrantySqlPool;
   }
+  if (globalForSql.warrantySqlPool) resetSqlPool("warranty"); // a pool that lost its connection is replaced, never reused
   if (activeWarrantyPromise) {
     return activeWarrantyPromise;
   }
@@ -98,6 +149,7 @@ export async function getSqlPool(): Promise<sql.ConnectionPool> {
     .connect()
     .then((connectedPool) => {
       console.log(`[Warranty SQL Server] Successfully connected to ${config.database} on ${targetDesc}!`);
+      watchPool(connectedPool, "warranty");
       globalForSql.warrantySqlPool = connectedPool;
       activeWarrantyPromise = null;
       return connectedPool;
@@ -116,6 +168,7 @@ export async function getIerpSqlPool(): Promise<sql.ConnectionPool> {
   if (globalForSql.ierpSqlPool?.connected) {
     return globalForSql.ierpSqlPool;
   }
+  if (globalForSql.ierpSqlPool) resetSqlPool("ierp");
   if (activeIerpPromise) {
     return activeIerpPromise;
   }
@@ -130,6 +183,7 @@ export async function getIerpSqlPool(): Promise<sql.ConnectionPool> {
     .connect()
     .then((connectedPool) => {
       console.log(`[iERP SQL Server] Successfully connected to ${config.database} on ${targetDesc}!`);
+      watchPool(connectedPool, "ierp");
       globalForSql.ierpSqlPool = connectedPool;
       activeIerpPromise = null;
       return connectedPool;
@@ -149,10 +203,11 @@ export async function query<T = Record<string, unknown>>(
   parameters: unknown[] = []
 ): Promise<T[]> {
   try {
-    const pool = await getSqlPool();
-    const request = pool.request();
-    parameters.forEach((value, index) => request.input(`p${index}`, value as any));
-    const result = await request.query<T>(statement);
+    const result = await withReconnect("warranty", async () => {
+      const request = (await getSqlPool()).request();
+      parameters.forEach((value, index) => request.input(`p${index}`, value as any));
+      return request.query<T>(statement);
+    });
     return result.recordset;
   } catch (err: any) {
     console.error("Warranty SQL Server Query Error:", {
@@ -166,10 +221,11 @@ export async function query<T = Record<string, unknown>>(
 
 export async function execute(statement: string, parameters: unknown[] = []): Promise<number> {
   try {
-    const pool = await getSqlPool();
-    const request = pool.request();
-    parameters.forEach((value, index) => request.input(`p${index}`, value as any));
-    const result = await request.query(statement);
+    const result = await withReconnect("warranty", async () => {
+      const request = (await getSqlPool()).request();
+      parameters.forEach((value, index) => request.input(`p${index}`, value as any));
+      return request.query(statement);
+    });
     return result.rowsAffected[0] || 0;
   } catch (err: any) {
     console.error("Warranty SQL Server Execute Error:", {
@@ -186,10 +242,11 @@ export async function ierpQuery<T = Record<string, unknown>>(
   parameters: unknown[] = []
 ): Promise<T[]> {
   try {
-    const pool = await getIerpSqlPool();
-    const request = pool.request();
-    parameters.forEach((value, index) => request.input(`p${index}`, value as any));
-    const result = await request.query<T>(statement);
+    const result = await withReconnect("ierp", async () => {
+      const request = (await getIerpSqlPool()).request();
+      parameters.forEach((value, index) => request.input(`p${index}`, value as any));
+      return request.query<T>(statement);
+    });
     return result.recordset;
   } catch (err: any) {
     console.error("iERP SQL Server Query Error:", {

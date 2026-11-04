@@ -42,6 +42,8 @@ export interface JobCardDetail {
   items: any[];
   approvals: any[];
   levels: any[];
+  photos: any[];
+  components: any[];
 }
 
 interface JobCardState {

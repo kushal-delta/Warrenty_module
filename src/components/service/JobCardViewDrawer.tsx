@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Button, Checkbox, Descriptions, Drawer, Input, Modal, Spin, Steps, Table, Tag, message } from "antd";
+import { Button, Checkbox, Descriptions, Drawer, Image, Input, Modal, Spin, Steps, Table, Tag, message } from "antd";
 import { CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, PrinterOutlined, SendOutlined, ToolOutlined } from "@ant-design/icons";
 import { useJobCardStore, JobCardDetail } from "@/lib/store/useJobCardStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
@@ -10,6 +10,8 @@ import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { PageLoader } from "@/components/common/Loader";
+import { VideoList } from "@/components/common/VideoAttachments";
 
 export const JOBCARD_STATUS_COLOR: Record<string, string> = { Draft: "default", "In Approval": "gold", Approved: "green", Rejected: "red", Closed: "blue" };
 
@@ -91,7 +93,8 @@ export function JobCardViewDrawer({ jobCardId, onClose, onEdit, onChanged }: Pro
         {job.Status === "Approved" && user?.Role !== "ENGINEER" && <Button type="primary" icon={<FileDoneOutlined />} className="bg-blue-600" onClick={() => setClosing(true)} disabled={busy}>Close Job Card</Button>}
       </div>}
     >
-      <Spin spinning={loading}>
+      {loading && !data && <PageLoader label="Loading job card…" hint="Lines, approvals and photos" minHeight="60vh" />}
+      <Spin spinning={loading && !!data}>
         {job && data && <div className="space-y-5">
           {job.Status === "Rejected" && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Rejected: {[...data.approvals].reverse().find((a) => a.Action === "Rejected")?.Remarks || "no reason given"}. Edit the job card and send it again.</div>}
           <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }} items={[
@@ -112,21 +115,39 @@ export function JobCardViewDrawer({ jobCardId, onClose, onEdit, onChanged }: Pro
           </div>
 
           <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-2">Spares</h3>
-            <Table size="small" rowKey="JobCardItemLnId" dataSource={data.items} pagination={false} scroll={{ x: 600 }} locale={{ emptyText: "No spares" }} columns={[
-              { title: "Spare", key: "s", render: (_: any, i: any) => <span><b>{i.SpareName}</b> <span className="text-xs text-slate-400">{i.SpareCode}</span></span> },
+            <h3 className="text-sm font-bold text-slate-800 mb-2">Spares &amp; labour</h3>
+            <Table size="small" rowKey="JobCardItemLnId" dataSource={data.items} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: "No lines" }} columns={[
+              { title: "Type", dataIndex: "ItemType", render: (t: string) => <Tag color={t === "Labour" ? "purple" : "blue"}>{t || "Spare"}</Tag> },
+              { title: "Particulars", key: "s", render: (_: any, i: any) => <span><b>{i.Particulars || i.SpareName}</b> <span className="text-xs text-slate-400">{i.ItemCode || i.SpareCode}</span></span> },
+              { title: "Serial", dataIndex: "SerialNo", render: (v: string) => v ? <span className="font-mono text-xs">{v}</span> : "—" },
               { title: "Qty", dataIndex: "Qty", align: "right" as const, render: (q: number, i: any) => `${q} ${i.Uom || ""}` },
               { title: "Rate ₹", dataIndex: "Rate", align: "right" as const, render: (v: number) => inr(v, 2) },
-              { title: "Amount ₹", dataIndex: "Amount", align: "right" as const, render: (v: number) => inr(v, 2) },
+              { title: "GST", key: "gst", align: "right" as const, render: (_: any, i: any) => `${Number(i.GstPct || 0)}% · ${inr(i.GstAmount, 2)}` },
+              { title: "Amount ₹", key: "amt", align: "right" as const, render: (_: any, i: any) => <b>{inr(Number(i.Amount) + Number(i.GstAmount || 0), 2)}</b> },
               { title: "Warranty", dataIndex: "IsWarranty", align: "center" as const, render: (w: boolean) => w ? <Tag color="green">Warranty</Tag> : <Tag>Chargeable</Tag> },
             ]} />
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
-            {[["Spares", job.SparesTotal], ["Labour", job.LabourTotal], ["Total estimate", job.TotalEstimate], ["Warranty (company)", job.WarrantyAmount], ["Customer pays", job.CustomerPayable]].map(([label, value]) => (
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
+            {[["Spares", job.SparesTotal], ["Labour", job.LabourTotal], ["GST", job.GstTotal], ["Other charges", job.OtherCharges], ["Grand total", job.TotalEstimate], ["Warranty (company)", Math.min(Number(job.WarrantyAmount), Number(job.TotalEstimate))], ["Customer pays", job.CustomerPayable]].map(([label, value]) => (
               <div key={label as string} className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2"><div className="text-[11px] text-slate-500">{label}</div><div className="font-bold text-slate-900">₹ {inr(value, 2)}</div></div>
             ))}
           </div>
+
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 mb-2">Photos</h3>
+            {data.photos?.length ? (
+              <Image.PreviewGroup>
+                <div className="flex flex-wrap gap-3">{data.photos.map((p: any) => <Image key={p.AttachmentId} src={p.FileUrl} alt={p.FileName} width={110} height={110} className="object-cover rounded-lg border border-slate-200" />)}</div>
+              </Image.PreviewGroup>
+            ) : <span className="text-xs text-slate-400">No photos</span>}
+          </div>
+          {data.videos?.length > 0 && (
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 mb-2">Videos</h3>
+              <VideoList videos={data.videos} />
+            </div>
+          )}
 
           <div>
             <h3 className="text-sm font-bold text-slate-800 mb-3">Approval chain</h3>

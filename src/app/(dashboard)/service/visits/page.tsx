@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Button, Drawer, Form, Input, Select, Space, Table, Tag, Tooltip, message } from "antd";
+import { Button, Drawer, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip, message } from "antd";
 import { CarOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useServiceOpsStore, VisitReport } from "@/lib/store/useServiceOpsStore";
@@ -44,8 +44,8 @@ export default function VisitReportsPage() {
     setEditing(row || null);
     form.resetFields();
     form.setFieldsValue(row
-      ? { ...row, VisitDate: dayjs(row.VisitDate) }
-      : { VisitDate: dayjs(), Status: "Job card required", EngineerUserId: isEngineer ? user?.UserId : undefined });
+      ? { ...row, VisitDate: dayjs(row.VisitDate), TravelExpense: row.TravelExpense != null ? Number(row.TravelExpense) : undefined, OtherExpense: row.OtherExpense != null ? Number(row.OtherExpense) : undefined }
+      : { VisitDate: dayjs(), StartTime: "10:00", EndTime: "12:00", Status: "Job card required", EngineerUserId: isEngineer ? user?.UserId : undefined });
     setDrawerOpen(true);
   };
 
@@ -82,7 +82,11 @@ export default function VisitReportsPage() {
     { title: "Call / Customer", key: "call", render: (_: any, v: VisitReport) => <div><div className="font-mono text-xs text-slate-500">{v.ComplaintNo}</div><div className="font-semibold text-slate-800">{v.CustomerName}</div><div className="text-[11px] text-slate-400">{[v.Village, v.District].filter(Boolean).join(", ")}</div></div> },
     { title: "Engineer", dataIndex: "EngineerName", key: "eng", width: 140 },
     { title: "Findings / Action", key: "find", render: (_: any, v: VisitReport) => <div className="text-xs whitespace-normal"><div className="text-slate-700">{v.Observations || "-"}</div>{v.ActionTaken && <div className="text-slate-500 mt-0.5">Action: {v.ActionTaken}</div>}</div> },
+    { title: "Time", key: "time", width: 120, render: (_: any, v: VisitReport) => v.StartTime || v.EndTime ? `${v.StartTime || "—"} – ${v.EndTime || "—"}` : "—" },
+    { title: "Km", dataIndex: "TravelKm", key: "km", width: 70, align: "right" as const, render: (n: number) => n ?? "—" },
+    { title: "Expenses ₹", key: "exp", width: 105, align: "right" as const, render: (_: any, v: VisitReport) => v.TravelExpense == null && v.OtherExpense == null ? "—" : (Number(v.TravelExpense || 0) + Number(v.OtherExpense || 0)).toLocaleString("en-IN", { minimumFractionDigits: 2 }) },
     { title: "Outcome", dataIndex: "Status", key: "status", width: 160, render: (s: string) => <Tag color={OUTCOME_COLOR[s] || "default"}>{s}</Tag> },
+    { title: "Rating", dataIndex: "CustomerRating", key: "rating", width: 100, align: "center" as const, render: (n: number) => n ? <span className="text-amber-500 tracking-tight">{"★".repeat(n)}</span> : "—" },
     { title: "Actions", key: "actions", width: 90, render: (_: any, v: VisitReport) => (
       <Space size="small">
         <Tooltip title="Edit"><Button type="text" size="small" icon={<EditOutlined />} onClick={() => openForm(v)} /></Tooltip>
@@ -136,7 +140,19 @@ export default function VisitReportsPage() {
               <Form.Item name="CustomerFeedback" label={fieldLabel("Customer Feedback")} rules={[{ max: 250 }]}><Input placeholder="e.g. Satisfied / 4 stars" /></Form.Item>
             </div>
           </FormSection>
-          <FormSection number="02" title="Findings" description="Observations at site and the action taken.">
+          <FormSection number="02" title="Time & travel" description="When the visit happened, distance covered and expenses claimed.">
+            <div className="form-grid form-grid-three">
+              <Form.Item name="StartTime" label={fieldLabel("Start Time")}><Input type="time" /></Form.Item>
+              <Form.Item name="EndTime" label={fieldLabel("End Time")} dependencies={["StartTime"]} rules={[({ getFieldValue }) => ({ validator: (_, v) => (!v || !getFieldValue("StartTime") || v >= getFieldValue("StartTime") ? Promise.resolve() : Promise.reject(new Error("End time cannot be before the start time"))) })]}><Input type="time" /></Form.Item>
+              <Form.Item name="CustomerRating" label={fieldLabel("Customer Rating (1-5)")}><InputNumber min={1} max={5} precision={0} className="w-full" /></Form.Item>
+              <Form.Item name="FromLocation" label={fieldLabel("From")}><Input maxLength={100} placeholder="Service center / home" /></Form.Item>
+              <Form.Item name="ToLocation" label={fieldLabel("To (Site)")}><Input maxLength={100} /></Form.Item>
+              <Form.Item name="TravelKm" label={fieldLabel("Travel (km)")}><InputNumber min={0} precision={0} className="w-full" /></Form.Item>
+              <Form.Item name="TravelExpense" label={fieldLabel("Travel Expense ₹")}><InputNumber min={0} precision={2} className="w-full" /></Form.Item>
+              <Form.Item name="OtherExpense" label={fieldLabel("Other Expense ₹")}><InputNumber min={0} precision={2} className="w-full" /></Form.Item>
+            </div>
+          </FormSection>
+          <FormSection number="03" title="Findings" description="Observations at site and the action taken.">
             <div className="form-grid form-grid-two">
               <div className="entry-field-wide"><Form.Item name="Observations" label={fieldLabel("Findings at Site")}><Input.TextArea rows={3} placeholder="e.g. Motor winding burnt, low insulation resistance" /></Form.Item></div>
               <div className="entry-field-wide"><Form.Item name="ActionTaken" label={fieldLabel("Action Taken")}><Input.TextArea rows={3} placeholder="e.g. Motor lifted, job card raised for rewinding" /></Form.Item></div>

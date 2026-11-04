@@ -1,0 +1,3317 @@
+{
+  "info": {
+    "name": "Delta Warranty & Service API",
+    "_postman_id": "6c1b8f2a-4d3e-4c8a-9b1e-delta-warranty",
+    "description": "REST API of the Delta iERP Warranty & Service module (Solartive Techno Industries).\n\n## Getting started\n1. Import this collection and the environment file, pick the environment and set `baseUrl` and `password`.\n2. Run **01 · Auth → Login** — the token is saved automatically. Administrators sign in with their Delta iERP user name and password.\n3. Every other request sends `Authorization: Bearer {{token}}` (set on the collection).\n\n## Conventions\n- Almost every endpoint is **POST with a JSON body** (filters go in the body). Configuration masters use GET / POST / PUT / DELETE.\n- Dates: ISO 8601 strings (e.g. `2026-11-03T00:00:00.000Z`). IDs are GUIDs.\n- Success: `{ success: true, ... }`. Errors: `{ error: \"message\" }` with 400 (validation — show the message), 401 (token missing / expired → sign in again), 403 (no rights to that screen or record), 404, 409 (duplicate / linked record), 500.\n\n## Rights\n- **Screen rights** (`FormRights` from getUser): calling an API of a screen the user cannot open returns 403 `FORBIDDEN`.\n- **Data rights**: lists are automatically limited — state / district rights, managers to their service centre, engineers to their own calls, dealers to their own sales, customers to their own pumps.\n\nVariables such as `{{complaintId}}` are filled by test scripts on create requests, or set them yourself from list responses.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "01 · Auth",
+      "description": "Sign in once, the token is saved to {{token}} and sent as `Authorization: Bearer {{token}}` on every other request.\n\nWho signs in how:\n- **Administrators** — their Delta iERP account (SolarativeiERP `dbo.Users` with `IsAdmin = 1`): iERP user name + iERP password.\n- **Everyone else** — accounts from User Management: staff user name, dealer code (dealers) or registered mobile number (customers).",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/Auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "Auth",
+                "login"
+              ]
+            },
+            "description": "Returns `{ success, token, user }`. The token is valid for 7 days. The test script stores it in the `token` collection variable.\n\n`user.Source` tells where the account lives: `IERP` (Delta iERP administrator → Role SUPER, IsAdmin true, full access) or `LOCAL` (User Management). iERP administrators are checked first; if the user name / password does not match one, the User Management account is used.\n\nErrors: 400 missing fields · 401 wrong user name / password · 403 account deactivated (or iERP account disabled).",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.response.code < 300 && j.token) pm.collectionVariables.set(\"token\", j.token);",
+                  "if (j.user) pm.collectionVariables.set(\"userId\", j.user.UserId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Current user (profile + rights)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/Auth/getUser",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "Auth",
+                "getUser"
+              ]
+            },
+            "description": "Returns the signed-in user with `Role`, `IsAdmin`, `FormRights` (comma-separated screen keys), `StateRights`, `DistrictRights`, `ServiceCenterId`.\n\n`Source`: IERP | LOCAL. For iERP administrators this call re-checks the iERP — if their admin flag was removed or the account was disabled there, it returns **401** and the app must sign the user out.\n\nCall this when the app starts: it also refreshes the session with the latest rights (new token in the `authToken` cookie for web; mobile keeps its Bearer token).\n\nScreen keys: warranty.serials, warranty.register, warranty.active, warranty.verify, warranty.dealers, warranty.customers, service.complaints, service.reminders, service.visits, service.jobcards, service.approvals, service.replacements, service.reports, stock.availability, stock.ledger, masters.*, system.activity. Admin / SUPER see everything.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/Auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "Auth",
+                "logout"
+              ]
+            },
+            "description": "Clears the web cookie. Mobile apps should also discard the stored token.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 · Dashboard & Search",
+      "item": [
+        {
+          "name": "Staff dashboard (overview)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/overview",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "overview"
+              ]
+            },
+            "description": "KPI tiles, 6-month registrations vs calls, warranty position, calls by status, installations by dealer and the 'needs attention' list. Already limited to the user's state / district rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Portal home (dealer / customer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/portal",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "portal"
+              ]
+            },
+            "description": "For DEALER and CUSTOMER logins only.\n\n- DEALER → `{ dealer, kpis, installations }`\n- CUSTOMER → `{ customer, products[{ ...installation, Parts[{ SerialNo, Category, ModelName, EndDate, State }], WarrantyStatus }], openCalls }`\n- `linked: false` when the login is not linked to a dealer / customer record.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Global search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "search"
+              ]
+            },
+            "description": "Grouped suggestions: serials, service calls, job cards, customers, dealers, replacements. Min 2 characters. Each item has `{ id, title, subtitle, url }` (url = web route).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"q\": \"2512\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Legacy stats",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/stats",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "stats"
+              ]
+            },
+            "description": "Older summary counts used by the first dashboard version. Prefer `overview`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 · Masters (dropdowns)",
+      "item": [
+        {
+          "name": "Bootstrap — all dropdown masters",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/bootstrap",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "bootstrap"
+              ]
+            },
+            "description": "One call for every dropdown: company, states, districts, productModels, projects, callTypes, faultMasters, serviceCenters, spares, labourMasters, approvalRules, engineers.\n\nNote: districts repeat names in the ERP data — de-duplicate by name (case-insensitive) before showing a list.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Company profile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/company/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "company",
+                "get"
+              ]
+            },
+            "description": "Company details read from Delta iERP.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Product models — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/product-models/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "product-models",
+                "get"
+              ]
+            },
+            "description": "category: PUMP | MOTOR | CONTROLLER (optional).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"PUMP\",\n  \"search\": \"\",\n  \"activeOnly\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Product model — add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/product-models/add",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "product-models",
+                "add"
+              ]
+            },
+            "description": "Product models are normally synced from the ERP. Needs Company Profile rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ModelCode\": \"SSP-30-DC\",\n  \"ModelName\": \"Solartive SolarFlow 3 HP DC Submersible Pump (4\\\")\",\n  \"Category\": \"PUMP\",\n  \"Hp\": 3,\n  \"Kw\": 2.2,\n  \"Technology\": \"BLDC\",\n  \"VoltageRange\": \"\",\n  \"HeadRange\": \"\",\n  \"Discharge\": \"\",\n  \"SizeInch\": \"4\",\n  \"WarrantyMonths\": 60,\n  \"Description\": \"\",\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Product model — update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/product-models/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "product-models",
+                "update"
+              ]
+            },
+            "description": "Send only the fields to change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ProductModelId\": \"{{productModelId}}\",\n  \"WarrantyMonths\": 60,\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Product model — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/product-models/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "product-models",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ProductModelId\": \"{{productModelId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 · Configuration masters",
+      "description": "One generic endpoint per master: `{{resource}}` = spares | labour | faults | call-types | projects | approval-rules | states | districts. (Service centers have their own endpoints below — they also write the iERP ledger.)\n\nGET is open to every signed-in user; POST / PUT / DELETE need that master's screen right (e.g. masters.spares).",
+      "item": [
+        {
+          "name": "List (GET)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/config/{{resource}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "config",
+                "{{resource}}"
+              ]
+            },
+            "description": "Returns `{ rows }`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create (POST) — spare example",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/config/spares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "config",
+                "spares"
+              ]
+            },
+            "description": "Body fields depend on the resource (see lib/config/masters.ts). Creating a spare also records its rate history.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"SpareCode\": \"SPR-IMP-4\",\n  \"SpareName\": \"Impeller Stage 4 Inch Noryl\",\n  \"Category\": \"PUMP\",\n  \"Uom\": \"NOS\",\n  \"CurrentRate\": 650,\n  \"MinStock\": 20,\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Create (POST) — approval rule example",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/config/approval-rules",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "config",
+                "approval-rules"
+              ]
+            },
+            "description": "A job card needs every active level whose MinAmount ≤ its total. A named ApproverUserId is the only person who may act at that level.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"LevelNo\": 1,\n  \"RoleName\": \"Service Manager\",\n  \"ApproverUserId\": null,\n  \"MinAmount\": 0,\n  \"MaxAmount\": null,\n  \"Description\": \"Every job card\",\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update (PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/config/spares",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "config",
+                "spares"
+              ]
+            },
+            "description": "Include the record id field (SpareId, LabourMasterId, FaultMasterId, CallTypeId, ProjectId, ApprovalRuleId, StateId, DistrictId).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"SpareId\": \"{{spareId}}\",\n  \"SpareCode\": \"SPR-IMP-4\",\n  \"SpareName\": \"Impeller Stage 4 Inch Noryl\",\n  \"Category\": \"PUMP\",\n  \"Uom\": \"NOS\",\n  \"CurrentRate\": 675,\n  \"MinStock\": 20,\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete (DELETE)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/config/spares?id={{spareId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "config",
+                "spares"
+              ],
+              "query": [
+                {
+                  "key": "id",
+                  "value": "{{spareId}}"
+                }
+              ]
+            },
+            "description": "Pass `?id=<record id>`. 409 when the record is used elsewhere — mark it inactive instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Service centers — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/service-centers/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "service-centers",
+                "get"
+              ]
+            },
+            "description": "`{ centers }` with StateName, Engineers, OpenCalls and the iERP ledger: LgrId, LedgerCode (e.g. S0001), LedgerGroup. LedgerCode null = not yet in the iERP (created on the next save).",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Service center — save (create / update)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/service-centers/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "service-centers",
+                "save"
+              ]
+            },
+            "description": "Blank ServiceCenterId = new. Required: ServiceCenterCode (unique), ServiceCenterName (unique), StateId. Mobile 10 digits starting 6-9, Pincode 6 digits, GSTIN 15 characters.\nSame save also writes the Delta iERP (SolarativeiERP): dbo.Lgrs under ledger group \"Service Center\" (code S0001, S0002 …, Lgrs.ServiceCenter = 'Yes', DisableStatus = not active) and the address in dbo.LgrAddresses (Billing ADDRESS, state / district / GST type resolved). The ledger name = centre name and must be unique in the iERP.\nNo delete — send IsActive: false to switch a centre off. Needs the masters.service-centers screen right.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ServiceCenterId\": \"\",\n  \"ServiceCenterCode\": \"SC-PUN\",\n  \"ServiceCenterName\": \"Pune Service Center\",\n  \"ContactPerson\": \"Ajay Patil\",\n  \"Mobile\": \"9822012345\",\n  \"Email\": \"pune@solartive.example\",\n  \"Gstin\": \"\",\n  \"Address\": \"Bhosari MIDC\",\n  \"City\": \"Pune\",\n  \"StateId\": \"{{stateId}}\",\n  \"District\": \"Pune\",\n  \"Pincode\": \"411026\",\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Service engineers — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/service-engineers/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "service-engineers",
+                "get"
+              ]
+            },
+            "description": "`{ engineers }` (role ENGINEER) with ServiceCenterName, StateRights, OpenCalls and the iERP ledger (LgrId, LedgerCode, LedgerGroup). Passwords are never returned.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Service engineer — save (create / update)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/masters/service-engineers/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "masters",
+                "service-engineers",
+                "save"
+              ]
+            },
+            "description": "Blank UserId = new engineer login (role ENGINEER, default engineer screens). Required: FirstName, Username (3-50 lowercase), ServiceCenterId, Password (new only, min 6; on edit blank keeps it).\nSame save writes the iERP: dbo.Lgrs under ledger group \"Service Engineers\" (next code in the E series, Lgrs.FieldService = 'Yes', UnderLgrId = the service centre's ledger — the centre's ledger is created first if missing) and the address in dbo.LgrAddresses.\nNo delete — send IsActive: false. Needs the masters.service-engineers screen right.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"UserId\": \"\",\n  \"FirstName\": \"Ajay\",\n  \"LastName\": \"Patil\",\n  \"Username\": \"eng.pun1\",\n  \"Password\": \"delta@2026\",\n  \"Phone\": \"9822098220\",\n  \"Email\": \"\",\n  \"ServiceCenterId\": \"{{serviceCenterId}}\",\n  \"StateRights\": [],\n  \"Address\": \"Bhosari, Pune\",\n  \"IsActive\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 · Users & rights (admin)",
+      "description": "Admin accounts only. Users with role ENGINEER are also iERP ledgers (Service Engineers group): add / update keep the ledger + LgrAddresses in step (ServiceCenterId required, optional Address), delete disables the ledger. The list returns Address, ServiceCenterName and LedgerCode. New engineers default to the prototype screens: warranty.search, service.complaints, service.visits, service.jobcards, stock.availability.",
+      "item": [
+        {
+          "name": "Users — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "get"
+              ]
+            },
+            "description": "Includes StateRights, DistrictRights, FormRights, ServiceCenterId and IsErpUser (1 = Delta iERP administrator, created automatically on first sign-in; password managed in the iERP). Passwords are never returned.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search\": \"\",\n  \"role\": \"\",\n  \"activeOnly\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User — add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/add",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "add"
+              ]
+            },
+            "description": "Roles: SUPER | HO | MANAGER | ENGINEER | DEALER | CUSTOMER.\n\n- StateRights: StateIds, empty = all states\n- DistrictRights: district names, empty = all\n- FormRights: screen keys the user can open (empty = dashboard only)\n- DEALER login: Username = dealer code · CUSTOMER login: Username = registered mobile\n\nPasswords are stored as scrypt hashes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"Username\": \"mgr.lko\",\n  \"Password\": \"Change@123\",\n  \"FirstName\": \"Lucknow\",\n  \"LastName\": \"Manager\",\n  \"Email\": \"\",\n  \"Phone\": \"9876543210\",\n  \"Role\": \"MANAGER\",\n  \"IsActive\": true,\n  \"IsAdmin\": false,\n  \"ServiceCenterId\": null,\n  \"StateRights\": [],\n  \"DistrictRights\": [],\n  \"FormRights\": [\n    \"service.complaints\",\n    \"service.visits\",\n    \"service.jobcards\",\n    \"service.approvals\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User — update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "update"
+              ]
+            },
+            "description": "Leave Password empty to keep the current one (ignored for iERP administrators — they use their iERP password). Rights fields are only changed when sent.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"UserId\": \"{{userId}}\",\n  \"FirstName\": \"Lucknow\",\n  \"LastName\": \"Manager\",\n  \"Role\": \"MANAGER\",\n  \"IsActive\": true,\n  \"IsAdmin\": false,\n  \"Password\": \"\",\n  \"StateRights\": [],\n  \"FormRights\": [\n    \"service.complaints\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "User — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/users/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "admin",
+                "users",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"UserId\": \"{{userId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 · Warranty",
+      "item": [
+        {
+          "name": "Serials — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/stickers/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "stickers",
+                "get"
+              ]
+            },
+            "description": "status: Generated | Printed | Registered | Replaced.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"PUMP\",\n  \"status\": \"Generated\",\n  \"productModelId\": \"\",\n  \"search\": \"\",\n  \"limit\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Serial — add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/stickers/add",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "stickers",
+                "add"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"SerialNo\": \"2611PU30001\",\n  \"ProductModelId\": \"{{productModelId}}\",\n  \"Category\": \"PUMP\",\n  \"SupplierName\": \"Solartive Techno Industries\",\n  \"ProductGroup\": \"Solar Submersible Pump Set\",\n  \"InvoiceNo\": \"SI/26/3121\",\n  \"InvoiceDate\": \"2026-11-03T00:00:00.000Z\",\n  \"InvoiceLocation\": \"Greater Noida HO\",\n  \"MfgDate\": \"2026-11-03T00:00:00.000Z\",\n  \"Status\": \"Generated\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Serials — bulk upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/stickers/bulk-upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "stickers",
+                "bulk-upload"
+              ]
+            },
+            "description": "Each row: SerialNo + ModelCode (or ProductModelId) + Category, optional invoice / mfg fields. Returns created / skipped counts.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rows\": [\n    {\n      \"SerialNo\": \"2611PU30002\",\n      \"ModelCode\": \"SSP-30-DC\",\n      \"Category\": \"PUMP\",\n      \"InvoiceNo\": \"SI/26/3122\",\n      \"InvoiceDate\": \"2026-11-03T00:00:00.000Z\",\n      \"MfgDate\": \"2026-11-03T00:00:00.000Z\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Serial — update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/stickers/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "stickers",
+                "update"
+              ]
+            },
+            "description": "Send only the fields to change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StickerId\": \"{{stickerId}}\",\n  \"Status\": \"Printed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Serial — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/stickers/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "stickers",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StickerId\": \"{{stickerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Verify serial (warranty status)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/warranties/verify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "warranties",
+                "verify"
+              ]
+            },
+            "description": "Scan-QR / serial lookup: product, customer, installation and warranty status / days left.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serialNo\": \"2512PU30003\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Warranties — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/warranties/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "warranties",
+                "get"
+              ]
+            },
+            "description": "status: Active | Expired | Replaced. Limited to the user's rights (dealer: own sales, customer: own pumps).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"\",\n  \"status\": \"Active\",\n  \"search\": \"\",\n  \"limit\": 5000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Warranty — detail (for edit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/warranties/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "warranties",
+                "detail"
+              ]
+            },
+            "description": "`{ warranty }` with installation site (SiteAddress, Village, District, StateId, Pincode), customer, dealer, model and ServiceCallLines (count of service call lines on the serial). Limited to the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"WarrantyId\": \"{{warrantyId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Warranty — update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/warranties/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "warranties",
+                "update"
+              ]
+            },
+            "description": "Active Warranty List edit (prototype rules). SUPER / HO / DEALER only (dealers: own warranties; their dealer is kept).\nCustomer & site update the customer and the installation. StartDate may be changed by HO and dealers; WarrantyMonths (1-120), ExtendedMonths (0-60) and Status (Active | Void) only by HO — a Replaced warranty keeps its status.\nA changed start date or period recalculates EndDate = start + months + extended. Returns { warranty: { WarrantyNo, SerialNo, EndDate, recalculated } }.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"WarrantyId\": \"{{warrantyId}}\",\n  \"CustomerName\": \"Dharmveer\",\n  \"Mobile\": \"9810101008\",\n  \"Address\": \"Near Panchayat Bhawan\",\n  \"Village\": \"Dankaur\",\n  \"StateId\": \"{{stateId}}\",\n  \"District\": \"Gautam Buddh Nagar\",\n  \"Pincode\": \"203201\",\n  \"DealerId\": \"{{dealerId}}\",\n  \"StartDate\": \"2026-10-16T00:00:00.000Z\",\n  \"WarrantyMonths\": 36,\n  \"ExtendedMonths\": 0,\n  \"Status\": \"Active\",\n  \"Remarks\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Warranty — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/warranties/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "warranties",
+                "delete"
+              ]
+            },
+            "description": "For a wrong registration. SUPER / HO / DEALER (own) only.\nBlocked when the serial has service call lines (delete the calls or set Status = Void) or when a replacement moved it (delete the replacement).\nThe sticker goes back to Printed; the installation is removed when it has no other warranty and no service call. Returns { WarrantyNo, SerialNo, installationRemoved }.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"WarrantyId\": \"{{warrantyId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Warranty card (installation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/warranties/card",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "warranties",
+                "card"
+              ]
+            },
+            "description": "Digital warranty card data: `{ installation, warranties }` — customer, site, dealer, borewell / head / array and every component warranty (pump, motor, controller) of the installation. Limited to the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"InstallationId\": \"{{installationId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Lookup customer for registration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/installations/lookup-customer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "installations",
+                "lookup-customer"
+              ]
+            },
+            "description": "Register-warranty form: type the mobile → `{ found, customer: { CustomerId, CustomerName, Mobile, Email, Language, Address, Village, District, StateId, Pincode } }`. Needs the Register Installation right only; `found: false` for a new customer or one outside the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mobile\": \"9414101017\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Register installation + warranties",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/installations/add-full",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "installations",
+                "add-full"
+              ]
+            },
+            "description": "Creates / reuses the customer (by mobile), the installation and one warranty per component in one transaction.\n\n**Required** (same as the form): mobile (10 digits), customerName, siteAddress, stateId, district, pincode (6 digits), installDate (warranty starts from it), at least one component. Optional: language (EN | HI | GU, default EN), email, invoiceNo, invoiceDate, dealerId, borewellDepthM, dynamicHeadM, panelKwp, projectId.\n\n**consent** (default true): the customer agrees to warranty updates — a WhatsApp / SMS message with the serials and warranty end dates is queued (see the message log). Existing customers (same mobile) are reused; their email / language are updated.\n\nPre-fill the form from **Lookup customer for registration**.\n\n**components** — one or more product serials, any mix of pump / motor / controller (none is mandatory). Only `serialNo` is needed: `category`, `productModelId` and `warrantyMonths` default to the serial's sticker and its product model's warranty period. Check serials first with **Serials — list** (`search`) — a serial should be in the Serial Register and not yet Registered.\n\nDealer logins are always recorded under their own dealer; customer logins under their own account.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"videoIds\": [],\n  \"mobile\": \"9414101017\",\n  \"customerName\": \"Gopal Sharma\",\n  \"language\": \"HI\",\n  \"email\": \"\",\n  \"siteAddress\": \"Ward 4, Near Panchayat Bhawan\",\n  \"village\": \"Phagi\",\n  \"stateId\": \"{{stateId}}\",\n  \"district\": \"Jaipur\",\n  \"pincode\": \"303005\",\n  \"installDate\": \"2026-11-03T00:00:00.000Z\",\n  \"invoiceNo\": \"INV-1001\",\n  \"invoiceDate\": \"2026-11-03T00:00:00.000Z\",\n  \"dealerId\": \"{{dealerId}}\",\n  \"borewellDepthM\": 120,\n  \"dynamicHeadM\": 70,\n  \"panelKwp\": 3,\n  \"projectId\": null,\n  \"consent\": true,\n  \"remarks\": \"\",\n  \"components\": [\n    {\n      \"serialNo\": \"2611PU30001\"\n    },\n    {\n      \"serialNo\": \"2611MO30001\"\n    },\n    {\n      \"serialNo\": \"2611CT30001\",\n      \"category\": \"CONTROLLER\",\n      \"productModelId\": \"{{productModelId}}\",\n      \"warrantyMonths\": 36\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dealers — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/dealers/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "dealers",
+                "get"
+              ]
+            },
+            "description": "status: Approved | Pending | Blocked.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"\",\n  \"stateId\": \"\",\n  \"search\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dealer — add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/dealers/add",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "dealers",
+                "add"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"DealerCode\": \"1007\",\n  \"FirmName\": \"Bharat Urja Traders\",\n  \"ContactPerson\": \"Ramesh\",\n  \"Mobile\": \"9760077007\",\n  \"Email\": \"\",\n  \"Address\": \"\",\n  \"City\": \"Agra\",\n  \"District\": \"Agra\",\n  \"StateId\": \"{{stateId}}\",\n  \"Pincode\": \"282001\",\n  \"Gstin\": \"\",\n  \"WarrantyMonths\": 60,\n  \"Status\": \"Pending\",\n  \"Remarks\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dealer — update",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/dealers/update",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "dealers",
+                "update"
+              ]
+            },
+            "description": "Send only the fields to change.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"DealerId\": \"{{dealerId}}\",\n  \"Status\": \"Approved\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dealer — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/dealers/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "dealers",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"DealerId\": \"{{dealerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Dealer — approve / block",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/dealers/decide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "dealers",
+                "decide"
+              ]
+            },
+            "description": "Head office only. decision: Approved | Blocked (a reason in `remarks` is required to block). Records ApprovedBy / ApprovedOn. A blocked dealer cannot sign in or register warranties.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"DealerId\": \"{{dealerId}}\",\n  \"decision\": \"Approved\",\n  \"remarks\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Customers — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/customers/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "customers",
+                "get"
+              ]
+            },
+            "description": "Includes InstallationCount, ActiveWarrantyCount, ComplaintCount.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search\": \"\",\n  \"stateId\": \"\",\n  \"limit\": 500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Customer — 360 detail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/customers/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "customers",
+                "detail"
+              ]
+            },
+            "description": "`{ customer, installations, warranties, complaints }`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CustomerId\": \"{{customerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Customer — save (add / update)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/customers/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "customers",
+                "save"
+              ]
+            },
+            "description": "Omit / empty CustomerId to create. Language: EN | HI | GU. Mobile must be unique.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CustomerId\": \"\",\n  \"CustomerName\": \"Mohan Lal Yadav\",\n  \"Mobile\": \"9822000001\",\n  \"AltMobile\": \"\",\n  \"Email\": \"\",\n  \"Address\": \"\",\n  \"Village\": \"Rampura\",\n  \"City\": \"\",\n  \"District\": \"Sikar\",\n  \"StateId\": \"{{stateId}}\",\n  \"Pincode\": \"332001\",\n  \"Language\": \"HI\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.response.code < 300 && j.customer && j.customer.CustomerId) pm.collectionVariables.set(\"customerId\", j.customer && j.customer.CustomerId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/customers/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "customers",
+                "delete"
+              ]
+            },
+            "description": "Head office only; blocked when the customer has installations, warranties or calls.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"CustomerId\": \"{{customerId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement flow — check serials",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/replacement/check",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "replacement",
+                "check"
+              ]
+            },
+            "description": "Live check for the in-warranty replacement form → `{ old: { ok, message }, new: { ok, message }, canReplace }`.\n\nOld serial must be registered and in warranty (dealers: their own sales only); new serial must be a free sticker (Generated / Printed) of the same component type. A different HP rating is reported as a warning in the message.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oldSerial\": \"2512PU30003\",\n  \"newSerial\": \"2611PU30009\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement flow — serial suggestions",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/replacement/suggest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "replacement",
+                "suggest"
+              ]
+            },
+            "description": "kind `old`: serials in warranty the user may replace · kind `new`: free stickers (optionally of one `category`). Returns `{ serials[{ SerialNo, Category, ModelName, CustomerName }] }` (max 30).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"new\",\n  \"q\": \"2611\",\n  \"category\": \"PUMP\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement flow — replace & transfer warranty",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/replacement/submit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "replacement",
+                "submit"
+              ]
+            },
+            "description": "Creates the replacement (`REP/<fy>/NNNN`, source Dealer) and moves the balance warranty from the old to the new serial. Returns `{ replacement: { ReplacementId, ReplNo, DaysLeft }, message }`. Checks are re-run on the server.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"oldSerial\": \"2512PU30003\",\n  \"newSerial\": \"2611PU30009\",\n  \"reason\": \"Pump shaft broken at commissioning\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement flow — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/replacement/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "replacement",
+                "get"
+              ]
+            },
+            "description": "Replacements done through the flow: ReplNo, ReplDate, OldSerialNo, NewSerialNo, Category, CustomerName, DealerName, WarrantyDaysLeft, Reason. Limited to the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement flow — undo",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/replacement/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "replacement",
+                "delete"
+              ]
+            },
+            "description": "Returns the warranty to the old serial and frees the new sticker. Blocked once the new serial has service calls; dealers can only undo their own.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReplacementId\": \"{{replacementId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Serial No. search report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/search",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "search"
+              ]
+            },
+            "description": "`status`: unknown (not in the sticker register) · unregistered · registered.\n\nRegistered → `warranty { State active | expiring | expired | replaced, Label, DaysLeft, ElapsedPct, StartDate, EndDate }`, `model`, and — only when the unit is inside the user's rights (`visible: true`) — `owner` (customer, site, dealer, installation), `components` (the set's other serials) and `history` (registration, service calls, replacements). Otherwise just the status.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serialNo\": \"2512PU30003\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Geo-graphical report",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/warranty/geo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "warranty",
+                "geo"
+              ]
+            },
+            "description": "`states[{ StateId, StateName, ShortName, Sets, Warranties, ActiveWarranties, Customers, Dealers, Calls }]`. Pass `stateId` to also get `districts[{ District, Sets, Customers }]`. Limited to the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stateId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 · Service calls",
+      "item": [
+        {
+          "name": "Calls — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "get"
+              ]
+            },
+            "description": "status: New | Assigned | Visited | In Approval | Approved | Resolved | Closed | Cancelled. Each row includes DueDate, WarrantyStatus, Components (e.g. \"PUMP 2512PU30003, MOTOR 2512MO30003\") and PhotoCount. Engineers get only their own calls; dealers / customers only theirs.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"\",\n  \"serviceCenterId\": \"\",\n  \"engineerUserId\": \"\",\n  \"search\": \"\",\n  \"limit\": 100\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Lookup customer by mobile",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/lookup-customer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "lookup-customer"
+              ]
+            },
+            "description": "Step 2 of the call form: type the mobile → an existing customer loads automatically.\n\nReturns `{ found, customer, installations[{ InstallationId, InstallNo, SiteAddress, Village, District, StateId, Pincode, DealerId, DealerName, ProjectId, Serials[{ SerialNo, Category, ModelName, EndDate, Status }] }] }`. Pre-fill the site from the latest installation and its serials as components. `found: false` → new customer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mobile\": \"9414101017\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.response.code < 300 && j.customer && j.customer.CustomerId) pm.collectionVariables.set(\"customerId\", j.customer && j.customer.CustomerId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Lookup serial (model & warranty)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/lookup-serial",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "lookup-serial"
+              ]
+            },
+            "description": "Step 3: each component serial → `{ serial: { SerialNo, State, Label, Category, ModelName, EndDate, DaysLeft, InstallationId, DealerId, ... } }`.\n\nState: `in` (in warranty) · `out` (expired / replaced) · `unreg` (sticker never registered) · `unk` (not in the sticker register — the call is refused with that serial). Correct the component type to `Category` when they differ.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"serialNo\": \"2512PU30003\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Video — upload (service call / job card)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/attachments/upload",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "attachments",
+                "upload"
+              ]
+            },
+            "description": "multipart/form-data with field **file** (MP4, WebM, MOV or 3GP, up to 50 MB). Returns `{ video: { AttachmentId, FileUrl, FileName, FileType, FileSize } }`.\nUpload each video first, then send the ids in `videoIds` when saving the service call (complaints/add, complaints/update) or job card (jobcards/save). On edit, `videoIds` = every video to keep (leave out = remove; omit the field = no change). Max 3 videos per record.\nUploads that are not linked by a save within a day are deleted. Play / download a video with GET {{baseUrl}}{FileUrl} (supports Range for seeking).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.response.code < 300 && j.video && j.video.AttachmentId) pm.collectionVariables.set(\"videoId\", j.video && j.video.AttachmentId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Call — book (new service call)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/add",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "add"
+              ]
+            },
+            "description": "Same sections as the web form:\n1. **Call details** — callDate (not in the future), callTypeId*, priority (Low | Medium | High | Urgent), source (Customer | Dealer | Toll Free | WhatsApp | Marketing | HO | Mobile App), projectId, dealerId\n2. **Customer & site** — mobile* (10 digits), customerName*, village, address, stateId*, district, pincode (6 digits). Pass customerId / installationId from the lookup when known.\n3. **Components** — at least one line with a serial or a fault; category PUMP | MOTOR | CONTROLLER. Serials are checked (unknown serial → 400).\n4. **Complaint** — complaintText* ; photos optional: up to 5 JPEG / PNG / WebP data URLs, ≤ 3 MB each (resize to ~1600 px before sending).\n5. **Assignment** (staff only) — serviceCenterId, engineerUserId (books the call as Assigned).\n\nThe server works out: call number `SC/<fy>/NNNN`, due date = call date + call type valid days, WarrantyStatus (In Warranty | Partial | Out of Warranty | Not Registered), dealer / installation from the serials when not given. Dealer / customer logins are pinned to their own records.\n\nReturns `{ complaint }` incl. ComplaintNo, DueDate, WarrantyStatus, Components[], PhotoCount.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callDate\": \"2026-11-03T00:00:00.000Z\",\n  \"callTypeId\": \"{{callTypeId}}\",\n  \"priority\": \"Medium\",\n  \"source\": \"Mobile App\",\n  \"projectId\": null,\n  \"dealerId\": null,\n  \"mobile\": \"9414101017\",\n  \"customerName\": \"Gopal Sharma\",\n  \"village\": \"Phagi\",\n  \"address\": \"Ward 4, Near Panchayat Bhawan\",\n  \"stateId\": \"{{stateId}}\",\n  \"district\": \"Jaipur\",\n  \"pincode\": \"303005\",\n  \"customerId\": null,\n  \"installationId\": null,\n  \"components\": [\n    {\n      \"category\": \"PUMP\",\n      \"serialNo\": \"2512PU30003\",\n      \"fault\": \"No discharge\"\n    },\n    {\n      \"category\": \"CONTROLLER\",\n      \"serialNo\": \"2512CT30003\",\n      \"fault\": \"Trips on overload\"\n    }\n  ],\n  \"complaintText\": \"Pump not starting in the morning, controller shows a fault light\",\n  \"photos\": [\n    {\n      \"fileName\": \"site.jpg\",\n      \"dataUrl\": \"data:image/jpeg;base64,<base64 image>\"\n    }\n  ],\n  \"serviceCenterId\": \"{{serviceCenterId}}\",\n  \"engineerUserId\": null\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.response.code < 300 && j.complaint && j.complaint.ComplaintId) pm.collectionVariables.set(\"complaintId\", j.complaint && j.complaint.ComplaintId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Call — detail (components & photos)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "detail"
+              ]
+            },
+            "description": "`{ complaint, components[{ Category, SerialNo, ModelName, ReportedFault, Warranty{ State, Label, EndDate, DaysLeft } }], photos[{ AttachmentId, FileUrl, FileName, FileType, FileSize }] }`. Open a photo with GET `{{baseUrl}}` + FileUrl (same Bearer token).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ComplaintId\": \"{{complaintId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Photo — download",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/attachments/{{attachmentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "attachments",
+                "{{attachmentId}}"
+              ]
+            },
+            "description": "Returns the image bytes (Content-Type image/jpeg | png | webp). Only for users who can see the parent service call."
+          },
+          "response": []
+        },
+        {
+          "name": "Call — assign engineer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/assign",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "assign"
+              ]
+            },
+            "description": "Staff only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ComplaintId\": \"{{complaintId}}\",\n  \"EngineerUserId\": \"{{engineerUserId}}\",\n  \"ServiceCenterId\": \"{{serviceCenterId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Call — close",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/complaints/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "complaints",
+                "close"
+              ]
+            },
+            "description": "Staff only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ComplaintId\": \"{{complaintId}}\",\n  \"Resolution\": \"Replaced impeller, discharge normal\",\n  \"Status\": \"Closed\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reminders — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/reminders/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "reminders",
+                "get"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"Pending\",\n  \"complaintId\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reminder — save",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/reminders/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "reminders",
+                "save"
+              ]
+            },
+            "description": "Mark done with only `{ ComplaintReminderId, Status: \"Done\" }`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ComplaintReminderId\": \"\",\n  \"ComplaintId\": \"{{complaintId}}\",\n  \"ReminderDate\": \"2026-11-03T00:00:00.000Z\",\n  \"ReminderText\": \"Call customer to confirm visit\",\n  \"Status\": \"Pending\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reminder — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/reminders/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "reminders",
+                "delete"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ComplaintReminderId\": \"{{reminderId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Visits — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/visits/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "visits",
+                "get"
+              ]
+            },
+            "description": "Engineers see their own visits.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"complaintId\": \"\",\n  \"engineerUserId\": \"\",\n  \"status\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Visit — save (engineer)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/visits/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "visits",
+                "save"
+              ]
+            },
+            "description": "Status (outcome): Resolved at site | Spares required | Job card required | Replacement required | Customer not available. For ENGINEER logins the engineer is always the signed-in user. A new visit moves the call to Visited. Optional: StartTime/EndTime (HH:mm, end not before start), CustomerRating 1-5, FromLocation/ToLocation, TravelKm, TravelExpense, OtherExpense.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"VisitReportId\": \"\",\n  \"ComplaintId\": \"{{complaintId}}\",\n  \"EngineerUserId\": \"{{engineerUserId}}\",\n  \"VisitDate\": \"2026-11-03T00:00:00.000Z\",\n  \"Status\": \"Job card required\",\n  \"Observations\": \"Motor winding burnt\",\n  \"ActionTaken\": \"Motor lifted, job card raised\",\n  \"CustomerFeedback\": \"\",\n  \"StartTime\": \"10:00\",\n  \"EndTime\": \"12:00\",\n  \"CustomerRating\": 4,\n  \"FromLocation\": \"Service centre\",\n  \"ToLocation\": \"Customer site\",\n  \"TravelKm\": 38,\n  \"TravelExpense\": 420,\n  \"OtherExpense\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Visit — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/visits/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "visits",
+                "delete"
+              ]
+            },
+            "description": "Not allowed for engineers.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"VisitReportId\": \"{{visitId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 · Job cards & approvals",
+      "item": [
+        {
+          "name": "Job cards — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/jobcards/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "jobcards",
+                "get"
+              ]
+            },
+            "description": "`pendingForMe: true` → only cards waiting for the signed-in approver. Each card has CanAct, LevelPosition, LevelsRequired, PendingRole, WarrantyAmount, CustomerPayable.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"\",\n  \"complaintId\": \"\",\n  \"pendingForMe\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Job card — detail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/jobcards/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "jobcards",
+                "detail"
+              ]
+            },
+            "description": "`{ jobCard, faults, items, approvals, levels, photos, components }`.\n\n- items: ItemType (Spare | Labour), ItemCode, Particulars, SerialNo, Qty, Rate, GstPct, GstAmount, Amount, IsWarranty\n- jobCard: SparesTotal, LabourTotal, GstTotal, OtherCharges, TotalEstimate, WarrantyAmount, CustomerPayable, ServiceCenterId, EngineerUserId\n- photos: [{ AttachmentId, FileUrl }] (open with GET {{baseUrl}} + FileUrl)\n- components: the call's components (serial, model, fault reported)",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"JobCardId\": \"{{jobCardId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Job card — save (draft or submit)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/jobcards/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "jobcards",
+                "save"
+              ]
+            },
+            "description": "Same sections as the web form:\n1. **Header** — ComplaintId*, JobCardDate (not in the future, not before the call), ServiceCenterId* (defaults to the call's), EngineerUserId (engineers: always themselves), Remarks\n2. **Faults** — [{ FaultMasterId, Remarks (nature / diagnosis) }]\n3. **Lines** — at least one: ItemType Spare (SpareId) or Labour (LabourMasterId); SerialNo = the call component it repairs; Qty (whole number ≥ 1), Rate, GstPct (0–100), IsWarranty (company bears the line incl. GST)\n4. **Photos — mandatory**: at least one photo per job card, up to 10 (JPEG / PNG / WebP data URLs ≤ 3 MB; resize to ~1600 px). On edit, existing photos count; remove some with removePhotoIds.\n- **Summary** — OtherCharges (transport etc.).\n\nServer works out: SparesTotal, LabourTotal, GstTotal, TotalEstimate = spares + labour + GST + other, WarrantyAmount (warranty lines incl. GST, capped at total), CustomerPayable. `submit: true` sends it for approval (levels by amount). Only spare lines move stock on final approval.\n\nOlder clients sending `items` + `LabourTotal` still work.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"JobCardId\": \"\",\n  \"videoIds\": [],\n  \"ComplaintId\": \"{{complaintId}}\",\n  \"JobCardDate\": \"2026-11-03T00:00:00.000Z\",\n  \"ServiceCenterId\": \"{{serviceCenterId}}\",\n  \"EngineerUserId\": \"{{engineerUserId}}\",\n  \"Remarks\": \"Motor rewinding\",\n  \"faults\": [\n    {\n      \"FaultMasterId\": \"{{faultMasterId}}\",\n      \"Remarks\": \"Winding burnt — low insulation\"\n    }\n  ],\n  \"lines\": [\n    {\n      \"ItemType\": \"Spare\",\n      \"SpareId\": \"{{spareId}}\",\n      \"SerialNo\": \"2512PU30003\",\n      \"Qty\": 1,\n      \"Rate\": 650,\n      \"GstPct\": 18,\n      \"IsWarranty\": true,\n      \"Remarks\": \"\"\n    },\n    {\n      \"ItemType\": \"Labour\",\n      \"LabourMasterId\": \"{{labourMasterId}}\",\n      \"SerialNo\": \"2512MO30003\",\n      \"Qty\": 1,\n      \"Rate\": 500,\n      \"GstPct\": 18,\n      \"IsWarranty\": false\n    }\n  ],\n  \"OtherCharges\": 150,\n  \"photos\": [\n    {\n      \"fileName\": \"fault.jpg\",\n      \"dataUrl\": \"data:image/jpeg;base64,<base64 image>\"\n    }\n  ],\n  \"removePhotoIds\": [],\n  \"submit\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (pm.response.code < 300 && j.jobCard && j.jobCard.JobCardId) pm.collectionVariables.set(\"jobCardId\", j.jobCard && j.jobCard.JobCardId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Job card — submit / approve / reject",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/jobcards/decide",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "jobcards",
+                "decide"
+              ]
+            },
+            "description": "action: Submit | Approved | Rejected (remarks required to reject). The final approval posts stock consumption (engineer van first, then store) and queues a WhatsApp message to the customer.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"JobCardId\": \"{{jobCardId}}\",\n  \"action\": \"Approved\",\n  \"remarks\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Job card — close",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/jobcards/close",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "jobcards",
+                "close"
+              ]
+            },
+            "description": "Only an Approved card. `resolveCall: true` also marks the call Resolved.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"JobCardId\": \"{{jobCardId}}\",\n  \"remarks\": \"Repair complete\",\n  \"resolveCall\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Job card — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/jobcards/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "jobcards",
+                "delete"
+              ]
+            },
+            "description": "Draft / Rejected by anyone; other states head office only (stock postings are reversed).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"JobCardId\": \"{{jobCardId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 · Replacements",
+      "item": [
+        {
+          "name": "Replacements — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/replacements/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "replacements",
+                "get"
+              ]
+            },
+            "description": "status: Open | Received | Closed | Cancelled · source: Dealer | Service.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"\",\n  \"source\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement — detail",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/replacements/detail",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "replacements",
+                "detail"
+              ]
+            },
+            "description": "`{ replacement, lines, documents }` — documents are the attached PDFs (open FileUrl with the same auth). replacement.OutOfWarranty = 1 for voucher type Without Serial No.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReplacementId\": \"{{replacementId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement — save",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/replacements/save",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "replacements",
+                "save"
+              ]
+            },
+            "description": "Each line with old + new serial moves the remaining warranty to the new serial (old must be in warranty; new must be an unregistered sticker of the same category). ReplacementType: Invoice | Delivery Challan | Credit Note.\nVoucherType: With Serial No | Without Serial No. 'Without Serial No' = OUT OF WARRANTY: serials are ignored, no warranty is checked or transferred (lines only need Category, Qty, NetValue, Charges). The voucher type cannot be changed after the first save.\nPDF attachment is MANDATORY: documents = [{ fileName, dataUrl: 'data:application/pdf;base64,...' }] (max 5 files, 5 MB each, must be a real PDF). On edit, at least one PDF must remain after removeDocumentIds (attachment ids from the detail call) plus new documents.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReplacementId\": \"\",\n  \"ReplDate\": \"2026-11-03T00:00:00.000Z\",\n  \"Source\": \"Dealer\",\n  \"ComplaintId\": null,\n  \"DealerId\": \"{{dealerId}}\",\n  \"VoucherType\": \"With Serial No\",\n  \"ReplacementType\": \"Invoice\",\n  \"Status\": \"Open\",\n  \"Reason\": \"Pump jammed within warranty\",\n  \"CnNo\": \"\",\n  \"CnAmount\": null,\n  \"lines\": [\n    {\n      \"Category\": \"PUMP\",\n      \"OldSerialNo\": \"2512PU30003\",\n      \"NewSerialNo\": \"2611PU30009\",\n      \"Qty\": 1,\n      \"NetValue\": 0,\n      \"Location\": \"Greater Noida HO\"\n    }\n  ],\n  \"documents\": [\n    {\n      \"fileName\": \"dealer-letter.pdf\",\n      \"dataUrl\": \"data:application/pdf;base64,JVBERi0xLjQK...\"\n    }\n  ],\n  \"removeDocumentIds\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Replacement — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/replacements/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "replacements",
+                "delete"
+              ]
+            },
+            "description": "Reverses the warranty transfer. Head office / managers only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ReplacementId\": \"{{replacementId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10 · Stock",
+      "item": [
+        {
+          "name": "Stock availability",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/balance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "balance"
+              ]
+            },
+            "description": "Per location (SC = store, ENG = engineer van) and spare: Good, Damaged (faulty held), Value, BelowMin. Engineers see their own van. Engineer-wise Stock screen = this call with locType \"ENG\".",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"locType\": \"\",\n  \"locId\": \"\",\n  \"spareId\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Parts consumption",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/consumption",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "consumption"
+              ]
+            },
+            "description": "Spares consumed on approved job cards: date, job card, customer, spare, component serial, consumed-from (engineer/store), qty, rate, value, warranty vs chargeable. fromDate/toDate optional; follows the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromDate\": \"2026-10-01T00:00:00.000Z\",\n  \"toDate\": \"2026-11-03T00:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Stock ledger — list",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/txns/get",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "txns",
+                "get"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"txnType\": \"\",\n  \"spareId\": \"\",\n  \"fromDate\": null,\n  \"toDate\": null,\n  \"limit\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Stock entry — add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/txns/add",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "txns",
+                "add"
+              ]
+            },
+            "description": "TxnType: Opening | Receipt | Transfer | Issue-Out | Return-Damaged | Adjust-In | Adjust-Out. Locations: SC (store), ENG (engineer van), DAMAGED (faulty bin of a store). Not allowed for engineers.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"TxnType\": \"Transfer\",\n  \"TxnDate\": \"2026-11-03T00:00:00.000Z\",\n  \"SpareId\": \"{{spareId}}\",\n  \"Qty\": 2,\n  \"Rate\": 650,\n  \"FromLocType\": \"SC\",\n  \"FromLocId\": \"{{serviceCenterId}}\",\n  \"ToLocType\": \"ENG\",\n  \"ToLocId\": \"{{engineerUserId}}\",\n  \"Remarks\": \"Van stock\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Stock entry — delete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/stock/txns/delete",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "stock",
+                "txns",
+                "delete"
+              ]
+            },
+            "description": "Job-card postings cannot be deleted here.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StockTxnId\": \"{{stockTxnId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 · Reports & logs",
+      "item": [
+        {
+          "name": "Service reports (MIS)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/reports",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "reports"
+              ]
+            },
+            "description": "calls (byStatus, byCenter, byEngineer, ageing, statusMatrix[Dim=type|engineer|center, Name, Status, Count, Overdue, AvgDays]), jobCards, jobCardLines (with SerialNo, EngineerName, ServiceCenterName), replacements (with InvoiceItem, ReceivedItem, Qty), claims (spare-wise), claimJobCards, claimByMonth, claimByComponent. All filters optional.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"fromDate\": \"2026-10-01T00:00:00.000Z\",\n  \"toDate\": \"2026-11-03T00:00:00.000Z\",\n  \"stateId\": \"\",\n  \"serviceCenterId\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Service dashboard",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/service/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "dashboard"
+              ]
+            },
+            "description": "kpis {open, notAssigned, overdue, doneThisMonth, avgDaysToResolve, approvalCount, approvalAmount, warrantyCost}, byStatus, months (6, booked vs closed), matrix (call type x project), ageing, centers, faults, attention. Follows the user's rights.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Activity log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/system/activity",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "system",
+                "activity"
+              ]
+            },
+            "description": "Head office only.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search\": \"\",\n  \"tableName\": \"\",\n  \"limit\": 500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "WhatsApp / SMS log",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/system/notifications",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "system",
+                "notifications"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"search\": \"\",\n  \"channel\": \"\",\n  \"limit\": 500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "stateId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "dealerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "productModelId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "stickerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "callTypeId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "serviceCenterId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "engineerUserId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "labourMasterId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "complaintId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "attachmentId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "reminderId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "visitId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "jobCardId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "faultMasterId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "spareId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "replacementId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "stockTxnId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "resource",
+      "value": "spares",
+      "type": "string"
+    }
+  ]
+}

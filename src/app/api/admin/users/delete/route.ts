@@ -3,6 +3,8 @@ import type { NextRequest } from "next/server";
 import { query } from "@/lib/sqlserver";
 import { sessionFromRequest } from "@/lib/auth/jwt";
 import { saveAuditLog } from "@/lib/services/auditLogger";
+import { runQuery } from "@/lib/services/apiHelpers";
+import { hasUserLedger, inErpAndWarranty, releaseUserLedger } from "@/lib/services/erpLedgers";
 
 export async function POST(request: NextRequest) {
   try {
@@ -23,7 +25,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "You cannot delete your own account." }, { status: 400 });
     }
 
-    const deleted = await query<any>(`DELETE FROM dbo.[Users] OUTPUT DELETED.[UserId], DELETED.[Username] WHERE [UserId] = @p0`, [UserId]);
+    // An engineer's iERP ledger is disabled (not deleted — vouchers may use it) and unlinked with the user.
+    const deleted = (await hasUserLedger(runQuery, UserId))
+      ? await inErpAndWarranty(async (run, erp) => { await releaseUserLedger(run, erp, UserId); return run<any>(`DELETE FROM dbo.[Users] OUTPUT DELETED.[UserId], DELETED.[Username] WHERE [UserId] = @id`, { id: UserId }); })
+      : await query<any>(`DELETE FROM dbo.[Users] OUTPUT DELETED.[UserId], DELETED.[Username] WHERE [UserId] = @p0`, [UserId]);
 
     if (deleted.length === 0) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });

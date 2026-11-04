@@ -46,6 +46,14 @@ export interface VisitReport {
   Observations?: string;
   ActionTaken?: string;
   CustomerFeedback?: string;
+  StartTime?: string | null;
+  EndTime?: string | null;
+  TravelKm?: number | null;
+  TravelExpense?: number | null;
+  OtherExpense?: number | null;
+  CustomerRating?: number | null;
+  FromLocation?: string | null;
+  ToLocation?: string | null;
   Status: string;
 }
 
@@ -60,6 +68,9 @@ export interface Replacement {
   DealerId?: string;
   DealerName?: string;
   ReplacementType?: string;
+  VoucherType?: string;
+  OutOfWarranty?: boolean | number;
+  DocumentCount?: number;
   Status: string;
   CnNo?: string;
   CnAmount?: number;
@@ -81,7 +92,7 @@ interface ServiceOpsState {
   saveVisit: (payload: any) => Promise<void>;
   deleteVisit: (id: string) => Promise<void>;
   fetchReplacements: (filters?: any) => Promise<void>;
-  fetchReplacementDetail: (id: string) => Promise<{ replacement: Replacement; lines: any[] }>;
+  fetchReplacementDetail: (id: string) => Promise<{ replacement: Replacement; lines: any[]; documents: any[] }>;
   saveReplacement: (payload: any) => Promise<{ ReplacementId: string; ReplNo: string }>;
   deleteReplacement: (id: string) => Promise<void>;
   fetchReports: (filters?: any) => Promise<any>;

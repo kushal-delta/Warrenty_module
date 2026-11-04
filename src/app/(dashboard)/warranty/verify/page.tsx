@@ -13,6 +13,7 @@ import {
 import { useWarrantyStore } from "@/lib/store/useWarrantyStore";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
+import { PageLoader } from "@/components/common/Loader";
 
 export default function WarrantyVerifyPage() {
   const [serialInput, setSerialInput] = useState("");
@@ -95,10 +96,7 @@ export default function WarrantyVerifyPage() {
       {/* Results Section */}
       {isLoading && (
         <div className="py-12 text-center">
-          <Spin size="large" />
-          <p className="text-xs text-slate-500 mt-3 font-medium">
-            Checking warranty status...
-          </p>
+          <PageLoader label="Checking warranty status…" minHeight={160} />
         </div>
       )}
 

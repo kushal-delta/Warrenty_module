@@ -1,0 +1,33 @@
+# Dependencies and build output (rebuilt inside the image)
+node_modules
+.next
+.next-dev
+.migration
+out
+tsconfig.tsbuildinfo
+
+# Secrets — passed to the container with --env-file, never baked into the image
+.env
+.env.*
+!.env.example
+*.env
+deploy.config.sh
+
+# Uploaded files live in the host volume, not in the image
+uploads
+
+# Local data, tooling and docs not needed at runtime
+.git
+.gitignore
+.claude
+data
+database
+postman
+Import Templates
+server
+*.tar.gz
+*.log
+README.md
+Dockerfile
+.dockerignore
+deploy.sh

@@ -17,7 +17,7 @@ const HO: RoleCode[] = ["SUPER", "HO"];
 const DEALER: RoleCode[] = ["DEALER"];
 const CUSTOMER: RoleCode[] = ["CUSTOMER"];
 
-export interface FormDef { key: string; label: string; path: string; roles: RoleCode[]; /** Menu wording for portal roles (prototype dealer / customer menus). */ labels?: Partial<Record<RoleCode, string>> }
+export interface FormDef { key: string; label: string; path: string; roles: RoleCode[]; /** Menu wording for portal / engineer roles (prototype dealer, customer and engineer menus). */ labels?: Partial<Record<RoleCode, string>> }
 export interface FormGroup { key: string; label: string; forms: FormDef[] }
 
 export const FORM_GROUPS: FormGroup[] = [
@@ -26,14 +26,19 @@ export const FORM_GROUPS: FormGroup[] = [
       { key: "warranty.serials", label: "Serial Register", path: "/warranty/stickers", roles: HO },
       { key: "warranty.register", label: "Register Installation", path: "/warranty/register", roles: [...HO, ...DEALER, ...CUSTOMER], labels: { DEALER: "Register Warranty", CUSTOMER: "Register Product (Scan QR)" } },
       { key: "warranty.active", label: "Active Warranties", path: "/warranty/active", roles: [...STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Active Warranty List", CUSTOMER: "My Warranty" } },
+      { key: "warranty.replace", label: "Replacement Flow (In Warranty)", path: "/warranty/replace", roles: [...HO, ...DEALER], labels: { DEALER: "Replacement Flow (In Warranty)" } },
+      { key: "warranty.search", label: "Serial No. Search Report", path: "/warranty/search", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER] },
       { key: "warranty.verify", label: "Serial Verification", path: "/warranty/verify", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Serial No. Search Report", CUSTOMER: "Serial No. Search Report" } },
       { key: "warranty.dealers", label: "Dealers Master", path: "/warranty/dealers", roles: HO },
       { key: "warranty.customers", label: "Customers", path: "/warranty/customers", roles: [...STAFF, ...DEALER] },
+      { key: "warranty.geo", label: "Geo-Graphical Report", path: "/warranty/geo", roles: HO },
     ],
   },
   {
     key: "Service", label: "Service Management", forms: [
-      { key: "service.complaints", label: "Complaints Register", path: "/service/complaints", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Book / Track Service Calls", CUSTOMER: "My Service Calls" } },
+      { key: "service.dashboard", label: "Service Dashboard", path: "/service", roles: ALL_STAFF },
+      { key: "service.dashboard", label: "Service Dashboard", path: "/service/dashboard", roles: STAFF },
+      { key: "service.complaints", label: "Complaints Register", path: "/service/complaints", roles: [...ALL_STAFF, ...DEALER, ...CUSTOMER], labels: { DEALER: "Book / Track Service Calls", CUSTOMER: "My Service Calls", ENGINEER: "Service Calls" } },
       { key: "service.reminders", label: "Call Reminders", path: "/service/reminders", roles: STAFF },
       { key: "service.visits", label: "Visit Reports", path: "/service/visits", roles: ALL_STAFF },
       { key: "service.jobcards", label: "Job Cards (Estimate)", path: "/service/jobcards", roles: ALL_STAFF },
@@ -44,14 +49,18 @@ export const FORM_GROUPS: FormGroup[] = [
   },
   {
     key: "Stock", label: "Spares Stock", forms: [
-      { key: "stock.availability", label: "Stock Availability", path: "/stock/availability", roles: ALL_STAFF },
+      { key: "stock.availability", label: "Stock Availability", path: "/stock/availability", roles: ALL_STAFF, labels: { ENGINEER: "My Stock" } },
+      { key: "stock.engineer", label: "Engineer-wise Stock", path: "/stock/engineer", roles: STAFF },
       { key: "stock.ledger", label: "Stock Ledger & Entry", path: "/stock/ledger", roles: STAFF },
+      { key: "stock.consumption", label: "Parts Consumption", path: "/stock/consumption", roles: STAFF },
     ],
   },
   {
     key: "Masters", label: "Configuration", forms: [
       { key: "masters.company", label: "Company Profile", path: "/masters/company", roles: HO },
       { key: "masters.users", label: "User Management", path: "/admin/users", roles: HO },
+      { key: "masters.service-centers", label: "Service Centers", path: "/masters/service-centers", roles: HO },
+      { key: "masters.service-engineers", label: "Service Engineers", path: "/masters/service-engineers", roles: HO },
       { key: "masters.spares", label: "Spares & Rates", path: "/masters/config/spares", roles: HO },
       { key: "masters.labour", label: "Labour / Service Charges", path: "/masters/config/labour", roles: HO },
       { key: "masters.faults", label: "Fault Master", path: "/masters/config/faults", roles: HO },
@@ -90,8 +99,13 @@ export function canUseForm(user: AccessUser | null | undefined, formKey: string)
   return rights.includes(formKey) || rights.includes(GROUP_OF.get(formKey) || "");
 }
 
+/** Prototype engineer login: Serial No. Search · Service Calls · Visit Reports · Job Cards (Estimate) · My Stock. */
+const SUGGESTED: Partial<Record<RoleCode, string[]>> = {
+  ENGINEER: ["warranty.search", "service.complaints", "service.visits", "service.jobcards", "stock.availability"],
+};
+
 /** Screens suggested for a role when an admin first sets up a user (they can then tick / untick freely). */
-export const defaultFormsForRole = (role?: string | null) => ALL_FORMS.filter((f) => f.roles.includes(role as RoleCode)).map((f) => f.key);
+export const defaultFormsForRole = (role?: string | null) => SUGGESTED[role as RoleCode] || ALL_FORMS.filter((f) => f.roles.includes(role as RoleCode)).map((f) => f.key);
 
 /** The form a page path belongs to (longest matching path), or null for pages anyone signed in may open (e.g. the dashboard). */
 export function formForPath(pathname: string): FormDef | null {
@@ -108,14 +122,20 @@ const ANY = "*";
  * Lookups shared by several screens (e.g. the call list used by visits and job cards) list every screen that needs them.
  */
 const API_RULES: [string, string[]][] = [
+  ["/api/service/dashboard", ["service.dashboard"]],
   ["/api/Auth", [ANY]], ["/api/search", [ANY]], ["/api/dashboard", [ANY]], ["/api/masters/bootstrap", [ANY]], ["/api/upload", [ANY]],
   ["/api/masters/company/get", [ANY]], ["/api/masters/company", ["masters.company"]],
   ["/api/masters/product-models/get", [ANY]], ["/api/masters/product-models", ["masters.company"]],
   ["/api/admin/users/get", ["masters.users", "masters.approval-rules"]], ["/api/admin/users", ["masters.users"]],
+  ["/api/masters/service-centers", ["masters.service-centers", "masters.service-engineers"]], ["/api/masters/service-engineers", ["masters.service-engineers"]],
   ["/api/warranty/stickers/get", ["warranty.serials", "warranty.register", "warranty.verify"]], ["/api/warranty/stickers", ["warranty.serials"]],
   ["/api/warranty/installations", ["warranty.register"]],
-  ["/api/warranty/warranties/verify", ["warranty.verify", "warranty.register", "service.complaints", "service.replacements"]],
-  ["/api/warranty/warranties", ["warranty.active", "warranty.register"]],
+  ["/api/warranty/warranties/verify", ["warranty.verify", "warranty.search", "warranty.register", "service.complaints", "service.replacements"]],
+  ["/api/warranty/warranties/update", ["warranty.active"]], ["/api/warranty/warranties/delete", ["warranty.active"]],
+  ["/api/warranty/warranties", ["warranty.active", "warranty.register", "warranty.search"]],
+  ["/api/warranty/replacement", ["warranty.replace"]],
+  ["/api/warranty/search", ["warranty.search", "warranty.verify"]],
+  ["/api/warranty/geo", ["warranty.geo"]],
   ["/api/warranty/dealers/get", ["warranty.dealers", "warranty.register", "warranty.active", "service.complaints", "service.replacements"]],
   ["/api/warranty/dealers", ["warranty.dealers"]],
   ["/api/warranty/customers", ["warranty.customers"]],
@@ -126,7 +146,9 @@ const API_RULES: [string, string[]][] = [
   ["/api/service/jobcards", ["service.jobcards", "service.approvals"]],
   ["/api/service/replacements", ["service.replacements"]],
   ["/api/service/reports", ["service.reports"]],
-  ["/api/stock/balance", ["stock.availability"]],
+  ["/api/service/dashboard", ["service.dashboard"]],
+  ["/api/stock/balance", ["stock.availability", "stock.engineer", "service.jobcards"]],
+  ["/api/stock/consumption", ["stock.consumption"]],
   ["/api/stock/txns", ["stock.ledger"]],
   ["/api/system", ["system.activity"]],
 ];

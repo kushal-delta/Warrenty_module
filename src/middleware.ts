@@ -21,6 +21,7 @@ export async function middleware(request: NextRequest) {
   if (
     pathname === "/login" ||
     pathname === "/api/Auth/login" ||
+    pathname === "/api/health" ||
     pathname === "/api/upload/local"
   ) {
     return NextResponse.next();

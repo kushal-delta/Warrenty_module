@@ -30,3 +30,12 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Uploaded photos (served through /api/attachments)
+uploads/
+
+# Docker deploy (server password, exported images, upload backups)
+deploy.config.sh
+.env.production
+*.tar.gz
+backups/

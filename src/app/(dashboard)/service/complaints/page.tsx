@@ -25,6 +25,7 @@ import {
   SearchOutlined,
   ReloadOutlined,
   PhoneOutlined,
+  EyeOutlined,
 } from "@ant-design/icons";
 import { useServiceStore, Complaint } from "@/lib/store/useServiceStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
@@ -38,7 +39,13 @@ import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
+import { useAuthStore } from "@/lib/store/useAuthStore";
+import { ServiceCallFormDrawer } from "@/components/service/ServiceCallFormDrawer";
+import { ServiceCallDetailDrawer, ServiceCallDetails } from "@/components/service/ServiceCallDetailDrawer";
+import { ServiceCallProgress } from "@/components/service/ServiceCallProgress";
 import dayjs from "dayjs";
+import axios from "axios";
+import { DeleteOutlined } from "@ant-design/icons";
 
 export default function ComplaintsPage() {
   const [form] = Form.useForm();
@@ -55,6 +62,8 @@ export default function ComplaintsPage() {
   } = useServiceStore();
 
   const { engineers, callTypes, serviceCenters, projects, states } = useMasterStore();
+  const role = useAuthStore((s) => s.user?.Role);
+  const isPortal = role === "DEALER" || role === "CUSTOMER"; // dealers / customers book and track calls; staff assign and close
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
@@ -63,8 +72,28 @@ export default function ComplaintsPage() {
 
   // Drawer state for Log Complaint
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [maximized, setMaximized] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [viewId, setViewId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Complaint | null>(null);
+  const [editForm] = Form.useForm();
+  const [deleting, setDeleting] = useState<Complaint | null>(null);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [callTypeFilter, setCallTypeFilter] = useState<string>();
+  const [centerFilter, setCenterFilter] = useState<string>();
+  const [engineerFilter, setEngineerFilter] = useState<string>();
+  const [warrantyFilter, setWarrantyFilter] = useState<string>();
+  const [dueFilter, setDueFilter] = useState<string>();
+  const [stateFilter, setStateFilter] = useState<string>();
+  const isOpen = (c: Complaint) => !["Resolved", "Closed", "Cancelled"].includes(c.Status);
+  const overdue = (c: Complaint) => isOpen(c) && !!c.DueDate && new Date(c.DueDate) < new Date();
+  const saveEdit = async () => {
+    try { const values = await editForm.validateFields(); setSavingEdit(true); await axios.post("/api/service/complaints/update", { ...values, ComplaintId: editing?.ComplaintId, CallDate: values.CallDate?.toISOString() }); message.success("Service call updated"); setEditing(null); fetchComplaints(); }
+    catch (error) { reportFormError(error, { form: editForm, fallback: "Could not update service call" }); }
+    finally { setSavingEdit(false); }
+  };
+  const deleteCall = async () => {
+    try { await axios.post("/api/service/complaints/delete", { ComplaintId: deleting?.ComplaintId }); message.success("Service call deleted"); setDeleting(null); fetchComplaints(); }
+    catch (error) { reportFormError(error, { fallback: "Could not delete service call" }); }
+  };
 
   // Assign Modal state
   const [assignModalOpen, setAssignModalOpen] = useState(false);
@@ -80,35 +109,7 @@ export default function ComplaintsPage() {
     fetchComplaints();
   }, [fetchComplaints]);
 
-  const handleOpenCreate = () => {
-    form.resetFields();
-    form.setFieldsValue({
-      callDate: dayjs(),
-      priority: "Medium",
-      source: "Customer Call",
-    });
-    setDrawerOpen(true);
-  };
-
-  const handleSave = async () => {
-    try {
-      const values = await form.validateFields();
-      setSaving(true);
-
-      const payload = {
-        ...values,
-        callDate: values.callDate ? values.callDate.toISOString() : new Date().toISOString(),
-      };
-
-      await addComplaint(payload);
-      message.success("Service ticket created successfully");
-      setDrawerOpen(false);
-    } catch (err: any) {
-      reportFormError(err, { form, fallback: "Could not log complaint" });
-    } finally {
-      setSaving(false);
-    }
-  };
+  const handleOpenCreate = () => setDrawerOpen(true);
 
   const handleAssignSubmit = async () => {
     try {
@@ -156,7 +157,7 @@ export default function ComplaintsPage() {
 
   const columns = [
     {
-      title: "Ticket No",
+      title: "Call No",
       dataIndex: "ComplaintNo",
       key: "ComplaintNo",
       width: 140,
@@ -165,14 +166,14 @@ export default function ComplaintsPage() {
       ),
     },
     {
-      title: "Call Date",
+      title: "Date",
       dataIndex: "CallDate",
       key: "CallDate",
       width: 110,
       render: (val: string) => formatDate(val, false),
     },
     {
-      title: "Customer & Site",
+      title: "Customer",
       key: "customer",
       render: (_: any, row: Complaint) => (
         <div>
@@ -187,7 +188,7 @@ export default function ComplaintsPage() {
       ),
     },
     {
-      title: "Issue Reported",
+      title: "Faulty components / issue",
       dataIndex: "ComplaintText",
       key: "ComplaintText",
       render: (text: string, row: Complaint) => (
@@ -200,8 +201,22 @@ export default function ComplaintsPage() {
               Type: {row.CallTypeName}
             </div>
           )}
+          {(row.Components || row.PhotoCount || (row as any).VideoCount) ? (
+            <div className="text-[11px] text-slate-500 mt-0.5">
+              {row.Components && <span className="font-mono">{row.Components}</span>}
+              {row.PhotoCount ? <span className="ml-1.5">· {row.PhotoCount} photo{row.PhotoCount > 1 ? "s" : ""}</span> : null}
+              {(row as any).VideoCount ? <span className="ml-1.5">· {(row as any).VideoCount} video{(row as any).VideoCount > 1 ? "s" : ""}</span> : null}
+            </div>
+          ) : null}
+          {row.WarrantyStatus && <Tag className="mt-1 text-[10px]" color={row.WarrantyStatus === "In Warranty" ? "green" : row.WarrantyStatus === "Partial" ? "orange" : "default"}>{row.WarrantyStatus}</Tag>}
         </div>
       ),
+    },
+    {
+      title: "Due",
+      dataIndex: "DueDate",
+      width: 115,
+      render: (date: string, row: Complaint) => <span className={overdue(row) ? "font-semibold text-rose-600" : "text-slate-600"}>{date ? formatDate(date, false) : "—"}</span>,
     },
     {
       title: "Priority",
@@ -249,10 +264,15 @@ export default function ComplaintsPage() {
     {
       title: "Actions",
       key: "actions",
-      width: 110,
+      width: 130,
       render: (_: any, row: Complaint) => (
         <Space size="small">
-          {row.Status !== "Closed" && (
+          <Tooltip title="View call, components & photos">
+            <Button type="text" size="small" icon={<EyeOutlined className="text-blue-600" />} onClick={() => setViewId(row.ComplaintId)} />
+          </Tooltip>
+          {!isPortal && <Tooltip title="Edit service call"><Button size="small" icon={<EditOutlined />} onClick={() => { setEditing(row); editForm.setFieldsValue({ ...row, CallDate: dayjs(row.CallDate) }); }} /></Tooltip>}
+          {!isPortal && <Tooltip title="Delete service call"><Button size="small" danger icon={<DeleteOutlined />} onClick={() => setDeleting(row)} /></Tooltip>}
+          {row.Status !== "Closed" && !isPortal && (
             <Tooltip title="Assign Service Engineer">
               <Button
                 type="text"
@@ -270,7 +290,7 @@ export default function ComplaintsPage() {
             </Tooltip>
           )}
 
-          {row.Status !== "Closed" && (
+          {row.Status !== "Closed" && !isPortal && (
             <Tooltip title="Resolve & Close Ticket">
               <Button
                 type="text"
@@ -300,7 +320,8 @@ export default function ComplaintsPage() {
       (c.ComplaintText && c.ComplaintText.toLowerCase().includes(q));
     const matchStatus = !statusFilter || c.Status === statusFilter;
     const matchPriority = !priorityFilter || c.Priority === priorityFilter;
-    return matchSearch && matchStatus && matchPriority;
+    const matchDue = !dueFilter || (dueFilter === "overdue" ? overdue(c) : !overdue(c));
+    return matchSearch && matchStatus && matchPriority && matchDue && (!callTypeFilter || c.CallTypeId === callTypeFilter) && (!centerFilter || c.ServiceCenterId === centerFilter) && (!engineerFilter || c.EngineerUserId === engineerFilter) && (!warrantyFilter || c.WarrantyStatus === warrantyFilter) && (!stateFilter || c.StateId === stateFilter);
   });
 
   return (
@@ -310,10 +331,10 @@ export default function ComplaintsPage() {
         <div>
           <h1 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <CustomerServiceOutlined className="text-blue-600" />
-            Service & Complaints Register
+            Service Calls
           </h1>
           <p className="text-xs text-slate-500 mt-0.5">
-            Customer service center breakdown calls, field visits, and engineer assignments
+            {complaints.length} calls · {complaints.filter(isOpen).length} open · <span className="text-rose-600">{complaints.filter(overdue).length} overdue</span>
           </p>
         </div>
 
@@ -331,11 +352,19 @@ export default function ComplaintsPage() {
             onClick={handleOpenCreate}
             className="bg-blue-600 shadow-sm"
           >
-            Log Complaint
+            New Service Call
           </Button>
         </div>
       </div>
 
+      <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 xl:grid-cols-6">{[
+        ["New / unassigned", complaints.filter(c => c.Status === "New" || (isOpen(c) && !c.EngineerUserId)).length],
+        ["Assigned", complaints.filter(c => c.Status === "Assigned").length],
+        ["Visited / in approval", complaints.filter(c => ["Visited", "In Approval"].includes(c.Status)).length],
+        ["Overdue", complaints.filter(overdue).length],
+        ["Resolved / closed", complaints.filter(c => ["Resolved", "Closed"].includes(c.Status)).length],
+        ["This month", complaints.filter(c => dayjs(c.CallDate).isSame(dayjs(), "month")).length],
+      ].map(([label, value]) => <div key={String(label)} className="border-r border-slate-100 px-4 py-3"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-xl font-bold text-slate-900">{value}</div></div>)}</div>
       {/* Filter toolbar */}
       <div className="filter-toolbar">
         <Input
@@ -357,8 +386,18 @@ export default function ComplaintsPage() {
           <Select.Option value="New">New</Select.Option>
           <Select.Option value="Assigned">Assigned</Select.Option>
           <Select.Option value="Visited">Visited</Select.Option>
+          <Select.Option value="In Approval">In Approval</Select.Option>
+          <Select.Option value="Approved">Approved</Select.Option>
+          <Select.Option value="Resolved">Resolved</Select.Option>
           <Select.Option value="Closed">Closed</Select.Option>
+          <Select.Option value="Cancelled">Cancelled</Select.Option>
         </Select>
+        <Select placeholder="Call type: All" allowClear value={callTypeFilter} onChange={setCallTypeFilter} className="min-w-36" options={callTypes.map((t: any) => ({ value: t.CallTypeId, label: t.CallTypeName }))} />
+        <Select placeholder="Warranty: All" allowClear value={warrantyFilter} onChange={setWarrantyFilter} className="min-w-36" options={Array.from(new Set(complaints.map(c => c.WarrantyStatus).filter(Boolean))).map(v => ({ value: v, label: v }))} />
+        <Select placeholder="Due: All" allowClear value={dueFilter} onChange={setDueFilter} className="min-w-28" options={[{ value: "overdue", label: "Overdue" }, { value: "current", label: "Not overdue" }]} />
+        <Select placeholder="State: All" allowClear value={stateFilter} onChange={setStateFilter} className="min-w-32" options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))} />
+        <Select placeholder="Service center: All" allowClear value={centerFilter} onChange={setCenterFilter} className="min-w-40" options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} />
+        <Select placeholder="Engineer: All" allowClear value={engineerFilter} onChange={setEngineerFilter} className="min-w-32" options={engineers.map((e: any) => ({ value: e.UserId, label: `${e.FirstName} ${e.LastName || ""}` }))} />
 
         <Select
           placeholder="All Priorities"
@@ -368,6 +407,7 @@ export default function ComplaintsPage() {
           className="w-36"
         >
           <Select.Option value="High">High</Select.Option>
+          <Select.Option value="Urgent">Urgent</Select.Option>
           <Select.Option value="Medium">Medium</Select.Option>
           <Select.Option value="Low">Low</Select.Option>
         </Select>
@@ -387,137 +427,16 @@ export default function ComplaintsPage() {
             pageSizeOptions: ["10", "15", "20", "50", "100"],
             showTotal: (total, range) => `Showing ${range[0]}-${range[1]} of ${total} complaints`,
           }}
-          scroll={{ x: 1000 }}
+          rowClassName={(row: Complaint) => overdue(row) ? "border-l-2 border-rose-500" : ""}
+          scroll={{ x: 1450 }}
         />
       </div>
 
-      {/* Log Complaint Drawer */}
-      <Drawer
-        rootClassName="entry-drawer"
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        closable={false}
-        width={maximized ? "100%" : DRAWER_WIDTH}
-        styles={{ header: DRAWER_HEADER_STYLE }}
-        destroyOnClose
-        title={
-          <DrawerHeader
-            icon={<CustomerServiceOutlined />}
-            title="Log Customer Complaint Ticket"
-            subtitle="Capture the customer, location, and problem details."
-            meta={<DrawerChip label="New Service Call" tone="solid" />}
-            maximized={maximized}
-            onToggleMaximize={() => setMaximized(!maximized)}
-            onClose={() => setDrawerOpen(false)}
-          />
-        }
-        footer={
-          <div className="flex items-center justify-end space-x-2 py-2">
-            <Button onClick={() => setDrawerOpen(false)} disabled={saving}>
-              Cancel
-            </Button>
-            <Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">
-              Save Complaint Ticket
-            </Button>
-          </div>
-        }
-      >
-        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form"><p className="entry-form-hint"><span aria-hidden="true">*</span> Required fields · Review the details before saving.</p><FormSection number="01" title="Service request" description="Classify the call and choose its priority."><div className="form-grid form-grid-two"><div className=""><Form.Item
-              name="callDate"
-              label={<span className="text-xs font-semibold text-slate-700">Call Date</span>}
-              rules={[{ required: true }]}
-            >
-              <SmartDatePicker placeholder="Select or type date" />
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="callTypeId"
-              label={<span className="text-xs font-semibold text-slate-700">Call Type</span>}
-              rules={[{ required: true, message: "Call type is required" }]}
-            >
-              <Select placeholder="Select call type">
-                {callTypes.map((ct) => (
-                  <Select.Option key={ct.CallTypeId} value={ct.CallTypeId}>
-                    {ct.CallTypeName}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="priority"
-              label={<span className="text-xs font-semibold text-slate-700">Priority</span>}
-              rules={[{ required: true }]}
-            >
-              <Select>
-                <Select.Option value="Low">Low</Select.Option>
-                <Select.Option value="Medium">Medium</Select.Option>
-                <Select.Option value="High">High</Select.Option>
-                <Select.Option value="Urgent">Urgent</Select.Option>
-              </Select>
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="serviceCenterId"
-              label={<span className="text-xs font-semibold text-slate-700">Service Center</span>}
-            >
-              <Select placeholder="Select regional center">
-                {serviceCenters.map((sc) => (
-                  <Select.Option key={sc.ServiceCenterId} value={sc.ServiceCenterId}>
-                    {sc.ServiceCenterName}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item></div></div></FormSection>
-<FormSection number="02" title="Customer &amp; location" description="Add the customer details and service location."><div className="form-grid form-grid-two"><div className=""><Form.Item
-              name="customerName"
-              label={<span className="text-xs font-semibold text-slate-700">Customer Name</span>}
-              rules={[{ required: true, message: "Customer name is required" }]}
-            >
-              <Input placeholder="e.g. Gopal Sharma" />
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="mobile"
-              label={<span className="text-xs font-semibold text-slate-700">Customer Mobile</span>}
-              rules={[{ required: true, message: "Mobile number is required" }]}
-            >
-              <Input placeholder="e.g. 9414101017" maxLength={10} />
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="village"
-              label={<span className="text-xs font-semibold text-slate-700">Village / Tehsil</span>}
-            >
-              <Input placeholder="e.g. Phagi" />
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="district"
-              label={<span className="text-xs font-semibold text-slate-700">District</span>}
-            ><DistrictSelect stateField="stateId" />
-            </Form.Item></div>
-<div className=""><Form.Item
-              name="stateId"
-              label={<span className="text-xs font-semibold text-slate-700">State</span>}
-            >
-              <Select placeholder="Select state">
-                {states.map((s) => (
-                  <Select.Option key={s.StateId} value={s.StateId}>
-                    {s.StateName}
-                  </Select.Option>
-                ))}
-              </Select>
-            </Form.Item></div></div></FormSection>
-<FormSection number="03" title="Reported problem" description="Describe symptoms, error codes, and when the problem started."><div className="form-grid form-grid-two"><div className="entry-field-wide"><Form.Item
-            name="complaintText"
-            label={
-              <span className="text-xs font-semibold text-slate-700">
-                Problem Description / Reported Fault
-              </span>
-            }
-            rules={[{ required: true, message: "Complaint description is required" }]}
-          >
-            <Input.TextArea
-              rows={3}
-              placeholder="Describe the breakdown symptoms, discharge issues, controller trip code, or motor heating..."
-            />
-          </Form.Item></div></div></FormSection></Form>
-      </Drawer>
+      {/* New service call (prototype form: call details, customer & site, components, photos, assignment) */}
+      <ServiceCallDetailDrawer complaintId={viewId} onClose={() => setViewId(null)} />
+      <ServiceCallFormDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} onSaved={() => { setDrawerOpen(false); fetchComplaints(); }} />
+      <ServiceCallFormDrawer key={editing?.ComplaintId || "edit"} open={!!editing} complaintId={editing?.ComplaintId} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); fetchComplaints(); }} />
+      <Modal title="Delete service call?" open={!!deleting} onCancel={() => setDeleting(null)} onOk={deleteCall} okButtonProps={{ danger: true }} okText="Delete call"><p>Delete {deleting?.ComplaintNo}? This removes its components, reminders, and attachments. Calls with visits, job cards, or replacements cannot be deleted.</p></Modal>
 
       {/* Assign Engineer Modal */}
       <Modal

@@ -5,14 +5,18 @@ import { jobCardShortage, postJobCardStock } from "@/lib/services/stock";
 
 export interface ApprovalRule { ApprovalRuleId: string; LevelNo: number; RoleName: string; ApproverUserId?: string | null; MinAmount: number; MaxAmount?: number | null; IsActive: boolean }
 
-/** Columns every job card query needs: the card, its call, and computed warranty / customer amounts. */
+/**
+ * Columns every job card query needs: the card, its call, and computed warranty / customer amounts.
+ * The job card's own service centre / engineer win over the call's (older cards only have the call's).
+ */
 export const JOBCARD_SELECT = `
-  SELECT j.*, c.[ComplaintNo], c.[CallDate], c.[CustomerId], c.[CustomerName], c.[Mobile], c.[Village], c.[District], c.[WarrantyStatus],
-    c.[EngineerUserId], c.[ServiceCenterId], c.[Status] AS [ComplaintStatus], c.[ComplaintText],
+  SELECT j.[JobCardId], j.[JobCardNo], j.[ComplaintId], j.[JobCardDate], j.[Status], j.[CurrentLevel], j.[TotalEstimate], j.[SparesTotal], j.[LabourTotal], j.[GstTotal], j.[OtherCharges], j.[Remarks], j.[ClosedOn],
+    j.[InsertedOn], j.[LastUpdatedOn], j.[InsertedByUserId], j.[LastUpdatedByUserId], c.[ComplaintNo], c.[CallDate], c.[CustomerId], c.[CustomerName], c.[Mobile], c.[Village], c.[District], c.[WarrantyStatus],
+    COALESCE(j.[EngineerUserId], c.[EngineerUserId]) AS [EngineerUserId], COALESCE(j.[ServiceCenterId], c.[ServiceCenterId]) AS [ServiceCenterId], c.[Status] AS [ComplaintStatus], c.[ComplaintText],
     CONCAT(u.[FirstName], ' ', u.[LastName]) AS [EngineerName], sc.[ServiceCenterName],
-    COALESCE((SELECT SUM(i.[Amount]) FROM dbo.[JobCardItemLns] i WHERE i.[JobCardId] = j.[JobCardId] AND i.[IsWarranty] = 1), 0) AS [WarrantyAmount]
+    COALESCE((SELECT SUM(i.[Amount] + i.[GstAmount]) FROM dbo.[JobCardItemLns] i WHERE i.[JobCardId] = j.[JobCardId] AND i.[IsWarranty] = 1), 0) AS [WarrantyAmount]
   FROM dbo.[JobCards] j JOIN dbo.[Complaints] c ON j.[ComplaintId] = c.[ComplaintId]
-  LEFT JOIN dbo.[Users] u ON c.[EngineerUserId] = u.[UserId] LEFT JOIN dbo.[ServiceCenters] sc ON c.[ServiceCenterId] = sc.[ServiceCenterId]`;
+  LEFT JOIN dbo.[Users] u ON COALESCE(j.[EngineerUserId], c.[EngineerUserId]) = u.[UserId] LEFT JOIN dbo.[ServiceCenters] sc ON COALESCE(j.[ServiceCenterId], c.[ServiceCenterId]) = sc.[ServiceCenterId]`;
 
 export async function activeRules(run: Run) {
   return (await run<ApprovalRule>(`SELECT * FROM dbo.[ApprovalRules] WHERE [IsActive] = 1 ORDER BY [LevelNo] ASC`)).map((r) => ({ ...r, MinAmount: Number(r.MinAmount) }));
