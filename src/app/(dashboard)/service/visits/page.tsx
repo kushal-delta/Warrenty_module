@@ -16,6 +16,8 @@ import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/comm
 import { VISIT_OUTCOMES } from "@/lib/config/service";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const OUTCOME_COLOR: Record<string, string> = { "Resolved at site": "green", "Customer not available": "orange", "Replacement required": "magenta", "Job card required": "blue", "Spares required": "purple" };
 
@@ -29,6 +31,7 @@ export default function VisitReportsPage() {
 
   const [search, setSearch] = useState("");
   const [outcomeFilter, setOutcomeFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // visit date
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<VisitReport | null>(null);
@@ -71,8 +74,31 @@ export default function VisitReportsPage() {
 
   const filtered = visits.filter((v) => {
     const q = search.toLowerCase();
-    return (!q || [v.VisitNo, v.ComplaintNo, v.CustomerName, v.Observations, v.ActionTaken].some((x) => x?.toLowerCase().includes(q))) && (!outcomeFilter || v.Status === outcomeFilter);
+    return (!q || [v.VisitNo, v.ComplaintNo, v.CustomerName, v.Observations, v.ActionTaken].some((x) => x?.toLowerCase().includes(q))) && (!outcomeFilter || v.Status === outcomeFilter) && inDateRange(v.VisitDate, range);
   });
+
+  const exportExcel = () => exportTable("Visit Reports", [
+    { header: "Visit No", value: (v: VisitReport) => v.VisitNo },
+    { header: "Date", value: (v: VisitReport) => v.VisitDate, type: "date" },
+    { header: "Call No", value: (v: VisitReport) => v.ComplaintNo },
+    { header: "Customer", value: (v: VisitReport) => v.CustomerName },
+    { header: "Mobile", value: (v: VisitReport) => v.Mobile },
+    { header: "Place", value: (v: VisitReport) => [v.Village, v.District].filter(Boolean).join(", ") },
+    { header: "Engineer", value: (v: VisitReport) => v.EngineerName },
+    { header: "Findings", value: (v: VisitReport) => v.Observations },
+    { header: "Action Taken", value: (v: VisitReport) => v.ActionTaken },
+    { header: "Start Time", value: (v: VisitReport) => v.StartTime },
+    { header: "End Time", value: (v: VisitReport) => v.EndTime },
+    { header: "From", value: (v: VisitReport) => v.FromLocation },
+    { header: "To (Site)", value: (v: VisitReport) => v.ToLocation },
+    { header: "Km", value: (v: VisitReport) => v.TravelKm, type: "number", total: true },
+    { header: "Travel Expense ₹", value: (v: VisitReport) => v.TravelExpense, type: "money", total: true },
+    { header: "Other Expense ₹", value: (v: VisitReport) => v.OtherExpense, type: "money", total: true },
+    { header: "Total Expenses ₹", value: (v: VisitReport) => (v.TravelExpense == null && v.OtherExpense == null ? null : Number(v.TravelExpense || 0) + Number(v.OtherExpense || 0)), type: "money", total: true },
+    { header: "Outcome", value: (v: VisitReport) => v.Status },
+    { header: "Rating", value: (v: VisitReport) => v.CustomerRating || null, type: "number" },
+    { header: "Customer Feedback", value: (v: VisitReport) => v.CustomerFeedback },
+  ], filtered, { "Visit date": rangeLabel(range), Outcome: outcomeFilter, Search: search || null }, "Visits");
   const openCalls = complaints.filter((c) => !["Closed", "Cancelled", "Resolved"].includes(c.Status) || c.ComplaintId === editing?.ComplaintId)
     .filter((c) => !isEngineer || c.EngineerUserId === user?.UserId);
 
@@ -100,6 +126,7 @@ export default function VisitReportsPage() {
       <PageHeader icon={<CarOutlined />} title="Visit Reports" subtitle="Engineer site visits against service calls — saving a visit moves the call to Visited"
         actions={<>
           <Button icon={<ReloadOutlined />} onClick={() => fetchVisits()} loading={isLoading}>Refresh</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">New Visit Report</Button>
         </>} />
 
@@ -113,6 +140,7 @@ export default function VisitReportsPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search visit, call no, customer, findings..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Visit date from", "to"]} />
         <Select placeholder="All Outcomes" value={outcomeFilter} onChange={setOutcomeFilter} allowClear className="w-52" options={VISIT_OUTCOMES.map((o) => ({ value: o, label: o }))} />
       </div>
 

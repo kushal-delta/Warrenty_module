@@ -2,25 +2,17 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import * as XLSX from "xlsx";
-import { Button, DatePicker, Segmented, Select, Table, Tabs, Tag, Tooltip } from "antd";
-import { AuditOutlined, CloseCircleOutlined, DownloadOutlined, FileTextOutlined, ReloadOutlined, RollbackOutlined, ShoppingCartOutlined, UnorderedListOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
-import type { Dayjs } from "dayjs";
+import { Button, Segmented, Select, Table, Tabs, Tag, Tooltip } from "antd";
+import { AuditOutlined, CloseCircleOutlined, FileTextOutlined, ReloadOutlined, RollbackOutlined, ShoppingCartOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { PageHeader, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, type DateRange } from "@/components/common/ReportTools";
+import { exportExcel as writeExcel, rangeLabel, type ExcelSheet } from "@/lib/utils/excelExport";
 
 const qty = (n: unknown) => Number(Number(n || 0).toFixed(3));
 const STATUS_COLOR: Record<string, string> = { Pending: "gold", Approved: "green", Rejected: "red" };
 const PRIORITY_COLOR: Record<string, string> = { Low: "default", Normal: "blue", High: "orange", Urgent: "red" };
-const RANGE_PRESETS: { label: string; value: [Dayjs, Dayjs] }[] = [
-  { label: "This month", value: [dayjs().startOf("month"), dayjs()] },
-  { label: "Last month", value: [dayjs().subtract(1, "month").startOf("month"), dayjs().subtract(1, "month").endOf("month")] },
-  { label: "Last 30 days", value: [dayjs().subtract(29, "day"), dayjs()] },
-  { label: "Last 90 days", value: [dayjs().subtract(89, "day"), dayjs()] },
-  { label: "This financial year", value: [dayjs().month() >= 3 ? dayjs().month(3).startOf("month") : dayjs().subtract(1, "year").month(3).startOf("month"), dayjs()] },
-];
 
 /** KPI tile in the Service Dashboard style. */
 function Kpi({ label, value, sub, accent }: { label: string; value: React.ReactNode; sub: string; accent: string }) {
@@ -52,7 +44,7 @@ const tabLabel = (icon: React.ReactNode, text: string, count: number) => (
 
 /** Spares Stock → Material & Challan Reports: requests, challans (RDC / NRDC), fresh / defective returns and item-wise movement. */
 export default function MaterialChallanReportsPage() {
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [range, setRange] = useState<DateRange>(null); // document date (request / challan / return), sent to the API
   const [worker, setWorker] = useState<string>();
   const [dcType, setDcType] = useState("All");
   const [tab, setTab] = useState("requests");
@@ -94,19 +86,94 @@ export default function MaterialChallanReportsPage() {
   const periodText = range?.[0] && range?.[1] ? `${range[0].format("DD MMM YYYY")} – ${range[1].format("DD MMM YYYY")}` : "All dates";
 
   const exportExcel = () => {
-    const wb = XLSX.utils.book_new();
-    const add = (name: string, rows: any[]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: "No data" }]), name);
+    const sheets: ExcelSheet<any>[] = [];
     if (tab === "requests") {
-      add("Material requests", requests.map((r) => ({ "Request No": r.RequestNo, Date: formatDate(r.RequestDate), Type: r.RequestType === "Product" ? "Product items" : "Spare parts", Warehouse: r.RequestForName || "", Priority: r.Priority, "Required by": r.RequiredBy ? formatDate(r.RequiredBy) : "", Items: Number(r.ItemCount), "Total qty": qty(r.TotalQty), Status: r.Status, "Decision by": r.DecisionBy?.trim() || "", "Decision on": r.DecisionOn ? formatDate(r.DecisionOn) : "", "Decision remarks": r.DecisionRemarks || "", Challan: r.ChallanNo || "", "Requested by": r.RequestedBy?.trim() || "" })));
-      add("Request lines", (data?.requestLines || []).map((r: any) => ({ "Request No": r.RequestNo, Date: formatDate(r.RequestDate), Status: r.Status, Warehouse: r.RequestForName || "", "Item code": r.ItemCode || "", Item: r.ItemName, Qty: qty(r.Qty), Unit: r.Uom || "" })));
+      sheets.push({ name: "Material requests", title: "Material Requests", rows: requests, columns: [
+        { header: "Request No.", value: (r) => r.RequestNo },
+        { header: "Date", value: (r) => r.RequestDate, type: "date" },
+        { header: "Type", value: (r) => (r.RequestType === "Product" ? "Product items" : "Spare parts") },
+        { header: "Warehouse", value: (r) => r.RequestForName },
+        { header: "Priority", value: (r) => r.Priority },
+        { header: "Required By", value: (r) => r.RequiredBy, type: "date" },
+        { header: "Items", value: (r) => Number(r.ItemCount), type: "number", total: true },
+        { header: "Total Qty", value: (r) => qty(r.TotalQty), type: "number", total: true },
+        { header: "Status", value: (r) => r.Status },
+        { header: "Decision By", value: (r) => r.DecisionBy?.trim() },
+        { header: "Decision On", value: (r) => r.DecisionOn, type: "date" },
+        { header: "Decision Remarks", value: (r) => r.DecisionRemarks },
+        { header: "Challan", value: (r) => r.ChallanNo },
+        { header: "Requested By", value: (r) => r.RequestedBy?.trim() },
+      ] });
+      sheets.push({ name: "Request lines", title: "Material Request Lines", rows: data?.requestLines || [], columns: [
+        { header: "Request No.", value: (r) => r.RequestNo },
+        { header: "Date", value: (r) => r.RequestDate, type: "date" },
+        { header: "Status", value: (r) => r.Status },
+        { header: "Warehouse", value: (r) => r.RequestForName },
+        { header: "Item Code", value: (r) => r.ItemCode },
+        { header: "Item", value: (r) => r.ItemName },
+        { header: "Qty", value: (r) => qty(r.Qty), type: "number", total: true },
+        { header: "Unit", value: (r) => r.Uom },
+      ] });
     } else if (tab === "challans") {
-      add("Challan lines", challanLines.map((l) => ({ "Challan No": l.ChallanNo, Date: formatDate(l.ChallanDate), Type: l.ChallanType, "Job worker": l.JobWorkerName || "", Purpose: l.Purpose || "", "From store": l.DispatchLocName || "", "Material request": l.RequestNo || "", "Item code": l.ItemCode || "", Item: l.ItemName, Qty: qty(l.Qty), Rate: Number(l.Rate), Value: Number(l.Amount), "Received (GRN)": qty(l.Received), Fresh: qty(l.Fresh), Defective: qty(l.Defective), "Pending return": l.PendingReturn ?? "", "Expected back": l.ExpectedBackBy ? formatDate(l.ExpectedBackBy) : "" })));
+      sheets.push({ name: "Challan lines", title: "Delivery Challan Lines", rows: challanLines, columns: [
+        { header: "Challan No.", value: (l) => l.ChallanNo },
+        { header: "Date", value: (l) => l.ChallanDate, type: "date" },
+        { header: "Type", value: (l) => l.ChallanType },
+        { header: "Job Worker", value: (l) => l.JobWorkerName },
+        { header: "Purpose", value: (l) => l.Purpose },
+        { header: "From Store", value: (l) => l.DispatchLocName },
+        { header: "Material Request", value: (l) => l.RequestNo },
+        { header: "Item Code", value: (l) => l.ItemCode },
+        { header: "Item", value: (l) => l.ItemName },
+        { header: "Qty", value: (l) => qty(l.Qty), type: "number", total: true },
+        { header: "Unit", value: (l) => l.Uom },
+        { header: "Rate", value: (l) => Number(l.Rate), type: "money" },
+        { header: "Value", value: (l) => Number(l.Amount), type: "money", total: true },
+        { header: "Received (GRN)", value: (l) => qty(l.Received), type: "number", total: true },
+        { header: "Fresh", value: (l) => qty(l.Fresh), type: "number", total: true },
+        { header: "Defective", value: (l) => qty(l.Defective), type: "number", total: true },
+        { header: "Pending Return", value: (l) => l.PendingReturn, type: "number", total: true },
+        { header: "Expected Back", value: (l) => l.ExpectedBackBy, type: "date" },
+      ] });
     } else if (tab === "returns") {
-      add("Fresh - defective returns", returns.map((r) => ({ "Receipt No": r.ReturnNo, Date: formatDate(r.ReturnDate), "Against RDC": r.ChallanNo, "Job worker": r.JobWorkerName || "", "Item code": r.ItemCode || "", Item: r.ItemName, Issued: qty(r.Issued), Fresh: qty(r.QtyFresh), Defective: qty(r.QtyDefective), "Defective value": qty(Number(r.QtyDefective) * Number(r.Rate || 0)), "Defect serial": r.DefectSerial || "", Through: r.ReceivedThrough || "", Remarks: r.Remarks || "" })));
+      sheets.push({ name: "Fresh - defective returns", title: "Fresh / Defective Returns", rows: returns, columns: [
+        { header: "Receipt No.", value: (r) => r.ReturnNo },
+        { header: "Date", value: (r) => r.ReturnDate, type: "date" },
+        { header: "Against RDC", value: (r) => r.ChallanNo },
+        { header: "Job Worker", value: (r) => r.JobWorkerName },
+        { header: "Item Code", value: (r) => r.ItemCode },
+        { header: "Item", value: (r) => r.ItemName },
+        { header: "Issued", value: (r) => qty(r.Issued), type: "number", total: true },
+        { header: "Fresh", value: (r) => qty(r.QtyFresh), type: "number", total: true },
+        { header: "Defective", value: (r) => qty(r.QtyDefective), type: "number", total: true },
+        { header: "Defective Value", value: (r) => Number(r.QtyDefective) * Number(r.Rate || 0), type: "money", total: true },
+        { header: "Defect Serial", value: (r) => r.DefectSerial },
+        { header: "Through", value: (r) => r.ReceivedThrough },
+        { header: "Remarks", value: (r) => r.Remarks },
+      ] });
     } else {
-      add("Item-wise movement", itemWise.map((r) => ({ "Item code": r.ItemCode || "", Item: r.ItemName, Unit: r.Uom || "", Challans: r.ChallanCount, "Qty sent": qty(r.Qty), "Value sent": Number(r.Amount.toFixed(2)), "Received (GRN)": qty(r.Received), Fresh: qty(r.Fresh), Defective: qty(r.Defective), "Pending return": qty(r.PendingReturn) })));
+      sheets.push({ name: "Item-wise movement", title: "Item-wise Material Movement", rows: itemWise, columns: [
+        { header: "Item Code", value: (r) => r.ItemCode },
+        { header: "Item", value: (r) => r.ItemName },
+        { header: "Unit", value: (r) => r.Uom },
+        { header: "Challans", value: (r) => r.ChallanCount, type: "number" },
+        { header: "Qty Sent", value: (r) => qty(r.Qty), type: "number", total: true },
+        { header: "Value Sent", value: (r) => r.Amount, type: "money", total: true },
+        { header: "Received (GRN)", value: (r) => qty(r.Received), type: "number", total: true },
+        { header: "Fresh", value: (r) => qty(r.Fresh), type: "number", total: true },
+        { header: "Defective", value: (r) => qty(r.Defective), type: "number", total: true },
+        { header: "Pending Return", value: (r) => qty(r.PendingReturn), type: "number", total: true },
+      ] });
     }
-    XLSX.writeFile(wb, `Material_challan_report_${tab}_${dayjs().format("YYYYMMDD")}.xlsx`);
+    return writeExcel({
+      title: "Material & Challan Report",
+      filters: {
+        Period: rangeLabel(range),
+        "Job worker": tab !== "requests" && worker ? workers.find((w) => w.value === worker)?.label : null,
+        Challans: (tab === "challans" || tab === "items") && dcType !== "All" ? (dcType === "Returnable" ? "RDC" : "NRDC") : null,
+      },
+      sheets,
+    });
   };
 
   const itemCell = (_: any, r: any) => <div><div className="font-medium text-slate-800">{r.ItemName}</div>{r.ItemCode && <div className="text-[11px] font-mono text-slate-400">{r.ItemCode}</div>}</div>;
@@ -115,12 +182,12 @@ export default function MaterialChallanReportsPage() {
     <div className="space-y-4">
       <PageHeader icon={<FileTextOutlined />} title="Material & Challan Reports" subtitle={`Material requests, returnable / non-returnable challans and fresh / defective returns · ${periodText}`}
         actions={<>
-          <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data}>Export Excel</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!data} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
         </>} />
 
       <div className="filter-toolbar">
-        <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} format="DD/MM/YYYY" allowClear presets={RANGE_PRESETS} placeholder={["From date", "To date"]} className="min-w-64" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Document date from", "to"]} />
         <Select allowClear showSearch optionFilterProp="label" placeholder="Job worker: All" value={worker} onChange={setWorker} options={workers} />
         <Segmented value={dcType} onChange={(v) => setDcType(String(v))} options={[{ value: "All", label: "All challans" }, { value: "Returnable", label: "RDC" }, { value: "Non-returnable", label: "NRDC" }]} />
         {activeFilters > 0 && <Button type="link" icon={<CloseCircleOutlined />} onClick={() => { setRange(null); setWorker(undefined); setDcType("All"); }} className="!px-1">Clear filters ({activeFilters})</Button>}

@@ -3,13 +3,14 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import axios from "axios";
-import * as XLSX from "xlsx";
-import { Button, DatePicker, Input, Select, Table, Tag } from "antd";
-import { DownloadOutlined, ExperimentOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import type { Dayjs } from "dayjs";
+import { Button, Select, Table, Tag } from "antd";
+import { AppstoreOutlined, CalendarOutlined, ExperimentOutlined, ReloadOutlined, SafetyOutlined, ShopOutlined, UserOutlined } from "@ant-design/icons";
 import { PageHeader, StatStrip, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, type DateRange } from "@/components/common/ReportTools";
+import { FilterBar } from "@/components/common/FilterBar";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 interface Row { StockTxnId: string; TxnDate: string; JobCardId: string; JobCardNo: string; CustomerName: string; SpareCode: string; SpareName: string; SerialNo?: string; FromLocType: string; FromLocName?: string; EngineerName?: string; ServiceCenterName?: string; Qty: number; Rate: number; Amount: number; IsWarranty: boolean }
 
@@ -17,7 +18,7 @@ interface Row { StockTxnId: string; TxnDate: string; JobCardId: string; JobCardN
 export default function PartsConsumptionPage() {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [range, setRange] = useState<DateRange>(null); // consumption (transaction) date — sent to the API
   const [search, setSearch] = useState("");
   const [basis, setBasis] = useState<string>();
   const [spare, setSpare] = useState<string>();
@@ -41,12 +42,20 @@ export default function PartsConsumptionPage() {
   });
   const sum = (list: Row[], f: (r: Row) => number) => list.reduce((s, r) => s + f(r), 0);
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filtered.map((r) => ({ Date: formatDate(r.TxnDate), "Job Card": r.JobCardNo, Customer: r.CustomerName, Spare: r.SpareName, "Component Serial": r.SerialNo || "", "Consumed From": r.FromLocName?.trim() || "", Qty: r.Qty, Rate: Number(r.Rate), Value: Number(r.Amount), Basis: r.IsWarranty ? "Warranty" : "Chargeable" })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Parts consumption");
-    XLSX.writeFile(wb, "Parts_consumption.xlsx");
-  };
+  const exportExcel = () => exportTable("Parts Consumption", [
+    { header: "Date", value: (r: Row) => r.TxnDate, type: "date" },
+    { header: "Job Card", value: (r: Row) => r.JobCardNo },
+    { header: "Customer", value: (r: Row) => r.CustomerName },
+    { header: "Spare Code", value: (r: Row) => r.SpareCode },
+    { header: "Spare", value: (r: Row) => r.SpareName },
+    { header: "Component Serial", value: (r: Row) => r.SerialNo },
+    { header: "Source", value: (r: Row) => (r.FromLocType === "ENG" ? "Engineer" : "Store") },
+    { header: "Consumed From", value: (r: Row) => r.FromLocName?.trim() },
+    { header: "Qty", value: (r: Row) => r.Qty, type: "number", total: true },
+    { header: "Rate ₹", value: (r: Row) => r.Rate, type: "money" },
+    { header: "Value ₹", value: (r: Row) => r.Amount, type: "money", total: true },
+    { header: "Basis", value: (r: Row) => (r.IsWarranty ? "Warranty" : "Chargeable") },
+  ], filtered, { Period: rangeLabel(range), Spare: spare, Engineer: engineer, "Service center": centre, Basis: basis, Search: search || null }, "Parts consumption");
 
   const columns = [
     { title: "Date", dataIndex: "TxnDate", key: "d", width: 105, render: (v: string) => formatDate(v) },
@@ -64,7 +73,7 @@ export default function PartsConsumptionPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon={<ExperimentOutlined />} title="Parts Consumption" subtitle="Spares consumed on approved job cards — with warranty vs chargeable split"
-        actions={<><DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} format="DD/MM/YYYY" allowClear /><Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!filtered.length}>Export Excel</Button><Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button></>} />
+        actions={<><ExportExcelButton onExport={exportExcel} disabled={!filtered.length} /><Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button></>} />
 
       <StatStrip items={[
         { label: "Units consumed", value: inr(sum(filtered, (r) => r.Qty)) },
@@ -74,13 +83,22 @@ export default function PartsConsumptionPage() {
         { label: "Job cards", value: new Set(filtered.map((r) => r.JobCardNo)).size },
       ]} />
 
-      <div className="filter-toolbar">
-        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search job card, spare, customer, serial…" value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
-        <Select allowClear showSearch placeholder="Spare" value={spare} onChange={setSpare} options={opts((r) => r.SpareName)} className="w-52" />
-        <Select allowClear showSearch placeholder="Engineer" value={engineer} onChange={setEngineer} options={opts((r) => r.EngineerName?.trim())} className="w-44" />
-        <Select allowClear placeholder="Service center" value={centre} onChange={setCentre} options={opts((r) => r.ServiceCenterName)} className="w-52" />
-        <Select allowClear placeholder="Basis" value={basis} onChange={setBasis} options={[{ value: "Warranty", label: "Warranty" }, { value: "Chargeable", label: "Chargeable" }]} className="w-36" />
-      </div>
+      <FilterBar
+        storageKey="stock-consumption"
+        search={{ value: search, onChange: setSearch, placeholder: "Search job card, spare, customer, serial…" }}
+        filters={[
+          { key: "date", label: "Consumed", icon: <CalendarOutlined />, pinned: true, active: !!(range?.[0] || range?.[1]), onClear: () => setRange(null),
+            render: () => <DateRangeFilter variant="borderless" value={range} onChange={setRange} placeholder={["From", "To"]} className="" /> },
+          { key: "basis", label: "Basis", icon: <SafetyOutlined />, pinned: true, active: !!basis, onClear: () => setBasis(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={basis} onChange={setBasis} popupMatchSelectWidth={false} options={[{ value: "Warranty", label: "Warranty" }, { value: "Chargeable", label: "Chargeable" }]} /> },
+          { key: "spare", label: "Spare", group: "Item", icon: <AppstoreOutlined />, active: !!spare, onClear: () => setSpare(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={spare} onChange={setSpare} popupMatchSelectWidth={false} options={opts((r) => r.SpareName)} /> },
+          { key: "engineer", label: "Engineer", group: "Location & team", icon: <UserOutlined />, active: !!engineer, onClear: () => setEngineer(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={engineer} onChange={setEngineer} popupMatchSelectWidth={false} options={opts((r) => r.EngineerName?.trim())} /> },
+          { key: "center", label: "Service center", group: "Location & team", icon: <ShopOutlined />, active: !!centre, onClear: () => setCentre(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={centre} onChange={setCentre} popupMatchSelectWidth={false} options={opts((r) => r.ServiceCenterName)} /> },
+        ]}
+      />
 
       <div className={TABLE_CARD}>
         <Table dataSource={filtered} columns={columns} rowKey="StockTxnId" size="middle" loading={loading} scroll={{ x: 1100 }} pagination={{ defaultPageSize: 20, showSizeChanger: true }}

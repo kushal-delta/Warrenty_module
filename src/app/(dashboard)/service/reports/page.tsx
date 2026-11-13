@@ -1,16 +1,17 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import * as XLSX from "xlsx";
-import { Button, DatePicker, Segmented, Select, Table, Tabs, Tag, Tooltip } from "antd";
-import { BarChartOutlined, CloseCircleOutlined, CustomerServiceOutlined, DownloadOutlined, ReloadOutlined, SafetyCertificateOutlined, SwapOutlined, ToolOutlined } from "@ant-design/icons";
+import { Button, Segmented, Select, Table, Tabs, Tag, Tooltip } from "antd";
+import { BarChartOutlined, CalendarOutlined, CustomerServiceOutlined, EnvironmentOutlined, ProjectOutlined, ReloadOutlined, SafetyCertificateOutlined, ShopOutlined, SwapOutlined, ToolOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import type { Dayjs } from "dayjs";
 import { useServiceOpsStore } from "@/lib/store/useServiceOpsStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
 import { PageHeader, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, rangeToApi, type DateRange } from "@/components/common/ReportTools";
+import { FilterBar } from "@/components/common/FilterBar";
+import { exportExcel as writeExcel, rangeLabel, type ExcelSheet } from "@/lib/utils/excelExport";
 
 const STATUSES = ["New", "Assigned", "Visited", "In Approval", "Approved", "Resolved", "Closed", "Cancelled"];
 /** Same status colours as the Service Dashboard "Calls by status" chart. */
@@ -60,19 +61,11 @@ const tabLabel = (icon: React.ReactNode, text: string, count?: number) => (
   <span className="inline-flex items-center gap-2">{icon}{text}{count !== undefined && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">{count}</span>}</span>
 );
 
-const RANGE_PRESETS: { label: string; value: [Dayjs, Dayjs] }[] = [
-  { label: "This month", value: [dayjs().startOf("month"), dayjs()] },
-  { label: "Last month", value: [dayjs().subtract(1, "month").startOf("month"), dayjs().subtract(1, "month").endOf("month")] },
-  { label: "Last 30 days", value: [dayjs().subtract(29, "day"), dayjs()] },
-  { label: "Last 90 days", value: [dayjs().subtract(89, "day"), dayjs()] },
-  { label: "This financial year", value: [dayjs().month() >= 3 ? dayjs().month(3).startOf("month") : dayjs().subtract(1, "year").month(3).startOf("month"), dayjs()] },
-];
-
 /** Service MIS: call summary (status matrix), job card detail, replacement (CN effect) and warranty claim summary. */
 export default function ServiceReportsPage() {
   const { fetchReports } = useServiceOpsStore();
   const { states, serviceCenters, projects } = useMasterStore();
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [range, setRange] = useState<DateRange>(null);
   const [stateId, setStateId] = useState<string>();
   const [centreId, setCentreId] = useState<string>();
   const [projectId, setProjectId] = useState<string>();
@@ -84,7 +77,7 @@ export default function ServiceReportsPage() {
   const load = async () => {
     setLoading(true);
     try {
-      setData(await fetchReports({ fromDate: range?.[0]?.startOf("day").toISOString(), toDate: range?.[1]?.endOf("day").toISOString(), stateId, serviceCenterId: centreId, projectId }));
+      setData(await fetchReports({ ...rangeToApi(range), stateId, serviceCenterId: centreId, projectId }));
     } catch (err) {
       reportFormError(err, { fallback: "Could not build reports" });
     } finally {
@@ -112,8 +105,6 @@ export default function ServiceReportsPage() {
   const jcTotal = sum(jc, "Total"), jcWarranty = sum(jc, "Warranty");
   const pct = (n: number, of: number) => (of ? Math.round((n / of) * 100) : 0);
 
-  const activeFilters = [range?.[0] || range?.[1], stateId, centreId, projectId].filter(Boolean).length;
-  const clearFilters = () => { setRange(null); setStateId(undefined); setCentreId(undefined); setProjectId(undefined); };
   const periodText = range?.[0] && range?.[1] ? `${range[0].format("DD MMM YYYY")} – ${range[1].format("DD MMM YYYY")}` : "All dates";
 
   const statusHead = (s: string) => <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: STATUS_COLOR[s] }} />{s}</span>;
@@ -131,21 +122,101 @@ export default function ServiceReportsPage() {
   ];
 
   const exportExcel = () => {
-    const wb = XLSX.utils.book_new();
-    const add = (name: string, rows: any[]) => XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows.length ? rows : [{ Info: "No data" }]), name);
+    const filters = {
+      Period: rangeLabel(range),
+      State: states.find((s: any) => s.StateId === stateId)?.StateName,
+      "Service center": serviceCenters.find((s: any) => s.ServiceCenterId === centreId)?.ServiceCenterName,
+      Project: (() => { const p: any = projects.find((x: any) => x.ProjectId === projectId); return p ? (p.ProjectNo ? `${p.ProjectNo} — ${p.ProjectName}` : p.ProjectName) : null; })(),
+    };
     if (tab === "calls") {
-      (["type", "engineer", "center"] as MatrixDim[]).forEach((d) => add(`By ${d}`, pivot(matrix, d).map((r) => ({ [MATRIX_TITLE[d]]: r.Name.trim(), ...Object.fromEntries(STATUSES.map((s) => [s, r[s] || 0])), Total: r.total, Overdue: r.overdue, "Avg days to resolve": r.avgDays ?? "" }))));
-    } else if (tab === "jc") {
-      add("Job card lines", lines.map((r) => ({ "Job Card": r.JobCardNo, Date: formatDate(r.JobCardDate), Call: r.ComplaintNo, Customer: r.CustomerName, Type: r.ItemType, Code: r.SpareCode, Item: r.SpareName, "Component serial": r.SerialNo || "", Engineer: r.EngineerName?.trim() || "", "Service center": r.ServiceCenterName || "", Qty: Number(r.Qty), Rate: Number(r.Rate), Amount: Number(r.Amount), GST: Number(r.GstAmount), Basis: r.IsWarranty ? "Warranty" : "Chargeable", Status: r.Status })));
-    } else if (tab === "repl") {
-      add("Replacements", repl.map((r) => ({ Replacement: r.ReplNo, Date: formatDate(r.ReplDate), Source: r.Source, Type: r.ReplacementType, Warranty: r.VoucherType === "Without Serial No" ? "Out of warranty" : "In warranty", Dealer: r.DealerName || "", Category: r.Category, "Invoiced item": r.InvoiceItem || "", "Received item": r.ReceivedItem || "", Qty: Number(r.Qty || 0), "Old serial": r.OldSerialNo || "", "New serial": r.NewSerialNo || "", "Warranty days left": r.WarrantyDaysLeft ?? "", "Net value": Number(r.NetValue || 0), "CN no": r.CnNo || "", "CN effect": effect(r), Status: r.Status })));
-    } else {
-      add("Claim - job cards", claimJcs.map((r) => ({ "Job Card": r.JobCardNo, Date: formatDate(r.JobCardDate), Customer: r.CustomerName, "Service center": r.ServiceCenterName || "", Serials: r.Serials || "", Spares: Number(r.SparesTotal), Labour: Number(r.LabourTotal), "Warranty claim": Number(r.WarrantyAmount), "Customer pays": Math.max(0, Number(r.TotalEstimate) - Number(r.WarrantyAmount)), Status: r.Status })));
-      add("Claim - spare wise", (data?.claims || []).map((r: any) => ({ Spare: r.SpareName, Code: r.SpareCode, Qty: Number(r.Qty), "Job cards": Number(r.JobCards), "Claim value": Number(r.Amount) })));
-      add("Claim - month wise", (data?.claimByMonth || []).map((r: any) => ({ Month: dayjs(r.Month).format("MMM YYYY"), "Job cards": Number(r.JobCards), "Claim value": Number(r.Amount) })));
-      add("Claim - component", (data?.claimByComponent || []).map((r: any) => ({ Component: r.Component, "Claim value": Number(r.Amount) })));
+      return writeExcel({ title: "Service Report - Call Summary", filters, sheets: (["type", "engineer", "center"] as MatrixDim[]).map((d): ExcelSheet<any> => ({
+        name: `By ${d}`, title: `Service Report - Call Summary (${MATRIX_LABEL[d].toLowerCase()})`, rows: pivot(matrix, d),
+        columns: [
+          { header: MATRIX_TITLE[d], value: (r: any) => r.Name.trim() },
+          ...STATUSES.map((s) => ({ header: s, value: (r: any) => r[s] || 0, type: "number" as const, total: true })),
+          { header: "Total", value: (r: any) => r.total, type: "number", total: true },
+          { header: "Overdue", value: (r: any) => r.overdue, type: "number", total: true },
+          { header: "Avg days to resolve", value: (r: any) => r.avgDays ?? null, type: "number" },
+        ],
+      })) });
     }
-    XLSX.writeFile(wb, `Service_report_${tab}_${dayjs().format("YYYYMMDD")}.xlsx`);
+    // The call's project / scheme ("No – Name"), blank when the call has none.
+    const projectText = (r: any) => (r.ProjectName ? (r.ProjectNo ? `${r.ProjectNo} — ${r.ProjectName}` : r.ProjectName) : "");
+    if (tab === "jc") {
+      return writeExcel({ title: "Service Report - Job Card Detail", filters, sheets: [{ name: "Job card lines", rows: lines, columns: [
+        { header: "Job Card", value: (r: any) => r.JobCardNo },
+        { header: "Date", value: (r: any) => r.JobCardDate, type: "date" },
+        { header: "Call", value: (r: any) => r.ComplaintNo },
+        { header: "Customer", value: (r: any) => r.CustomerName },
+        { header: "Project", value: (r: any) => projectText(r) },
+        { header: "Type", value: (r: any) => r.ItemType },
+        { header: "Code", value: (r: any) => r.SpareCode },
+        { header: "Item", value: (r: any) => r.SpareName },
+        { header: "Component serial", value: (r: any) => r.SerialNo },
+        { header: "Engineer", value: (r: any) => r.EngineerName?.trim() },
+        { header: "Service center", value: (r: any) => r.ServiceCenterName },
+        { header: "Qty", value: (r: any) => r.Qty, type: "number", total: true },
+        { header: "Rate", value: (r: any) => r.Rate, type: "money" },
+        { header: "Amount", value: (r: any) => r.Amount, type: "money", total: true },
+        { header: "GST", value: (r: any) => r.GstAmount, type: "money", total: true },
+        { header: "Basis", value: (r: any) => (r.IsWarranty ? "Warranty" : "Chargeable") },
+        { header: "Status", value: (r: any) => r.Status },
+      ] }] });
+    }
+    if (tab === "repl") {
+      return writeExcel({ title: "Service Report - Replacement (CN effect)", filters, sheets: [{ name: "Replacements", rows: repl, columns: [
+        { header: "Replacement", value: (r: any) => r.ReplNo },
+        { header: "Date", value: (r: any) => r.ReplDate, type: "date" },
+        { header: "Source", value: (r: any) => r.Source },
+        { header: "Type", value: (r: any) => r.ReplacementType },
+        { header: "Warranty", value: (r: any) => (r.VoucherType === "Without Serial No" ? "Out of warranty" : "In warranty") },
+        { header: "Dealer", value: (r: any) => r.DealerName },
+        { header: "Call", value: (r: any) => r.ComplaintNo },
+        { header: "Project", value: (r: any) => projectText(r) },
+        { header: "Category", value: (r: any) => r.Category },
+        { header: "Invoiced item", value: (r: any) => r.InvoiceItem },
+        { header: "Received item", value: (r: any) => r.ReceivedItem },
+        { header: "Qty", value: (r: any) => Number(r.Qty || 0), type: "number", total: true },
+        { header: "Old serial", value: (r: any) => r.OldSerialNo },
+        { header: "New serial", value: (r: any) => r.NewSerialNo },
+        { header: "Warranty days left", value: (r: any) => r.WarrantyDaysLeft, type: "number" },
+        { header: "Net value", value: (r: any) => Number(r.NetValue || 0), type: "money", total: true },
+        { header: "CN no", value: (r: any) => r.CnNo },
+        { header: "CN effect", value: (r: any) => effect(r), type: "money", total: true },
+        { header: "Status", value: (r: any) => r.Status },
+      ] }] });
+    }
+    return writeExcel({ title: "Service Report - Warranty Claim Summary", filters, sheets: [
+      { name: "Claim - job cards", rows: claimJcs, columns: [
+        { header: "Job Card", value: (r: any) => r.JobCardNo },
+        { header: "Date", value: (r: any) => r.JobCardDate, type: "date" },
+        { header: "Customer", value: (r: any) => r.CustomerName },
+        { header: "Project", value: (r: any) => projectText(r) },
+        { header: "Service center", value: (r: any) => r.ServiceCenterName },
+        { header: "Serials", value: (r: any) => r.Serials },
+        { header: "Spares", value: (r: any) => r.SparesTotal, type: "money", total: true },
+        { header: "Labour", value: (r: any) => r.LabourTotal, type: "money", total: true },
+        { header: "Warranty claim", value: (r: any) => r.WarrantyAmount, type: "money", total: true },
+        { header: "Customer pays", value: (r: any) => Math.max(0, Number(r.TotalEstimate) - Number(r.WarrantyAmount)), type: "money", total: true },
+        { header: "Status", value: (r: any) => r.Status },
+      ] },
+      { name: "Claim - spare wise", rows: data?.claims || [], columns: [
+        { header: "Spare", value: (r: any) => r.SpareName },
+        { header: "Code", value: (r: any) => r.SpareCode },
+        { header: "Qty", value: (r: any) => r.Qty, type: "number", total: true },
+        { header: "Job cards", value: (r: any) => r.JobCards, type: "number", total: true },
+        { header: "Claim value", value: (r: any) => r.Amount, type: "money", total: true },
+      ] },
+      { name: "Claim - month wise", rows: data?.claimByMonth || [], columns: [
+        { header: "Month", value: (r: any) => dayjs(r.Month).format("MMM YYYY") },
+        { header: "Job cards", value: (r: any) => r.JobCards, type: "number", total: true },
+        { header: "Claim value", value: (r: any) => r.Amount, type: "money", total: true },
+      ] },
+      { name: "Claim - component", rows: data?.claimByComponent || [], columns: [
+        { header: "Component", value: (r: any) => r.Component },
+        { header: "Claim value", value: (r: any) => r.Amount, type: "money", total: true },
+      ] },
+    ] });
   };
 
   const spareSummary = (rows: readonly any[]) => rows.length ? <Table.Summary.Row><Table.Summary.Cell index={0}><b>Total</b></Table.Summary.Cell><Table.Summary.Cell index={1} /><Table.Summary.Cell index={2} /><Table.Summary.Cell index={3} align="right"><b>{inr(sum(rows as any[], "Amount"), 2)}</b></Table.Summary.Cell></Table.Summary.Row> : null;
@@ -159,17 +230,23 @@ export default function ServiceReportsPage() {
     <div className="space-y-4">
       <PageHeader icon={<BarChartOutlined />} title="Service Reports" subtitle={`Call summary, job card detail, replacement credit-note effect and warranty claim summary · ${periodText}`}
         actions={<>
-          <Tooltip title={`Exports the ${tabCount[tab]} on the open tab, with the filters below`}><Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!data}>Export Excel</Button></Tooltip>
+          <Tooltip title={`Exports the ${tabCount[tab]} on the open tab, with the filters below`}><span><ExportExcelButton onExport={exportExcel} disabled={!data} /></span></Tooltip>
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
         </>} />
 
-      <div className="filter-toolbar">
-        <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} format="DD/MM/YYYY" allowClear presets={RANGE_PRESETS} placeholder={["From date", "To date"]} className="min-w-64" />
-        <Select allowClear showSearch optionFilterProp="label" placeholder="State: All" value={stateId} onChange={setStateId} options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))} />
-        <Select allowClear showSearch optionFilterProp="label" placeholder="Service center: All" value={centreId} onChange={setCentreId} options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} />
-        <Select allowClear showSearch optionFilterProp="label" placeholder="Project: All" value={projectId} onChange={setProjectId} popupMatchSelectWidth={false} options={projects.map((p: any) => ({ value: p.ProjectId, label: p.ProjectNo ? `${p.ProjectNo} — ${p.ProjectName}` : p.ProjectName }))} />
-        {activeFilters > 0 && <Button type="link" icon={<CloseCircleOutlined />} onClick={clearFilters} className="!px-1">Clear filters ({activeFilters})</Button>}
-      </div>
+      <FilterBar
+        storageKey="service-reports"
+        filters={[
+          { key: "date", label: "Period", icon: <CalendarOutlined />, pinned: true, active: !!(range?.[0] || range?.[1]), onClear: () => setRange(null),
+            render: () => <DateRangeFilter variant="borderless" value={range} onChange={setRange} placeholder={["From", "To"]} className="" /> },
+          { key: "center", label: "Service center", icon: <ShopOutlined />, pinned: true, active: !!centreId, onClear: () => setCentreId(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={centreId} onChange={setCentreId} popupMatchSelectWidth={false} options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} /> },
+          { key: "state", label: "State", group: "Location", icon: <EnvironmentOutlined />, active: !!stateId, onClear: () => setStateId(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={stateId} onChange={setStateId} popupMatchSelectWidth={false} options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))} /> },
+          { key: "project", label: "Project", group: "Call details", icon: <ProjectOutlined />, active: !!projectId, onClear: () => setProjectId(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={projectId} onChange={setProjectId} popupMatchSelectWidth={false} options={projects.map((p: any) => ({ value: p.ProjectId, label: p.ProjectNo ? `${p.ProjectNo} — ${p.ProjectName}` : p.ProjectName }))} /> },
+        ]}
+      />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-7 gap-3">
         <Kpi label="Calls" value={totalCalls} sub={`${resolved} resolved / closed · ${pct(resolved, totalCalls)}%`} accent="#2563eb" />

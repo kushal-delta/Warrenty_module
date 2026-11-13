@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
 import { activeRules, canActOnRule, loadJobCard, rulesFor } from "@/lib/services/jobCards";
 import { OUT_OF_SCOPE, callVisible, getScope, jobCardVisible } from "@/lib/auth/scope";
+import { withAppFileUrls } from "@/lib/services/attachments";
 
 /** One job card with its fault lines, spare lines, approval chain and decision trail. */
 export async function POST(request: NextRequest) {
@@ -25,14 +26,22 @@ export async function POST(request: NextRequest) {
       runQuery(`SELECT [AttachmentId], [FileUrl], [FileName], [FileType], [FileSize], [InsertedOn] FROM dbo.[Attachments] WHERE [ParentTable] = 'JobCards' AND [ParentId] = @id ORDER BY [InsertedOn]`, { id: JobCardId }),
       runQuery(`SELECT i.[Category], i.[SerialNo], i.[ReportedFault], p.[ModelName] FROM dbo.[ComplaintItemLns] i LEFT JOIN dbo.[ProductModels] p ON i.[ProductModelId] = p.[ProductModelId] WHERE i.[ComplaintId] = @c ORDER BY i.[InsertedOn]`, { c: job.ComplaintId }),
     ]);
-    const photos = attachments.filter((a: any) => !String(a.FileType || "").startsWith("video/"));
-    const videos = attachments.filter((a: any) => String(a.FileType || "").startsWith("video/"));
+    // Activity: every logged change of this job card (created, edited, sent, approved / rejected, closed), newest first.
+    const activity = (await runQuery<any>(`SELECT a.[AuditLogId], a.[Action], a.[TableName], a.[Details], a.[LogOn],
+        COALESCE(NULLIF(LTRIM(RTRIM(CONCAT(u.[FirstName], ' ', u.[LastName]))), ''), a.[UserName]) AS [UserName]
+      FROM dbo.[AuditLogs] a LEFT JOIN dbo.[Users] u ON u.[UserId] = a.[UserId]
+      WHERE a.[TableName] = 'JobCards' AND a.[RecordId] = CAST(@id AS nvarchar(50)) ORDER BY a.[LogOn] DESC`, { id: JobCardId }))
+      .map((a) => { let d: any = null; try { d = a.Details ? JSON.parse(a.Details) : null; } catch { d = a.Details; } return { ...a, Details: d }; });
+    // Mobile app (Bearer): full links with the server address; the website keeps the short ones.
+    const files = withAppFileUrls(request, attachments as any[]);
+    const photos = files.filter((a: any) => !String(a.FileType || "").startsWith("video/"));
+    const videos = files.filter((a: any) => String(a.FileType || "").startsWith("video/"));
     const levels = rulesFor(rules, Number(job.TotalEstimate));
     const pendingRule = job.Status === "In Approval" ? levels.find((r) => r.LevelNo === job.CurrentLevel) : undefined;
     return NextResponse.json({
       success: true,
       jobCard: { ...job, CustomerPayable: Math.max(0, Number(job.TotalEstimate) - Number(job.WarrantyAmount)), PendingRole: pendingRule?.RoleName || null, CanAct: canActOnRule(pendingRule, user, job.ServiceCenterId) },
-      faults, items, approvals, levels, photos, videos, components,
+      faults, items, approvals, levels, photos, videos, components, activity,
     });
   } catch (err) {
     return handleApiError(err, "Failed to load job card");

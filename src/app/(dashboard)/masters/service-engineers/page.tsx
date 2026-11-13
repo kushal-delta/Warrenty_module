@@ -11,6 +11,8 @@ import { FormSection } from "@/components/common/FormSection";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { parseList } from "@/lib/auth/forms";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 const FIELDS = ["FirstName", "LastName", "Username", "Phone", "Email", "ServiceCenterId", "Address", "IsActive"];
 const DEFAULT_PASSWORD = "delta@2026";
@@ -114,12 +116,24 @@ export default function ServiceEngineersPage() {
     ) },
   ];
 
+  const exportExcel = () => exportTable("Service Engineers", [
+    { header: "Engineer", value: (r: any) => fullName(r) },
+    { header: "Login", value: (r: any) => r.Username },
+    { header: "Service center", value: (r: any) => r.ServiceCenterName || "Not set" },
+    { header: "Mobile", value: (r: any) => r.Phone },
+    { header: "States", value: (r: any) => (r.StateRights ? parseList(r.StateRights).map(stateShort).join(", ") : "All") },
+    { header: "Open calls", value: (r: any) => r.OpenCalls, type: "number", total: true },
+    { header: "iERP ledger", value: (r: any) => r.LedgerCode || "Not in iERP" },
+    { header: "Status", value: (r: any) => (r.IsActive ? "Active" : "Inactive") },
+  ], filtered, { "Service center": centers.find((c) => c.ServiceCenterId === centerFilter)?.ServiceCenterName, Status: statusFilter, Search: search || null });
+
   const centerOptions = centers.filter((c) => c.IsActive || c.ServiceCenterId === editing?.ServiceCenterId).map((c) => ({ value: c.ServiceCenterId, label: `${c.ServiceCenterName}${c.ServiceCenterCode ? ` (${c.ServiceCenterCode})` : ""}` }));
 
   return (
     <div className="space-y-4">
       <PageHeader icon={<IdcardOutlined />} title="Service Engineers" subtitle={`${rows.length} field engineers · each carries van stock and is assigned calls · each engineer is a ledger in the iERP`}
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">Add Engineer</Button>
         </>} />

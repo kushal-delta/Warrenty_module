@@ -9,6 +9,8 @@ import { FormSection } from "@/components/common/FormSection";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const TYPE_LABEL: Record<string, string> = { Product: "Product items", Spare: "Spare parts" };
 const PRIORITY_COLOR: Record<string, string> = { Low: "default", Normal: "blue", High: "orange", Urgent: "red" };
@@ -26,6 +28,7 @@ export default function MaterialApprovalsPage() {
   const [loading, setLoading] = useState(false);
   const [view, setView] = useState("Pending");
   const [search, setSearch] = useState("");
+  const [range, setRange] = useState<DateRange>(null); // request date
   const [open, setOpen] = useState<any>(null);
   const [lines, setLines] = useState<any[]>([]);
   const [linesLoading, setLinesLoading] = useState(false);
@@ -70,12 +73,27 @@ export default function MaterialApprovalsPage() {
   const filtered = rows
     .filter((r) => {
       const q = search.toLowerCase();
-      return (view === "All" || r.Status === view) && (!q || [r.RequestNo, r.RequestForName, r.RequestedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)));
+      return (view === "All" || r.Status === view) && (!q || [r.RequestNo, r.RequestForName, r.RequestedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)))
+        && inDateRange(r.RequestDate, range);
     })
     // Pending: most urgent first, then the oldest; decided: latest first (as loaded).
     .sort((a, b) => (view === "Pending" ? (PRIORITY_RANK[a.Priority] ?? 9) - (PRIORITY_RANK[b.Priority] ?? 9) || String(a.RequestDate).localeCompare(String(b.RequestDate)) : 0));
 
   const overdue = (r: any) => r.Status === "Pending" && r.RequiredBy && new Date(r.RequiredBy) < new Date(new Date().toDateString());
+
+  const exportExcel = () => exportTable("Material Approvals", [
+    { header: "Request No.", value: (r: any) => r.RequestNo },
+    { header: "Date", value: (r: any) => r.RequestDate, type: "date" },
+    { header: "Warehouse", value: (r: any) => r.RequestForName },
+    { header: "Requested By", value: (r: any) => r.RequestedBy?.trim() },
+    { header: "Type", value: (r: any) => TYPE_LABEL[r.RequestType] || r.RequestType },
+    { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
+    { header: "Total Qty", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
+    { header: "Required By", value: (r: any) => r.RequiredBy, type: "date" },
+    { header: "Priority", value: (r: any) => r.Priority },
+    { header: "Status", value: (r: any) => r.Status },
+    { header: "Decision By", value: (r: any) => r.DecisionBy?.trim() },
+  ], filtered, { View: view, "Request date": rangeLabel(range), Search: search || null }, view);
 
   const columns = [
     { title: "Request no.", dataIndex: "RequestNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -96,7 +114,10 @@ export default function MaterialApprovalsPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon={<AuditOutlined />} title="Material Approvals" subtitle="Approve or reject material requests raised by service centers · urgent and high priority requests are listed first"
-        actions={<Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>} />
+        actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
+          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
+        </>} />
 
       <StatStrip items={[
         { label: "Waiting for approval", value: count("Pending"), tone: "warn" },
@@ -109,6 +130,7 @@ export default function MaterialApprovalsPage() {
       <div className="filter-toolbar">
         <Segmented value={view} onChange={(v) => setView(String(v))} options={VIEWS.map((v) => ({ value: v, label: v === "All" ? `All (${rows.length})` : `${v} (${count(v)})` }))} />
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search request no., warehouse, requested by..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Request date from", "to"]} />
       </div>
 
       <div className={TABLE_CARD}>

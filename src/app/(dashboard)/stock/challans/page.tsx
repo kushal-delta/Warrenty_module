@@ -14,6 +14,8 @@ import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const CHALLAN_TYPES = ["Returnable", "Non-returnable"];
 const TYPE_COLOR: Record<string, string> = { Returnable: "blue", "Non-returnable": "purple" };
@@ -106,6 +108,7 @@ export default function DeliveryChallansPage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // challan date
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -252,8 +255,26 @@ export default function DeliveryChallansPage() {
   const overdue = (r: any) => r.ChallanType === "Returnable" && r.Status === "Dispatched" && r.ExpectedBackBy && new Date(r.ExpectedBackBy) < new Date(new Date().toDateString());
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!typeFilter || r.ChallanType === typeFilter) && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.TransporterName, r.VehicleNo, r.RequestNo, r.DispatchLocName].some((v) => v?.toLowerCase().includes(q)));
+    return (!typeFilter || r.ChallanType === typeFilter) && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.TransporterName, r.VehicleNo, r.RequestNo, r.DispatchLocName].some((v) => v?.toLowerCase().includes(q)))
+      && inDateRange(r.ChallanDate, range);
   });
+
+  const exportExcel = () => exportTable("Delivery Challan", [
+    { header: "Challan No", value: (r: any) => r.ChallanNo },
+    { header: "Material Request", value: (r: any) => r.RequestNo },
+    { header: "Date", value: (r: any) => r.ChallanDate, type: "date" },
+    { header: "Type", value: (r: any) => r.ChallanType },
+    { header: "Job Worker", value: (r: any) => r.JobWorkerName },
+    { header: "Purpose", value: (r: any) => r.Purpose },
+    { header: "From Store", value: (r: any) => r.DispatchLocName },
+    { header: "Transport Mode", value: (r: any) => r.TransportMode },
+    { header: "Transporter", value: (r: any) => r.TransporterName },
+    { header: "Vehicle No", value: (r: any) => r.VehicleNo },
+    { header: "Expected Back", value: (r: any) => r.ExpectedBackBy, type: "date" },
+    { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
+    { header: "Total Qty", value: (r: any) => r.TotalQty, type: "number", total: true },
+    { header: "Value ₹", value: (r: any) => r.TotalValue, type: "money", total: true },
+  ], filtered, { "Challan date": rangeLabel(range), Type: typeFilter, Search: search || null }, "Challans");
 
   const columns = [
     { title: "Challan no.", dataIndex: "ChallanNo", key: "no", width: 150, render: (v: string, r: any) => <div><span className="font-mono font-bold text-blue-700">{v}</span>{r.RequestNo && <div className="text-[11px] font-mono text-slate-400">{r.RequestNo}</div>}</div> },
@@ -281,6 +302,7 @@ export default function DeliveryChallansPage() {
     <div className="space-y-4">
       <PageHeader icon={<FileTextOutlined />} title="Delivery Challan" subtitle="Material sent out to job workers and service centers · raise it against an approved material request"
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">New Delivery Challan</Button>
         </>} />
@@ -295,6 +317,7 @@ export default function DeliveryChallansPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search challan, job worker, purpose, vehicle..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Challan from", "to"]} />
         <Select allowClear placeholder="Type: All" value={typeFilter} onChange={setTypeFilter} options={CHALLAN_TYPES.map((t) => ({ value: t, label: t }))} className="w-44" />
       </div>
 

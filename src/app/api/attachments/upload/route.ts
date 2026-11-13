@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
-import { purgePendingUploads, savePendingVideo } from "@/lib/services/attachments";
+import { purgePendingUploads, savePendingVideo, withAppFileUrls } from "@/lib/services/attachments";
 import { MAX_VIDEO_MB } from "@/lib/config/service";
 
 /**
@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     if (!file || typeof file === "string") return fail("Choose a video file to upload");
     await purgePendingUploads(runQuery).catch(() => undefined);
     const video = await savePendingVideo(runQuery, file as File, MAX_VIDEO_MB * 1024 * 1024, user.UserId);
-    return NextResponse.json({ success: true, video });
+    return NextResponse.json({ success: true, video: withAppFileUrls(request, [video])[0] });
   } catch (err) {
     return handleApiError(err, "Failed to upload the video");
   }

@@ -38,7 +38,6 @@ export const FORM_GROUPS: FormGroup[] = [
   },
   {
     key: "Service", label: "Service Management", forms: [
-      { key: "service.dashboard", label: "Service Dashboard", path: "/service", roles: ALL_STAFF },
       { key: "service.dashboard", label: "Service Dashboard", path: "/service/dashboard", roles: STAFF },
       { key: "service.complaints", label: "Complaints Register", path: "/service/complaints", roles: [...ALL_STAFF, ...CENTER, ...DEALER, ...CUSTOMER], labels: { DEALER: "Book / Track Service Calls", CUSTOMER: "My Service Calls", ENGINEER: "Service Calls", SERVICE_CENTER: "Service Calls" } },
       { key: "service.reminders", label: "Call Reminders", path: "/service/reminders", roles: STAFF },

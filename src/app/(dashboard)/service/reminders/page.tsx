@@ -11,6 +11,8 @@ import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const isDue = (r: Reminder) => r.Status === "Pending" && dayjs(r.ReminderDate).isBefore(dayjs().endOf("day"));
 
@@ -21,6 +23,7 @@ export default function RemindersPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>("Pending");
+  const [range, setRange] = useState<DateRange>(null); // reminder date
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Reminder | null>(null);
   const [saving, setSaving] = useState(false);
@@ -59,8 +62,19 @@ export default function RemindersPage() {
 
   const filtered = reminders.filter((r) => {
     const q = search.toLowerCase();
-    return (!q || [r.ComplaintNo, r.CustomerName, r.Mobile, r.ReminderText].some((v) => v?.toLowerCase().includes(q))) && (!statusFilter || r.Status === statusFilter);
+    return (!q || [r.ComplaintNo, r.CustomerName, r.Mobile, r.ReminderText].some((v) => v?.toLowerCase().includes(q))) && (!statusFilter || r.Status === statusFilter) && inDateRange(r.ReminderDate, range);
   });
+
+  const exportExcel = () => exportTable("Call Reminders", [
+    { header: "Call No", value: (r: Reminder) => r.ComplaintNo },
+    { header: "Customer", value: (r: Reminder) => r.CustomerName },
+    { header: "Mobile", value: (r: Reminder) => r.Mobile },
+    { header: "Remind On", value: (r: Reminder) => r.ReminderDate, type: "date" },
+    { header: "Note", value: (r: Reminder) => r.ReminderText },
+    { header: "Created By", value: (r: Reminder) => r.CreatedBy },
+    { header: "Status", value: (r: Reminder) => (r.Status === "Done" ? "Done" : isDue(r) ? "Due" : "Pending") },
+    { header: "Done On", value: (r: Reminder) => r.DoneOn, type: "date" },
+  ], filtered, { "Remind on": rangeLabel(range), Status: statusFilter, Search: search || null }, "Reminders");
   const openCalls = complaints.filter((c) => !["Closed", "Cancelled"].includes(c.Status) || c.ComplaintId === editing?.ComplaintId);
 
   const columns = [
@@ -84,6 +98,7 @@ export default function RemindersPage() {
       <PageHeader icon={<BellOutlined />} title="Call Reminders" subtitle="Follow-up reminders on open service calls — overdue reminders are shown in red"
         actions={<>
           <Button icon={<ReloadOutlined />} onClick={() => fetchReminders()} loading={isLoading}>Refresh</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">Add Reminder</Button>
         </>} />
 
@@ -96,6 +111,7 @@ export default function RemindersPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search call no, customer, note..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Remind on from", "to"]} />
         <Select placeholder="All Statuses" value={statusFilter} onChange={setStatusFilter} allowClear className="w-36" options={[{ value: "Pending", label: "Pending" }, { value: "Done", label: "Done" }]} />
       </div>
 

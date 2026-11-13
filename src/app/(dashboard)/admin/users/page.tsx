@@ -57,6 +57,8 @@ import { FormRightsPicker } from "@/components/admin/FormRightsPicker";
 import { districtOptions } from "@/lib/utils/selectOptions";
 import { useWarrantyStore } from "@/lib/store/useWarrantyStore";
 import { useCustomerStore } from "@/lib/store/useCustomerStore";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: "SUPER", label: "Super Admin", color: "red" },
@@ -446,6 +448,38 @@ export default function UsersPage() {
   const totalActive = users.filter((u) => u.IsActive).length;
   const totalAdmin = users.filter((u) => u.IsAdmin).length;
 
+  // Same columns as the table, flattened to text (never the password).
+  const fullAccess = (u: AppUser) => Boolean(u.IsAdmin) || u.Role === "SUPER";
+  const exportExcel = () => exportTable("User Management", [
+    { header: "Name", value: (u: AppUser) => `${u.FirstName} ${u.LastName || ""}`.trim() },
+    { header: "Username", value: (u: AppUser) => u.Username },
+    { header: "Role", value: (u: AppUser) => getRoleConfig(u.Role).label },
+    { header: "Admin", value: (u: AppUser) => (u.IsAdmin ? "Yes" : "No") },
+    { header: "iERP user", value: (u: AppUser) => (u.IsErpUser ? "Yes" : "No") },
+    { header: "iERP ledger", value: (u: AppUser) => (u.Role === "ENGINEER" ? u.LedgerCode || "Not in iERP" : null) },
+    { header: "E-mail", value: (u: AppUser) => u.Email },
+    { header: "Phone", value: (u: AppUser) => u.Phone },
+    { header: "Service centre", value: (u: AppUser) => (fullAccess(u) ? null : u.ServiceCenterName) },
+    { header: "States", value: (u: AppUser) => {
+      if (fullAccess(u)) return "Full access";
+      const stateIds = parseList(u.StateRights).map((s) => s.toLowerCase());
+      const stateNames = states.filter((s) => stateIds.includes(String(s.StateId).toLowerCase())).map((s) => s.ShortName || s.StateName);
+      const districtCount = parseList(u.DistrictRights).length;
+      return `${stateNames.length ? stateNames.join(", ") : "All"}${districtCount ? ` · ${districtCount} district${districtCount > 1 ? "s" : ""}` : ""}`;
+    } },
+    { header: "Screens", value: (u: AppUser) => {
+      if (fullAccess(u)) return "Full access";
+      const forms = parseList(u.FormRights);
+      return forms.length ? `${countScreens(forms)} of ${ALL_FORMS.length}` : "None (dashboard only)";
+    } },
+    { header: "Status", value: (u: AppUser) => (u.IsActive ? "Active" : "Inactive") },
+    { header: "Last Login", value: (u: AppUser) => u.LastLogin || "Never", type: "datetime" },
+  ], filteredUsers, {
+    Role: roleFilter ? getRoleConfig(roleFilter).label : null,
+    Status: statusFilter === undefined ? null : statusFilter ? "Active" : "Inactive",
+    Search: search || null,
+  }, "Users");
+
   return (
     <div>
       {/* Page Header */}
@@ -526,6 +560,7 @@ export default function UsersPage() {
           <span className="text-xs text-slate-500 font-medium">
             {filteredUsers.length} of {users.length} users
           </span>
+          <ExportExcelButton onExport={exportExcel} disabled={!filteredUsers.length} />
           <Button
             icon={<ReloadOutlined />}
             size="small"

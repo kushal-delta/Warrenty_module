@@ -10,8 +10,11 @@ interface AntdPopupContainerProps {
 
 /**
  * RULES §46: Global popup container provider
- * Selects, date pickers and dropdowns portal into the nearest .ant-drawer-body or .ant-modal-body,
- * falling back to document.body.
+ * Selects, date pickers, dropdowns, popovers and tooltips portal into the scrolling area that holds their field:
+ *   1. the nearest .ant-drawer-body / .ant-modal-body (drawers and modals scroll on their own);
+ *   2. the page content area (#main-content) for fields on a page — so an open list scrolls with its field and
+ *      slides under the fixed header instead of floating over the page when the content is scrolled;
+ *   3. document.body for everything else (header search, drawers / modals themselves).
  */
 export function AntdPopupContainer({ children }: AntdPopupContainerProps) {
   const getPopupContainer = (triggerNode?: HTMLElement): HTMLElement => {
@@ -24,7 +27,10 @@ export function AntdPopupContainer({ children }: AntdPopupContainerProps) {
 
     // Find nearest drawer or modal body
     const container = triggerNode.closest(".ant-drawer-body, .ant-modal-body");
-    return (container as HTMLElement) || document.body;
+    if (container) return container as HTMLElement;
+    // Fields on a page: the scrolling content area (positioned in globals.css, so popups align inside it)
+    const page = triggerNode.closest("#main-content");
+    return (page as HTMLElement) || document.body;
   };
 
   return (

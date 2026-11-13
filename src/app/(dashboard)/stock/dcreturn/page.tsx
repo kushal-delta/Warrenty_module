@@ -2,9 +2,8 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
-import * as XLSX from "xlsx";
 import { Button, DatePicker, Input, InputNumber, Modal, Select, Table, Tooltip, message } from "antd";
-import { ArrowRightOutlined, DeleteOutlined, DownloadOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
+import { ArrowRightOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 import { useAuthStore } from "@/lib/store/useAuthStore";
@@ -12,6 +11,8 @@ import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 interface Line { DeliveryChallanItemLnId: string; LineNo: number; ItemCode?: string; ItemName: string; Uom?: string; Issued: number; Fresh: number; Defective: number; Pending: number; QtyFresh?: number; QtyDefective?: number; DefectSerial?: string; Remarks?: string }
 const qty = (n: unknown) => Number(Number(n || 0).toFixed(3));
@@ -27,6 +28,7 @@ export default function DefectiveFreshReceiptPage() {
   const [search, setSearch] = useState("");
   const [worker, setWorker] = useState<string>();
   const [receivedAs, setReceivedAs] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // receipt date
   // step 1 / 2
   const [pickOpen, setPickOpen] = useState(false);
   const [pending, setPending] = useState<any[]>([]);
@@ -104,22 +106,30 @@ export default function DefectiveFreshReceiptPage() {
     const q = search.toLowerCase();
     return (!worker || r.JobWorkerId === worker)
       && (!receivedAs || (receivedAs === "Fresh" ? Number(r.QtyFresh) > 0 : Number(r.QtyDefective) > 0))
-      && (!q || [r.ReturnNo, r.ChallanNo, r.JobWorkerName, r.ItemName, r.ItemCode, r.DefectSerial, r.ReceivedThrough].some((v) => v?.toLowerCase().includes(q)));
+      && (!q || [r.ReturnNo, r.ChallanNo, r.JobWorkerName, r.ItemName, r.ItemCode, r.DefectSerial, r.ReceivedThrough].some((v) => v?.toLowerCase().includes(q)))
+      && inDateRange(r.ReturnDate, range);
   });
   const workers = Array.from(new Map(rows.map((r) => [r.JobWorkerId, r.JobWorkerName])).entries()).map(([value, label]) => ({ value, label: label || "—" }));
   const sumOf = (list: any[], k: string) => list.reduce((s, r) => s + Number(r[k] || 0), 0);
   const canDelete = (r: any) => headOffice || String(r.InsertedByUserId || "").toLowerCase() === String(user?.UserId || "").toLowerCase();
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filtered.map((r) => ({
-      "Receipt No": r.ReturnNo, Date: formatDate(r.ReturnDate), "Against RDC": r.ChallanNo, "RDC date": formatDate(r.ChallanDate), "Job worker": r.JobWorkerName || "",
-      "Item code": r.ItemCode || "", Item: r.ItemName, Issued: qty(r.Issued), Fresh: qty(r.QtyFresh), Defective: qty(r.QtyDefective), "Pending on RDC": qty(r.PendingOnLine),
-      "Defect serial": r.DefectSerial || "", Through: r.ReceivedThrough || "", Remarks: r.Remarks || r.ReturnRemarks || "", "Received by": r.ReceivedBy?.trim() || "",
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Defective - Fresh receipts");
-    XLSX.writeFile(wb, `Defective_Fresh_receipts_${dayjs().format("YYYY-MM-DD")}.xlsx`);
-  };
+  const exportExcel = () => exportTable("Defective / Fresh Receipt", [
+    { header: "Receipt No", value: (r: any) => r.ReturnNo },
+    { header: "Date", value: (r: any) => r.ReturnDate, type: "date" },
+    { header: "Against RDC", value: (r: any) => r.ChallanNo },
+    { header: "RDC Date", value: (r: any) => r.ChallanDate, type: "date" },
+    { header: "Job Worker", value: (r: any) => r.JobWorkerName },
+    { header: "Item Code", value: (r: any) => r.ItemCode },
+    { header: "Item", value: (r: any) => r.ItemName },
+    { header: "Issued", value: (r: any) => qty(r.Issued), type: "number", total: true },
+    { header: "Fresh", value: (r: any) => qty(r.QtyFresh), type: "number", total: true },
+    { header: "Defective", value: (r: any) => qty(r.QtyDefective), type: "number", total: true },
+    { header: "Pending on RDC", value: (r: any) => qty(r.PendingOnLine), type: "number" },
+    { header: "Defect Serial", value: (r: any) => r.DefectSerial },
+    { header: "Through", value: (r: any) => r.ReceivedThrough },
+    { header: "Remarks", value: (r: any) => r.Remarks || r.ReturnRemarks },
+    { header: "Received By", value: (r: any) => r.ReceivedBy?.trim() },
+  ], filtered, { "Receipt date": rangeLabel(range), "Job worker": workers.find((w) => w.value === worker)?.label, "Received as": receivedAs, Search: search || null }, "Defective - Fresh receipts");
 
   const columns = [
     { title: "Receipt no.", dataIndex: "ReturnNo", key: "no", width: 140, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -143,7 +153,7 @@ export default function DefectiveFreshReceiptPage() {
     <div className="space-y-4">
       <PageHeader icon={<RollbackOutlined />} title="Defective / Fresh Receipt" subtitle="Fresh (unused) stock and defective parts received back against returnable delivery challans (RDC)"
         actions={<>
-          <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!filtered.length}>Export Excel</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={startNew} className="bg-blue-600 shadow-sm">Receive against RDC</Button>
         </>} />
@@ -158,6 +168,7 @@ export default function DefectiveFreshReceiptPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search receipt, challan, job worker, item, serial..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Receipt from", "to"]} />
         <Select allowClear showSearch optionFilterProp="label" placeholder="Job worker: All" value={worker} onChange={setWorker} options={workers} className="w-56" />
         <Select allowClear placeholder="Received as: All" value={receivedAs} onChange={setReceivedAs} options={["Fresh", "Defective"].map((v) => ({ value: v, label: v }))} className="w-44" />
       </div>

@@ -2,9 +2,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import * as XLSX from "xlsx";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tooltip, message } from "antd";
-import { CodeSandboxOutlined, DeleteOutlined, DownloadOutlined, EyeOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { CodeSandboxOutlined, DeleteOutlined, EyeOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
@@ -14,6 +13,8 @@ import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 interface StockItem { key: string; ItemCode: string | null; ItemName: string; Uom: string | null; Rate: number; Available: number }
 interface Line { key: string; ItemKey?: string; Qty?: number; Remarks?: string }
@@ -30,6 +31,7 @@ export default function MaterialIssuePage() {
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [warehouseFilter, setWarehouseFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // issue date
   const [warehouses, setWarehouses] = useState<any[]>([]);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
@@ -128,16 +130,23 @@ export default function MaterialIssuePage() {
 
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!warehouseFilter || r.WarehouseId === warehouseFilter) && (!q || [r.IssueNo, r.Purpose, r.WarehouseName, r.IssuedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)));
+    return (!warehouseFilter || r.WarehouseId === warehouseFilter) && (!q || [r.IssueNo, r.Purpose, r.WarehouseName, r.IssuedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)))
+      && inDateRange(r.IssueDate, range);
   });
   const canDelete = (r: any) => headOffice || String(r.InsertedByUserId || "").toLowerCase() === String(user?.UserId || "").toLowerCase();
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filtered.map((r) => ({ "Issue No": r.IssueNo, Date: formatDate(r.IssueDate), Warehouse: r.WarehouseName, Purpose: r.Purpose, Items: Number(r.ItemCount), "Total qty": qty(r.TotalQty), "Value (₹)": Number(Number(r.TotalValue).toFixed(2)), "Issued by": r.IssuedBy?.trim() || "", Remarks: r.Remarks || "" })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Material issues");
-    XLSX.writeFile(wb, `Material_issues_${dayjs().format("YYYY-MM-DD")}.xlsx`);
-  };
+  const exportExcel = () => exportTable("Material Issues", [
+    { header: "Issue No.", value: (r: any) => r.IssueNo },
+    { header: "Date", value: (r: any) => r.IssueDate, type: "date" },
+    { header: "Warehouse", value: (r: any) => r.WarehouseName },
+    { header: "Warehouse Code", value: (r: any) => r.WarehouseCode },
+    { header: "Purpose", value: (r: any) => r.Purpose },
+    { header: "Items", value: (r: any) => Number(r.ItemCount), type: "number", total: true },
+    { header: "Qty Issued", value: (r: any) => qty(r.TotalQty), type: "number", total: true },
+    { header: "Value", value: (r: any) => Number(r.TotalValue), type: "money", total: true },
+    { header: "Issued By", value: (r: any) => r.IssuedBy?.trim() },
+    { header: "Remarks", value: (r: any) => r.Remarks },
+  ], filtered, { "Issue date": rangeLabel(range), Warehouse: warehouses.find((w) => w.WarehouseId === warehouseFilter)?.WarehouseName, Search: search || null }, "Material issues");
 
   const columns = [
     { title: "Issue no.", dataIndex: "IssueNo", key: "no", width: 140, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -164,7 +173,7 @@ export default function MaterialIssuePage() {
     <div className="space-y-4">
       <PageHeader icon={<ExportOutlined />} title="Material Issue" subtitle="Material issued out of a warehouse's stock · only items in stock can be issued, up to the quantity available"
         actions={<>
-          <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!filtered.length}>Export Excel</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           {warehouses.length > 0 && <Button type="primary" icon={<PlusOutlined />} onClick={openNew} className="bg-blue-600 shadow-sm">New Material Issue</Button>}
         </>} />
@@ -178,6 +187,7 @@ export default function MaterialIssuePage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search issue no., purpose, warehouse..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Issue date from", "to"]} />
         {warehouses.length > 1 && <Select allowClear showSearch optionFilterProp="label" placeholder="Warehouse: All" value={warehouseFilter} onChange={setWarehouseFilter} options={warehouses.map((w) => ({ value: w.WarehouseId, label: w.WarehouseName }))} className="w-56" />}
       </div>
 

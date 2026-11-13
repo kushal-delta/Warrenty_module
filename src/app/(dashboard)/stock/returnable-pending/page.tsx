@@ -2,13 +2,13 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import * as XLSX from "xlsx";
 import { Button, Input, Segmented, Select, Table, Tag, Tooltip } from "antd";
-import { DownloadOutlined, ReloadOutlined, RollbackOutlined, SearchOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
+import { ReloadOutlined, RollbackOutlined, SearchOutlined } from "@ant-design/icons";
 import { PageHeader, StatStrip, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportExcel as writeExcel, rangeLabel } from "@/lib/utils/excelExport";
 
 type Due = "All" | "Overdue" | "Due in 7 days" | "Not due";
 const DUE_VIEWS: Due[] = ["All", "Overdue", "Due in 7 days", "Not due"];
@@ -37,6 +37,7 @@ export default function PendingReturnablePage() {
   const [search, setSearch] = useState("");
   const [due, setDue] = useState<Due>("All");
   const [center, setCenter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // challan date
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -62,35 +63,61 @@ export default function PendingReturnablePage() {
     const q = search.toLowerCase();
     const lines = itemsOf.get(String(r.DeliveryChallanId)) || [];
     return (due === "All" || dueState(r) === due) && (!center || r.JobWorkerId === center)
-      && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.DispatchLocName, r.VehicleNo, r.RequestNo, ...lines.map((l) => l.ItemName), ...lines.map((l) => l.ItemCode)].some((v) => v?.toLowerCase().includes(q)));
+      && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.DispatchLocName, r.VehicleNo, r.RequestNo, ...lines.map((l) => l.ItemName), ...lines.map((l) => l.ItemCode)].some((v) => v?.toLowerCase().includes(q)))
+      && inDateRange(r.ChallanDate, range);
   });
   const count = (d: Exclude<Due, "All">) => challans.filter((r) => dueState(r) === d).length;
   const centers = Array.from(new Map(challans.map((r) => [r.JobWorkerId, r.JobWorkerName])).entries()).map(([value, label]) => ({ value, label: label || "—" }));
 
   // Two sheets: one row per challan, and one row per item still out (both follow the filters on screen).
   const exportExcel = () => {
-    const challanRows = filtered.map((r) => ({
-      "Challan No": r.ChallanNo, "Challan Date": formatDate(r.ChallanDate), "Expected Back By": r.ExpectedBackBy ? formatDate(r.ExpectedBackBy) : "",
-      Status: dueState(r), "Days Out": Number(r.DaysOut), "Days Overdue": Math.max(0, Number(r.DaysOverdue) || 0),
-      "Job Worker": r.JobWorkerName || "", "Job Worker Code": r.JobWorkerCode || "", "Contact Person": r.ContactPerson || "", Mobile: r.Mobile || "",
-      "Party Kind": r.PartyKind || "", Purpose: r.Purpose || "", "Dispatched From": r.DispatchLocName || "", "Material Request": r.RequestNo || "",
-      Items: Number(r.ItemCount), "Total Qty": Number(r.TotalQty), "Value (₹)": Number(r.TotalValue),
-      Transporter: r.TransporterName || "", Mode: r.TransportMode || "", "Vehicle No": r.VehicleNo || "", "LR / Docket No": r.LrNo || "", Remarks: r.Remarks || "",
-    }));
-    const itemRows = filtered.flatMap((r) => (itemsOf.get(String(r.DeliveryChallanId)) || []).map((l) => ({
-      "Challan No": r.ChallanNo, "Challan Date": formatDate(r.ChallanDate), "Expected Back By": r.ExpectedBackBy ? formatDate(r.ExpectedBackBy) : "", Status: dueState(r),
-      "Job Worker": r.JobWorkerName || "", Purpose: r.Purpose || "", "Line": Number(l.LineNo), "Item Code": l.ItemCode || "", Item: l.ItemName, Unit: l.Uom || "",
-      Qty: Number(l.Qty), "Value / Unit (₹)": Number(l.Rate), "Value (₹)": Number(l.Amount), "Item Remarks": l.Remarks || "",
-    })));
-    const wb = XLSX.utils.book_new();
-    const sheet = (rows: any[], name: string) => {
-      const ws = XLSX.utils.json_to_sheet(rows);
-      if (rows.length) ws["!cols"] = Object.keys(rows[0]).map((k) => ({ wch: Math.min(48, Math.max(k.length, ...rows.map((x) => String(x[k] ?? "").length)) + 2) }));
-      XLSX.utils.book_append_sheet(wb, ws, name);
-    };
-    sheet(challanRows, "Pending challans");
-    sheet(itemRows, "Pending items");
-    XLSX.writeFile(wb, `Pending_returnable_${dayjs().format("YYYY-MM-DD")}.xlsx`);
+    const itemRows = filtered.flatMap((r) => (itemsOf.get(String(r.DeliveryChallanId)) || []).map((l) => ({ r, l })));
+    return writeExcel({
+      title: "Pending Returnable Challans",
+      filters: { "Challan date": rangeLabel(range), Status: due !== "All" ? due : null, "Job worker": center ? centers.find((c) => c.value === center)?.label : null, Search: search || null },
+      sheets: [
+        { name: "Pending challans", rows: filtered, columns: [
+          { header: "Challan No.", value: (r: any) => r.ChallanNo },
+          { header: "Challan Date", value: (r: any) => r.ChallanDate, type: "date" },
+          { header: "Expected Back By", value: (r: any) => r.ExpectedBackBy, type: "date" },
+          { header: "Status", value: (r: any) => dueState(r) },
+          { header: "Days Out", value: (r: any) => Number(r.DaysOut), type: "number" },
+          { header: "Days Overdue", value: (r: any) => Math.max(0, Number(r.DaysOverdue) || 0), type: "number" },
+          { header: "Job Worker", value: (r: any) => r.JobWorkerName },
+          { header: "Job Worker Code", value: (r: any) => r.JobWorkerCode },
+          { header: "Contact Person", value: (r: any) => r.ContactPerson },
+          { header: "Mobile", value: (r: any) => r.Mobile },
+          { header: "Party Kind", value: (r: any) => r.PartyKind },
+          { header: "Purpose", value: (r: any) => r.Purpose },
+          { header: "Dispatched From", value: (r: any) => r.DispatchLocName },
+          { header: "Material Request", value: (r: any) => r.RequestNo },
+          { header: "Items", value: (r: any) => Number(r.ItemCount), type: "number", total: true },
+          { header: "Total Qty", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
+          { header: "Value", value: (r: any) => Number(r.TotalValue), type: "money", total: true },
+          { header: "Transporter", value: (r: any) => r.TransporterName },
+          { header: "Mode", value: (r: any) => r.TransportMode },
+          { header: "Vehicle No.", value: (r: any) => r.VehicleNo },
+          { header: "LR / Docket No.", value: (r: any) => r.LrNo },
+          { header: "Remarks", value: (r: any) => r.Remarks },
+        ] },
+        { name: "Pending items", rows: itemRows, columns: [
+          { header: "Challan No.", value: (x: any) => x.r.ChallanNo },
+          { header: "Challan Date", value: (x: any) => x.r.ChallanDate, type: "date" },
+          { header: "Expected Back By", value: (x: any) => x.r.ExpectedBackBy, type: "date" },
+          { header: "Status", value: (x: any) => dueState(x.r) },
+          { header: "Job Worker", value: (x: any) => x.r.JobWorkerName },
+          { header: "Purpose", value: (x: any) => x.r.Purpose },
+          { header: "Line", value: (x: any) => Number(x.l.LineNo), type: "number" },
+          { header: "Item Code", value: (x: any) => x.l.ItemCode },
+          { header: "Item", value: (x: any) => x.l.ItemName },
+          { header: "Unit", value: (x: any) => x.l.Uom },
+          { header: "Qty", value: (x: any) => Number(x.l.Qty), type: "number", total: true },
+          { header: "Value / Unit", value: (x: any) => Number(x.l.Rate), type: "money" },
+          { header: "Value", value: (x: any) => Number(x.l.Amount), type: "money", total: true },
+          { header: "Item Remarks", value: (x: any) => x.l.Remarks },
+        ] },
+      ],
+    });
   };
 
   const columns = [
@@ -118,7 +145,7 @@ export default function PendingReturnablePage() {
     <div className="space-y-4">
       <PageHeader icon={<RollbackOutlined />} title="Pending Returnable" subtitle="Returnable delivery challans whose material has not come back yet · overdue first · expand a row to see its items"
         actions={<>
-          <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!filtered.length}>Export Excel</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
         </>} />
 
@@ -133,6 +160,7 @@ export default function PendingReturnablePage() {
       <div className="filter-toolbar">
         <Segmented value={due} onChange={(v) => setDue(v as Due)} options={DUE_VIEWS.map((d) => ({ value: d, label: d === "All" ? `All (${challans.length})` : `${d} (${count(d)})` }))} />
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search challan, job worker, item, vehicle..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Challan date from", "to"]} />
         <Select allowClear showSearch optionFilterProp="label" placeholder="Job worker: All" value={center} onChange={setCenter} options={centers} className="w-56" />
       </div>
 

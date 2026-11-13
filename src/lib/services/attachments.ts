@@ -119,6 +119,30 @@ export async function insertAttachments(run: Run, parentTable: string, parentId:
   }
 }
 
+/**
+ * Mobile app (requests signed in with "Authorization: Bearer …"): turns the relative "/api/attachments/<id>" links
+ * into full ones — server address + path + "?access_token=<the caller's own token>" — so the app's image and video
+ * players can open them as they are (they send neither the server address nor the Authorization header).
+ * The server address is PUBLIC_BASE_URL when set (e.g. https://warranty.example.com), otherwise the address the app called.
+ * The website (login cookie) keeps the short links, unchanged.
+ */
+export function withAppFileUrls<T extends { FileUrl?: string | null }>(request: Request, rows: T[]): T[] {
+  const auth = request.headers.get("authorization") || "";
+  if (!/^bearer\s+\S/i.test(auth)) return rows;
+  const token = auth.replace(/^bearer\s+/i, "").trim();
+  let base = String(process.env.PUBLIC_BASE_URL || "").trim().replace(/\/+$/, "");
+  if (!base) {
+    const host = request.headers.get("x-forwarded-host") || request.headers.get("host");
+    const proto = (request.headers.get("x-forwarded-proto") || "").split(",")[0].trim() || new URL(request.url).protocol.replace(":", "");
+    base = host ? `${proto}://${host}` : new URL(request.url).origin;
+  }
+  return rows.map((r) => {
+    const url = String(r.FileUrl || "");
+    if (!url.startsWith("/api/attachments/")) return r;
+    return { ...r, FileUrl: `${base}${url}${url.includes("?") ? "&" : "?"}access_token=${encodeURIComponent(token)}` };
+  });
+}
+
 export async function readAttachmentFile(id: string, fileType: string) {
   return readFile(path.join(UPLOAD_DIR, `${id}.${TYPES[fileType] || "jpg"}`));
 }

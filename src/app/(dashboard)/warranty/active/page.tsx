@@ -5,10 +5,9 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import dayjs from "dayjs";
-import * as XLSX from "xlsx";
 import QRCode from "qrcode";
 import { Alert, AutoComplete, Button, Drawer, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Tooltip, message } from "antd";
-import { DeleteOutlined, DownloadOutlined, EditOutlined, PrinterOutlined, ReloadOutlined, SafetyCertificateOutlined, SearchOutlined, ToolOutlined } from "@ant-design/icons";
+import { AppstoreOutlined, CalendarOutlined, CheckCircleOutlined, DeleteOutlined, EditOutlined, EnvironmentOutlined, PrinterOutlined, ReloadOutlined, SafetyCertificateOutlined, SearchOutlined, ShopOutlined, ToolOutlined } from "@ant-design/icons";
 import { useWarrantyStore, Warranty } from "@/lib/store/useWarrantyStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
@@ -17,11 +16,14 @@ import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/comm
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
 import { FormSection } from "@/components/common/FormSection";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { FilterBar } from "@/components/common/FilterBar";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { ServiceCallFormDrawer } from "@/components/service/ServiceCallFormDrawer";
 import { WarrantyCard, printCard } from "@/components/warranty/WarrantyCard";
 import { districtOptions } from "@/lib/utils/selectOptions";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 type WStatus = { key: "active" | "expiring" | "expired" | "replaced" | "void"; text: string; color: string; days: number };
 /** Same buckets as the prototype: Replaced / Void from the record, else Expired, Expiring (≤ 45 days) or Active. */
@@ -52,6 +54,7 @@ export default function ActiveWarrantiesPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>();
   const [stateFilter, setStateFilter] = useState<string>();
   const [dealerFilter, setDealerFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // registration date
 
   const [card, setCard] = useState<{ installation: any; warranties: any[]; qr?: string } | null>(null);
   const [cardLoading, setCardLoading] = useState(false);
@@ -72,7 +75,8 @@ export default function ActiveWarrantiesPage() {
     const q = search.toLowerCase();
     return (!q || [w.SerialNo, w.WarrantyNo, w.CustomerName, w.CustomerMobile, w.InstallNo, w.District, w.DealerName].some((v) => v?.toLowerCase().includes(q)))
       && (!statusFilter || w.s.text === statusFilter) && (!categoryFilter || w.Category === categoryFilter)
-      && (!stateFilter || w.StateName === stateFilter) && (!dealerFilter || (w.DealerName || "Direct") === dealerFilter);
+      && (!stateFilter || w.StateName === stateFilter) && (!dealerFilter || (w.DealerName || "Direct") === dealerFilter)
+      && inDateRange(w.RegisteredOn || w.StartDate, range);
   });
   const count = (k: WStatus["key"]) => rows.filter((r) => r.s.key === k).length;
   const opts = (values: (string | undefined)[]) => Array.from(new Set(values.filter(Boolean) as string[])).sort().map((v) => ({ value: v, label: v }));
@@ -142,16 +146,22 @@ export default function ActiveWarrantiesPage() {
     }
   };
 
-  const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(filtered.map((w) => ({
-      "Warranty No": w.WarrantyNo, "Serial No": w.SerialNo, Component: w.Category, Model: w.ModelName || "", Customer: w.CustomerName || "", Mobile: w.CustomerMobile || "",
-      Place: [w.District, w.StateShort || w.StateName].filter(Boolean).join(", "), Dealer: w.DealerName || "Direct", Registered: dmy(w.RegisteredOn), "Registered By": w.RegisteredBy || "",
-      "Valid From": dmy(w.StartDate), "Valid Till": dmy(w.EndDate), "Balance (days)": w.s.key === "active" || w.s.key === "expiring" ? w.s.days : "", Status: w.s.text,
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Warranties");
-    XLSX.writeFile(wb, `Active_Warranty_List_${dayjs().format("YYYYMMDD")}.xlsx`);
-  };
+  const exportExcel = () => exportTable(role === "CUSTOMER" ? "My Warranty" : "Active Warranty List", [
+    { header: "Warranty No", value: (w: any) => w.WarrantyNo },
+    { header: "Serial No", value: (w: any) => w.SerialNo },
+    { header: "Component", value: (w: any) => w.Category },
+    { header: "Model", value: (w: any) => w.ModelName },
+    { header: "Customer", value: (w: any) => w.CustomerName },
+    { header: "Mobile", value: (w: any) => w.CustomerMobile },
+    { header: "Place", value: (w: any) => [w.District, w.StateShort || w.StateName].filter(Boolean).join(", ") },
+    { header: "Dealer", value: (w: any) => w.DealerName || "Direct" },
+    { header: "Registered", value: (w: any) => w.RegisteredOn, type: "date" },
+    { header: "Registered By", value: (w: any) => w.RegisteredBy },
+    { header: "Valid From", value: (w: any) => w.StartDate, type: "date" },
+    { header: "Valid Till", value: (w: any) => w.EndDate, type: "date" },
+    { header: "Balance (days)", value: (w: any) => (w.s.key === "active" || w.s.key === "expiring" ? w.s.days : null), type: "number" },
+    { header: "Status", value: (w: any) => w.s.text },
+  ], filtered, { Registered: rangeLabel(range), Status: statusFilter, Category: categoryFilter, State: stateFilter, Dealer: dealerFilter, Search: search || null }, "Warranties");
 
   /* ---------- table ---------- */
   const columns = [
@@ -184,7 +194,7 @@ export default function ActiveWarrantiesPage() {
       <PageHeader icon={<SafetyCertificateOutlined />} title={role === "CUSTOMER" ? "My Warranty" : "Active Warranty List"} subtitle={`${rows.length} component warranties · pump, motor and controller each carry their own period`}
         actions={<>
           {role !== "CUSTOMER" && <Button icon={<SafetyCertificateOutlined />} onClick={() => router.push("/warranty/register")}>Register Warranty</Button>}
-          <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!filtered.length}>Export Excel</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={isLoading}>Refresh</Button>
         </>} />
 
@@ -196,14 +206,25 @@ export default function ActiveWarrantiesPage() {
         { label: "Installations", value: new Set(rows.map((r) => r.InstallationId)).size },
       ]} />
 
-      <div className="filter-toolbar">
-        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search serial, customer, mobile, warranty no…" value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
-        <Select allowClear placeholder="Status: All" value={statusFilter} onChange={setStatusFilter} className="w-36" options={["Active", "Expiring", "Expired", "Replaced", "Void"].map((s) => ({ value: s, label: s }))} />
-        <Select allowClear placeholder="Category: All" value={categoryFilter} onChange={setCategoryFilter} className="w-40" options={["PUMP", "MOTOR", "CONTROLLER"].map((c) => ({ value: c, label: c[0] + c.slice(1).toLowerCase() }))} />
-        <Select allowClear showSearch placeholder="State: All" value={stateFilter} onChange={setStateFilter} className="w-44" options={opts(rows.map((r) => r.StateName))} />
-        {role !== "DEALER" && <Select allowClear showSearch placeholder="Dealer: All" value={dealerFilter} onChange={setDealerFilter} className="w-52" options={opts(rows.map((r) => r.DealerName || "Direct"))} />}
-        <span className="ml-auto text-xs text-slate-400">{filtered.length} records</span>
-      </div>
+      <FilterBar
+        storageKey="active-warranties"
+        search={{ value: search, onChange: setSearch, placeholder: "Search serial, customer, mobile, warranty no…" }}
+        extra={<span className="text-xs text-slate-400">{filtered.length} records</span>}
+        filters={[
+          { key: "date", label: "Registered", icon: <CalendarOutlined />, pinned: true, active: !!(range?.[0] || range?.[1]), onClear: () => setRange(null),
+            render: () => <DateRangeFilter variant="borderless" value={range} onChange={setRange} placeholder={["From", "To"]} className="" /> },
+          { key: "status", label: "Status", icon: <CheckCircleOutlined />, pinned: true, active: !!statusFilter, onClear: () => setStatusFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={statusFilter} onChange={setStatusFilter} popupMatchSelectWidth={false} options={["Active", "Expiring", "Expired", "Replaced", "Void"].map((s) => ({ value: s, label: s }))} /> },
+          { key: "category", label: "Category", group: "Product details", icon: <AppstoreOutlined />, active: !!categoryFilter, onClear: () => setCategoryFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={categoryFilter} onChange={setCategoryFilter} popupMatchSelectWidth={false} options={["PUMP", "MOTOR", "CONTROLLER"].map((c) => ({ value: c, label: c[0] + c.slice(1).toLowerCase() }))} /> },
+          { key: "state", label: "State", group: "Location & dealer", icon: <EnvironmentOutlined />, active: !!stateFilter, onClear: () => setStateFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={stateFilter} onChange={setStateFilter} popupMatchSelectWidth={false} options={opts(rows.map((r) => r.StateName))} /> },
+          ...(role !== "DEALER" ? [
+            { key: "dealer", label: "Dealer", group: "Location & dealer", icon: <ShopOutlined />, active: !!dealerFilter, onClear: () => setDealerFilter(undefined),
+              render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={dealerFilter} onChange={setDealerFilter} popupMatchSelectWidth={false} options={opts(rows.map((r) => r.DealerName || "Direct"))} /> },
+          ] : []),
+        ]}
+      />
 
       <div className={TABLE_CARD}>
         <Table dataSource={filtered} columns={columns} rowKey="WarrantyId" size="middle" loading={isLoading} scroll={{ x: 1450 }}

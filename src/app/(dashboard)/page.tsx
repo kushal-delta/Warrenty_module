@@ -14,6 +14,7 @@ import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 import { canUseForm } from "@/lib/auth/forms";
 import { PortalHome } from "@/components/portal/PortalHome";
 import { WarehouseDashboard } from "@/components/dashboard/WarehouseDashboard";
+import { WarrantyRunway, type ExpiringWarranty, type RunwayMonth, type RunwayStats } from "@/components/dashboard/WarrantyRunway";
 import { PageLoader } from "@/components/common/Loader";
 
 interface Overview {
@@ -23,6 +24,9 @@ interface Overview {
   callsByStatus: { status: string; count: number }[];
   installationsByDealer: { name: string; count: number }[];
   attention: { kind: string; title: string; subtitle: string; url: string }[];
+  runway?: RunwayMonth[];
+  runwayStats?: RunwayStats;
+  expiringSoon?: ExpiringWarranty[];
 }
 
 /** Call statuses in workflow order, mapped onto the validated categorical order. */
@@ -156,6 +160,8 @@ function StaffDashboard() {
             </Card>
           </div>
 
+          <WarrantyRunway runway={data?.runway || []} stats={data?.runwayStats} soonest={data?.expiringSoon || []} />
+
           <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-4 gap-4">
             <Card title="Needs attention" aside={data ? `${data.attention.length} items` : undefined} className="lg:col-span-2">
               {data && !data.attention.length ? (
@@ -176,8 +182,8 @@ function StaffDashboard() {
             </Card>
 
             <Card title="Calls by status" aside={<Link href="/service/complaints" className="text-blue-600">open register</Link>}>
-              <div className="flex flex-col items-center gap-5">
-                <DonutChart segments={callSegments} centerValue={totalCalls} centerLabel="calls" size={190} />
+              <div className="h-full flex flex-col items-center justify-center gap-6">
+                <DonutChart segments={callSegments} centerValue={totalCalls} centerLabel="calls" size={230} />
                 <Legend items={callSegments.map((s) => ({ label: s.label, color: s.color, value: s.value }))} />
               </div>
             </Card>
@@ -185,7 +191,16 @@ function StaffDashboard() {
             <Card title="Installations by dealer" aside="top 6">
               {data && !data.installationsByDealer.length
                 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No installations yet" />
-                : <RankedBars items={(data?.installationsByDealer || []).map((d) => ({ name: d.name, value: d.count }))} color={VIZ.blue} />}
+                : (
+                  <div className="h-full flex flex-col gap-4">
+                    <div className="flex-1 min-h-0">
+                      <RankedBars fill items={(data?.installationsByDealer || []).map((d) => ({ name: d.name, value: d.count }))} color={VIZ.blue} />
+                    </div>
+                    <div className="pt-3 border-t border-slate-100 text-xs text-slate-500">
+                      <b className="text-slate-900">{(data?.installationsByDealer || []).reduce((s, d) => s + (Number(d.count) || 0), 0).toLocaleString("en-IN")}</b> installations across the top {(data?.installationsByDealer || []).length} dealers
+                    </div>
+                  </div>
+                )}
             </Card>
           </div>
         </div>

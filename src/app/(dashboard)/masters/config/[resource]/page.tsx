@@ -15,6 +15,8 @@ import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { PageHeader, TABLE_CARD, fieldLabel, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable, type ExcelColumn } from "@/lib/utils/excelExport";
 
 /** One generic list + entry drawer for every master defined in lib/config/masters.ts. */
 export default function ConfigMasterPage({ params }: { params: { resource: string } }) {
@@ -112,10 +114,24 @@ export default function ConfigMasterPage({ params }: { params: { resource: strin
     ) },
   ];
 
+  const exportExcel = () => exportTable(config.title, config.fields.filter((f) => f.kind !== "text").map((f): ExcelColumn<any> => ({
+    header: f.label,
+    type: f.kind === "money" ? "money" : f.kind === "number" ? "number" : f.kind === "percent" ? "percent" : f.kind === "date" ? "date" : "text",
+    value: (r: any) => {
+      const v = r[f.name];
+      if (v === null || v === undefined || v === "") return null;
+      if (f.kind === "boolean") return v ? "Yes" : "No";
+      if (f.kind === "state") return states.find((s) => s.StateId === v)?.StateName || null;
+      if (f.kind === "user") { const u = users.find((x) => x.UserId === v); return u ? `${u.FirstName} ${u.LastName || ""}`.trim() : null; }
+      return v;
+    },
+  })), filtered, { Search: search || null });
+
   return (
     <div className="space-y-4">
       <PageHeader icon={<SettingOutlined />} title={config.title} subtitle={config.description}
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">Add</Button>
         </>} />

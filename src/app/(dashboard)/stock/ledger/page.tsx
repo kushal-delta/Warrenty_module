@@ -15,6 +15,8 @@ import { PageHeader, TABLE_CARD, fieldLabel, inr } from "@/components/common/Pag
 import { STOCK_TXN_TYPES } from "@/lib/config/service";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const TXN_COLOR: Record<string, string> = { Opening: "blue", Receipt: "green", Transfer: "purple", "Issue-Out": "orange", Consume: "red", "Return-Damaged": "magenta", "Adjust-In": "cyan", "Adjust-Out": "gold" };
 
@@ -39,6 +41,7 @@ export default function StockLedgerPage() {
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // transaction date
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<StockTxn | null>(null);
@@ -75,8 +78,27 @@ export default function StockLedgerPage() {
 
   const filtered = txns.filter((t) => {
     const q = search.toLowerCase();
-    return (!typeFilter || t.TxnType === typeFilter) && (!q || [t.SpareCode, t.SpareName, t.FromLocName, t.ToLocName, t.JobCardNo, t.Remarks].some((v) => v?.toLowerCase().includes(q)));
+    return (!typeFilter || t.TxnType === typeFilter) && (!q || [t.SpareCode, t.SpareName, t.FromLocName, t.ToLocName, t.JobCardNo, t.Remarks].some((v) => v?.toLowerCase().includes(q)))
+      && inDateRange(t.TxnDate, range);
   });
+
+  const exportExcel = () => exportTable("Stock Ledger", [
+    { header: "Date", value: (t: StockTxn) => t.TxnDate, type: "date" },
+    { header: "Type", value: (t: StockTxn) => STOCK_TXN_TYPES[t.TxnType]?.label || t.TxnType },
+    { header: "Spare Code", value: (t: StockTxn) => t.SpareCode },
+    { header: "Spare", value: (t: StockTxn) => t.SpareName },
+    { header: "From", value: (t: StockTxn) => t.FromLocName || (t.TxnType === "Receipt" ? "Supplier" : null) },
+    { header: "To", value: (t: StockTxn) => t.ToLocName || (t.TxnType === "Consume" ? "Customer" : null) },
+    { header: "Qty", value: (t: StockTxn) => t.Qty, type: "number", total: true },
+    { header: "UOM", value: (t: StockTxn) => t.Uom },
+    { header: "Amount ₹", value: (t: StockTxn) => t.Amount, type: "money", total: true },
+    { header: "Job Card", value: (t: StockTxn) => t.JobCardNo },
+    { header: "Remarks", value: (t: StockTxn) => t.Remarks },
+  ], filtered, {
+    Date: rangeLabel(range),
+    Type: typeFilter ? (typeFilter === "Consume" ? "Consumed on job card" : STOCK_TXN_TYPES[typeFilter]?.label || typeFilter) : null,
+    Search: search || null,
+  }, "Stock ledger");
 
   const columns = [
     { title: "Date", dataIndex: "TxnDate", key: "date", width: 100, render: (v: string) => formatDate(v) },
@@ -94,12 +116,14 @@ export default function StockLedgerPage() {
     <div className="space-y-4">
       <PageHeader icon={<SwapOutlined />} title="Stock Ledger & Entry" subtitle="Receipts, transfers, issues and adjustments are entered here · job card approval posts consumption automatically"
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>
           {canPost && <Button type="primary" icon={<PlusOutlined />} onClick={openForm} className="bg-blue-600 shadow-sm">New Stock Entry</Button>}
         </>} />
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search spare, location, job card, remarks..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Txn date from", "to"]} />
         <Select placeholder="All Types" value={typeFilter} onChange={setTypeFilter} allowClear className="w-48" options={[...Object.entries(STOCK_TXN_TYPES).map(([k, v]) => ({ value: k, label: v.label })), { value: "Consume", label: "Consumed on job card" }]} />
       </div>
 

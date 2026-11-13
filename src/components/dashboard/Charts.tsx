@@ -164,10 +164,11 @@ export function DonutChart({ segments, centerValue, centerLabel, size = 210 }: {
 }
 
 /** Horizontal ranked bars (single series): name, bar on a track, value. */
-export function RankedBars({ items, color = VIZ.blue }: { items: { name: string; value: number }[]; color?: string }) {
+/** fill: spread the rows evenly over the parent's full height (used where the card is taller than its rows). */
+export function RankedBars({ items, color = VIZ.blue, fill = false }: { items: { name: string; value: number }[]; color?: string; fill?: boolean }) {
   const max = Math.max(1, ...items.map((i) => i.value));
   return (
-    <div className="space-y-3">
+    <div className={fill ? "h-full flex flex-col justify-around gap-3" : "space-y-3"}>
       {items.map((i) => (
         <div key={i.name} className="grid grid-cols-[minmax(0,9.5rem)_1fr_2rem] items-center gap-3 text-[13px]" title={`${i.name}: ${i.value}`}>
           <span className="truncate text-slate-700">{i.name}</span>

@@ -2,29 +2,23 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import * as XLSX from "xlsx";
-import { Button, DatePicker, Input, Select, Table, Tag, Tooltip } from "antd";
-import { CloseCircleOutlined, DatabaseOutlined, DownloadOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
-import type { Dayjs } from "dayjs";
+import { Button, Select, Table, Tag, Tooltip } from "antd";
+import { AlertOutlined, AppstoreOutlined, CalendarOutlined, DatabaseOutlined, HomeOutlined, ReloadOutlined } from "@ant-design/icons";
 import { PageHeader, StatStrip, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, type DateRange } from "@/components/common/ReportTools";
+import { FilterBar } from "@/components/common/FilterBar";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const qty = (n: unknown) => Number(Number(n || 0).toFixed(3)).toLocaleString("en-IN", { maximumFractionDigits: 3 });
 /** Same tag colours as the rest of the app (green ok, gold warning, red problem). */
 const STATUS_COLOR: Record<string, string> = { OK: "green", "Over maximum": "blue", "Below minimum": "gold", "Out of stock": "red", "No levels set": "default" };
 const STATUSES = ["OK", "Over maximum", "Below minimum", "Out of stock", "No levels set"];
-const RANGE_PRESETS: { label: string; value: [Dayjs, Dayjs] }[] = [
-  { label: "This month", value: [dayjs().startOf("month"), dayjs()] },
-  { label: "Last month", value: [dayjs().subtract(1, "month").startOf("month"), dayjs().subtract(1, "month").endOf("month")] },
-  { label: "Last 30 days", value: [dayjs().subtract(29, "day"), dayjs()] },
-  { label: "This financial year", value: [dayjs().month() >= 3 ? dayjs().month(3).startOf("month") : dayjs().subtract(1, "year").month(3).startOf("month"), dayjs()] },
-];
 const Qty = ({ v, uom, tone }: { v: number; uom?: string; tone?: string }) => <span className={tone}>{qty(v)}<span className="ml-1 text-[11px] text-slate-400">{uom || ""}</span></span>;
 
 /** Spares Stock → Warehouse Stock: opening, inward (GRN), outward (returns against RDC) and closing per warehouse and item. */
 export default function WarehouseStockPage() {
-  const [range, setRange] = useState<[Dayjs | null, Dayjs | null] | null>(null);
+  const [range, setRange] = useState<DateRange>(null); // stock movement period, sent to the API
   const [warehouseId, setWarehouseId] = useState<string>();
   const [itemKeys, setItemKeys] = useState<string[]>([]);
   const [status, setStatus] = useState<string>();
@@ -54,18 +48,32 @@ export default function WarehouseStockPage() {
   });
   const showWarehouse = !warehouseId && warehouses.length !== 1;
   const value = (k: string) => rows.reduce((s, r) => s + Number(r[k] || 0) * Number(r.Rate || 0), 0);
-  const activeFilters = [range?.[0] || range?.[1], warehouseId, itemKeys.length ? 1 : null, status, search].filter(Boolean).length;
   const periodText = range?.[0] && range?.[1] ? `${range[0].format("DD MMM YYYY")} – ${range[1].format("DD MMM YYYY")}` : "All dates";
 
   const exportExcel = () => {
-    const ws = XLSX.utils.json_to_sheet(rows.map((r) => ({
-      Warehouse: r.WarehouseName, "Item code": r.ItemCode || "", Item: r.ItemName, Group: r.Group, Unit: r.Uom || "",
-      Opening: Number(r.Opening), Inward: Number(r.Inward), Outward: Number(r.Outward), Closing: Number(r.Closing),
-      Rate: r.Rate, "Closing value": Number((r.Closing * r.Rate).toFixed(2)), "Min level": r.Min ?? "", "Max level": r.Max ?? "", Status: r.Status,
-    })));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Warehouse stock");
-    XLSX.writeFile(wb, `Warehouse_stock_${dayjs().format("YYYY-MM-DD")}.xlsx`);
+    const wh = warehouses.find((w) => w.WarehouseId === warehouseId);
+    return exportTable("Warehouse Stock", [
+      { header: "Warehouse", value: (r: any) => r.WarehouseName },
+      { header: "Item Code", value: (r: any) => r.ItemCode },
+      { header: "Item", value: (r: any) => r.ItemName },
+      { header: "Group", value: (r: any) => r.Group },
+      { header: "Unit", value: (r: any) => r.Uom },
+      { header: "Opening", value: (r: any) => Number(r.Opening), type: "number" },
+      { header: "Inward", value: (r: any) => Number(r.Inward), type: "number" },
+      { header: "Outward", value: (r: any) => Number(r.Outward), type: "number" },
+      { header: "Closing", value: (r: any) => Number(r.Closing), type: "number" },
+      { header: "Rate", value: (r: any) => r.Rate, type: "money" },
+      { header: "Closing Value", value: (r: any) => Number(r.Closing) * Number(r.Rate || 0), type: "money", total: true },
+      { header: "Min Level", value: (r: any) => r.Min, type: "number" },
+      { header: "Max Level", value: (r: any) => r.Max, type: "number" },
+      { header: "Status", value: (r: any) => r.Status },
+    ], rows, {
+      Period: rangeLabel(range),
+      Warehouse: wh ? `${wh.WarehouseName} (${wh.WarehouseCode})` : null,
+      Items: itemKeys.length ? itemOptions.filter((o) => itemKeys.includes(o.value)).map((o) => o.label).join(", ") : null,
+      Status: status,
+      Search: search || null,
+    }, "Warehouse stock");
   };
 
   const columns = [
@@ -89,18 +97,24 @@ export default function WarehouseStockPage() {
     <div className="space-y-4">
       <PageHeader icon={<DatabaseOutlined />} title="Warehouse Stock" subtitle={`Opening + inward (goods receipts) − outward (returns against RDC, material issues) = closing, per warehouse and item · ${periodText}`}
         actions={<>
-          <Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!rows.length}>Export Excel</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!rows.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
         </>} />
 
-      <div className="filter-toolbar">
-        <DatePicker.RangePicker value={range as any} onChange={(v) => setRange(v as any)} format="DD/MM/YYYY" allowClear presets={RANGE_PRESETS} placeholder={["From date", "To date"]} className="min-w-64" />
-        <Select allowClear showSearch optionFilterProp="label" placeholder="Warehouse: All" value={warehouseId} onChange={(v) => { setWarehouseId(v); setItemKeys([]); }} options={warehouses.map((w) => ({ value: w.WarehouseId, label: `${w.WarehouseName} (${w.WarehouseCode})` }))} />
-        <Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="Item: All" value={itemKeys} onChange={setItemKeys} options={itemOptions} maxTagCount="responsive" className="min-w-64" />
-        <Select allowClear placeholder="Status: All" value={status} onChange={setStatus} options={STATUSES.map((s) => ({ value: s, label: s }))} />
-        <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search item, code, group..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
-        {activeFilters > 0 && <Button type="link" icon={<CloseCircleOutlined />} onClick={() => { setRange(null); setWarehouseId(undefined); setItemKeys([]); setStatus(undefined); setSearch(""); }} className="!px-1">Clear filters ({activeFilters})</Button>}
-      </div>
+      <FilterBar
+        storageKey="stock-warehouse-stock"
+        search={{ value: search, onChange: setSearch, placeholder: "Search item, code, group..." }}
+        filters={[
+          { key: "date", label: "Movement", icon: <CalendarOutlined />, pinned: true, active: !!(range?.[0] || range?.[1]), onClear: () => setRange(null),
+            render: () => <DateRangeFilter variant="borderless" value={range} onChange={setRange} placeholder={["From", "To"]} className="" /> },
+          { key: "warehouse", label: "Warehouse", icon: <HomeOutlined />, pinned: true, active: !!warehouseId, onClear: () => { setWarehouseId(undefined); setItemKeys([]); },
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={warehouseId} onChange={(v) => { setWarehouseId(v); setItemKeys([]); }} popupMatchSelectWidth={false} options={warehouses.map((w) => ({ value: w.WarehouseId, label: `${w.WarehouseName} (${w.WarehouseCode})` }))} /> },
+          { key: "items", label: "Item", group: "Stock", icon: <AppstoreOutlined />, active: itemKeys.length > 0, onClear: () => setItemKeys([]),
+            render: () => <Select variant="borderless" mode="multiple" placeholder="All" allowClear showSearch optionFilterProp="label" value={itemKeys} onChange={setItemKeys} popupMatchSelectWidth={false} options={itemOptions} maxTagCount="responsive" className="min-w-64" /> },
+          { key: "status", label: "Status", group: "Stock", icon: <AlertOutlined />, active: !!status, onClear: () => setStatus(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={status} onChange={setStatus} popupMatchSelectWidth={false} options={STATUSES.map((s) => ({ value: s, label: s }))} /> },
+        ]}
+      />
 
       <StatStrip items={[
         { label: "Items", value: rows.length },

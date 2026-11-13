@@ -1,13 +1,14 @@
 "use client";
 
 import React, { useEffect, useMemo, useState } from "react";
-import * as XLSX from "xlsx";
 import { Button, Empty, Table } from "antd";
-import { DownloadOutlined, ReloadOutlined, TeamOutlined } from "@ant-design/icons";
+import { ReloadOutlined, TeamOutlined } from "@ant-design/icons";
 import { useStockStore } from "@/lib/store/useStockStore";
 import { PageHeader, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { PageLoader } from "@/components/common/Loader";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportExcel as exportWorkbook, type ExcelColumn } from "@/lib/utils/excelExport";
 
 /** Engineer-wise Stock: good stock carried by each field engineer — a card per engineer and a spare × engineer matrix. */
 export default function EngineerStockPage() {
@@ -36,10 +37,26 @@ export default function EngineerStockPage() {
   }, [stock]);
 
   const exportExcel = () => {
-    const aoa = [["Spare", "Code", ...engineers.map((e) => e.name), "Total"], ...spares.map((s) => [s.name, s.code, ...engineers.map((e) => cell(e.id, s.id) ?? 0), engineers.reduce((t, e) => t + (cell(e.id, s.id) ?? 0), 0)])];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Engineer stock");
-    XLSX.writeFile(wb, "Engineer_wise_stock.xlsx");
+    const matrix: ExcelColumn<any>[] = [
+      { header: "Spare", value: (s: any) => s.name },
+      { header: "Code", value: (s: any) => s.code },
+      ...engineers.map((e): ExcelColumn<any> => ({ header: e.name.trim(), value: (s: any) => cell(e.id, s.id) ?? 0, type: "number", total: true })),
+      { header: "Total", value: (s: any) => engineers.reduce((t, e) => t + (cell(e.id, s.id) ?? 0), 0), type: "number", total: true },
+    ];
+    const summary: ExcelColumn<any>[] = [
+      { header: "Engineer", value: (e: any) => e.name.trim() },
+      { header: "Service Centre", value: (e: any) => e.centre },
+      { header: "Spares", value: (e: any) => e.lines, type: "number" },
+      { header: "Units", value: (e: any) => e.units, type: "number", total: true },
+      { header: "Value ₹", value: (e: any) => e.value, type: "money", total: true },
+    ];
+    return exportWorkbook({
+      title: "Engineer-wise Stock",
+      sheets: [
+        { name: "Engineer stock", title: "Engineer-wise Stock — spare × engineer (good units)", columns: matrix, rows: spares },
+        { name: "Engineer summary", title: "Engineer-wise Stock — summary per engineer", columns: summary, rows: engineers },
+      ],
+    });
   };
 
   if (!loaded) return <PageLoader label="Loading engineer stock…" minHeight="50vh" />;
@@ -53,7 +70,7 @@ export default function EngineerStockPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon={<TeamOutlined />} title="Engineer-wise Stock" subtitle="Good stock carried by each field engineer"
-        actions={<><Button icon={<DownloadOutlined />} onClick={exportExcel} disabled={!engineers.length}>Export Excel</Button><Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button></>} />
+        actions={<><ExportExcelButton onExport={exportExcel} disabled={!engineers.length} /><Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button></>} />
 
       {!engineers.length ? (
         <div className="bg-white rounded-xl border border-slate-200 p-10"><Empty description="No engineer stock yet — transfer spares to an engineer in Stock Ledger & Entry" /></div>

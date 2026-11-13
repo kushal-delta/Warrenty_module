@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
       jScope += ` AND j.[InsertedByUserId] = ${me}`;
     }
 
-    const [warrantyKpi, callKpi, dealerKpi, costKpi, months, position, byStatus, byDealer, pendingCards, rules, dealersPending, overdueCalls, unassigned, ending, remindersDue] = await Promise.all([
+    const [warrantyKpi, callKpi, dealerKpi, costKpi, months, position, byStatus, byDealer, pendingCards, rules, dealersPending, overdueCalls, unassigned, ending, remindersDue, runwayRows, runwayKpi, soonest] = await Promise.all([
       runQuery(`SELECT
           (SELECT COUNT(DISTINCT w.[InstallationId]) FROM dbo.[Warranties] w WHERE ${ACTIVE}${wScope}) AS [PumpSets],
           (SELECT COUNT(*) FROM dbo.[Installations] i WHERE 1 = 1${iScope}) AS [Installations],
@@ -79,10 +79,29 @@ export async function POST(request: NextRequest) {
         WHERE ${ACTIVE} AND w.[EndDate] < DATEADD(day, 45, SYSUTCDATETIME())${wScope} ORDER BY w.[EndDate]`, values),
       runQuery(`SELECT TOP 4 r.[ComplaintReminderId], r.[ReminderDate], r.[ReminderText], c.[ComplaintNo] FROM dbo.[ComplaintReminders] r JOIN dbo.[Complaints] c ON r.[ComplaintId] = c.[ComplaintId]
         WHERE r.[Status] = 'Pending' AND r.[ReminderDate] < DATEADD(day, 1, CAST(SYSUTCDATETIME() AS date))${callScope} ORDER BY r.[ReminderDate]`, values),
+      // Warranty runway: active component warranties ending in each of the next 12 months (current month first), per category.
+      runQuery(`SELECT CONVERT(char(7), w.[EndDate], 120) AS [Month],
+          SUM(CASE WHEN w.[Category] = 'PUMP' THEN 1 ELSE 0 END) AS [Pump],
+          SUM(CASE WHEN w.[Category] = 'MOTOR' THEN 1 ELSE 0 END) AS [Motor],
+          SUM(CASE WHEN w.[Category] = 'CONTROLLER' THEN 1 ELSE 0 END) AS [Controller]
+        FROM dbo.[Warranties] w
+        WHERE ${ACTIVE} AND w.[EndDate] < DATEADD(month, 12, DATEFROMPARTS(YEAR(SYSUTCDATETIME()), MONTH(SYSUTCDATETIME()), 1))${wScope}
+        GROUP BY CONVERT(char(7), w.[EndDate], 120) ORDER BY [Month]`, values),
+      runQuery(`SELECT
+          SUM(CASE WHEN w.[EndDate] < DATEADD(day, 30, SYSUTCDATETIME()) THEN 1 ELSE 0 END) AS [Days30],
+          SUM(CASE WHEN w.[EndDate] < DATEADD(day, 45, SYSUTCDATETIME()) THEN 1 ELSE 0 END) AS [Days45],
+          COUNT(*) AS [Days90]
+        FROM dbo.[Warranties] w WHERE ${ACTIVE} AND w.[EndDate] < DATEADD(day, 90, SYSUTCDATETIME())${wScope}`, values),
+      runQuery(`SELECT TOP 5 w.[SerialNo], w.[Category], CONVERT(char(10), w.[EndDate], 23) AS [EndDate], COALESCE(cu.[CustomerName], ic.[CustomerName]) AS [CustomerName]
+        FROM dbo.[Warranties] w
+        LEFT JOIN dbo.[Customers] cu ON w.[CustomerId] = cu.[CustomerId]
+        LEFT JOIN dbo.[Installations] wi ON w.[InstallationId] = wi.[InstallationId]
+        LEFT JOIN dbo.[Customers] ic ON wi.[CustomerId] = ic.[CustomerId]
+        WHERE ${ACTIVE}${wScope} ORDER BY w.[EndDate], w.[SerialNo]`, values),
     ]);
 
     const waitingForMe = pendingCards.filter((j: any) => canActOnRule(rulesFor(rules, Number(j.TotalEstimate)).find((r) => r.LevelNo === j.CurrentLevel), user, j.ServiceCenterId));
-    const w = warrantyKpi[0] || {}, c = callKpi[0] || {}, d = dealerKpi[0] || {}, cost = costKpi[0] || {}, p = position[0] || {};
+    const w = warrantyKpi[0] || {}, c = callKpi[0] || {}, d = dealerKpi[0] || {}, cost = costKpi[0] || {}, p = position[0] || {}, rk = runwayKpi[0] || {};
     const n = (v: unknown) => Number(v || 0);
     const date = (v: string) => new Date(v).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).replace(/ /g, "-");
     const title = (s: string) => (s ? s.charAt(0) + s.slice(1).toLowerCase() : "");
@@ -117,6 +136,10 @@ export async function POST(request: NextRequest) {
       callsByStatus: byStatus.map((s: any) => ({ status: s.Status, count: n(s.Count) })),
       installationsByDealer: byDealer.map((x: any) => ({ name: x.Name, count: n(x.Count) })),
       attention,
+      // Months with no endings are omitted here; the dashboard fills them with zeros.
+      runway: runwayRows.map((r: any) => ({ month: `${String(r.Month).trim()}-01`, pump: n(r.Pump), motor: n(r.Motor), controller: n(r.Controller) })),
+      runwayStats: { days30: n(rk.Days30), days45: n(rk.Days45), days90: n(rk.Days90) },
+      expiringSoon: soonest.map((x: any) => ({ SerialNo: x.SerialNo, Category: x.Category, CustomerName: x.CustomerName || null, EndDate: String(x.EndDate || "").trim() })),
     });
   } catch (err) {
     return handleApiError(err, "Failed to load dashboard");

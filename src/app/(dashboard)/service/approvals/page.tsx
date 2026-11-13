@@ -10,6 +10,8 @@ import { JobCardViewDrawer } from "@/components/service/JobCardViewDrawer";
 import { PageHeader, StatStrip, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 /** Job cards waiting on the signed-in approver. */
 export default function ApprovalsPage() {
@@ -18,9 +20,25 @@ export default function ApprovalsPage() {
   const [pending, setPending] = useState<JobCard[]>([]);
   const [viewId, setViewId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
+  const [range, setRange] = useState<DateRange>(null); // job card date
 
   const refresh = () => fetchJobCards({ pendingForMe: true }).then(setPending).catch((err) => reportFormError(err, { fallback: "Could not load approvals" }));
   useEffect(() => { refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const filtered = pending.filter((j) => inDateRange(j.JobCardDate, range));
+
+  const exportExcel = () => exportTable("Job Card Approvals", [
+    { header: "Job Card", value: (j: JobCard) => j.JobCardNo },
+    { header: "Date", value: (j: JobCard) => j.JobCardDate, type: "date" },
+    { header: "Call No", value: (j: JobCard) => j.ComplaintNo },
+    { header: "Customer", value: (j: JobCard) => j.CustomerName },
+    { header: "Mobile", value: (j: JobCard) => j.Mobile },
+    { header: "Engineer", value: (j: JobCard) => j.EngineerName?.trim() },
+    { header: "Service Center", value: (j: JobCard) => j.ServiceCenterName },
+    { header: "Total ₹", value: (j: JobCard) => j.TotalEstimate, type: "money", total: true },
+    { header: "Warranty ₹", value: (j: JobCard) => j.WarrantyAmount, type: "money", total: true },
+    { header: "At Level", value: (j: JobCard) => `L${j.LevelPosition} of ${j.LevelsRequired}` },
+    { header: "Pending With", value: (j: JobCard) => j.PendingRole },
+  ], filtered, { "Job card date": rangeLabel(range) }, "Approvals");
 
   const columns = [
     { title: "Job Card", dataIndex: "JobCardNo", key: "no", width: 140, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -36,7 +54,10 @@ export default function ApprovalsPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon={<AuditOutlined />} title="Job Card Approvals" subtitle="Repair estimates waiting for your decision · levels are set in Configuration → Approval Rules"
-        actions={<Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>} />
+        actions={<>
+          <Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
+        </>} />
 
       <StatStrip items={[
         { label: "Waiting for you", value: pending.length, tone: pending.length ? "warn" : "ok" },
@@ -44,8 +65,12 @@ export default function ApprovalsPage() {
         { label: "Active approval levels", value: approvalRules.filter((r: any) => r.IsActive).length },
       ]} />
 
+      <div className="filter-toolbar">
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Job card date from", "to"]} />
+      </div>
+
       <div className={TABLE_CARD}>
-        <Table dataSource={pending} columns={columns} rowKey="JobCardId" size="middle" loading={isLoading} scroll={{ x: 1000 }} pagination={false}
+        <Table dataSource={filtered} columns={columns} rowKey="JobCardId" size="middle" loading={isLoading} scroll={{ x: 1000 }} pagination={false}
           locale={{ emptyText: <Empty description="Nothing waiting for your approval" /> }} />
       </div>
 

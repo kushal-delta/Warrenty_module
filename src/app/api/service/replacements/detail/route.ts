@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { query } from "@/lib/sqlserver";
 import { fail, handleApiError, requireUser } from "@/lib/services/apiHelpers";
 import { OUT_OF_SCOPE, getScope, positionalParams, replacementFilter } from "@/lib/auth/scope";
+import { withAppFileUrls } from "@/lib/services/attachments";
 
 /** One replacement with its lines and attached PDF documents. */
 export async function POST(request: NextRequest) {
@@ -19,7 +20,8 @@ export async function POST(request: NextRequest) {
       query(`SELECT * FROM dbo.[ReplacementItemLns] WHERE [ReplacementId] = @p0 ORDER BY [LineNo]`, [ReplacementId]),
       query(`SELECT [AttachmentId], [FileUrl], [FileName], [FileType], [FileSize], [InsertedOn] FROM dbo.[Attachments] WHERE [ParentTable] = 'Replacements' AND [ParentId] = @p0 ORDER BY [InsertedOn]`, [ReplacementId]),
     ]);
-    return NextResponse.json({ success: true, replacement, lines, documents });
+    // Mobile app (Bearer): full links with the server address; the website keeps the short ones.
+    return NextResponse.json({ success: true, replacement, lines, documents: withAppFileUrls(request, documents as any[]) });
   } catch (err) {
     return handleApiError(err, "Failed to load replacement");
   }

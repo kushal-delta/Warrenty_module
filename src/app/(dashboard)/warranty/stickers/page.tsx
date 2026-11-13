@@ -15,12 +15,14 @@ import {
   message,
 } from "antd";
 import {
+  AppstoreOutlined,
   BarcodeOutlined,
+  CalendarOutlined,
+  CheckCircleOutlined,
   PlusOutlined,
   UploadOutlined,
   EditOutlined,
   DeleteOutlined,
-  SearchOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import { useWarrantyStore, Sticker } from "@/lib/store/useWarrantyStore";
@@ -32,11 +34,45 @@ import {
   DRAWER_HEADER_STYLE,
 } from "@/components/common/DrawerHeader";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { FilterBar } from "@/components/common/FilterBar";
 import { BulkUploadWizard } from "@/components/common/BulkUploadWizard";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import dayjs from "dayjs";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
+
+const BULK_CATEGORIES = ["PUMP", "MOTOR", "CONTROLLER"];
+const BULK_STATUSES = ["Generated", "Registered", "Replaced"];
+/** Bulk-upload Status cell → canonical value; blank means "Generated" (same default as the form). */
+function bulkStatus(v: any): string | null {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (!s) return "Generated";
+  return BULK_STATUSES.find((x) => s === x.toLowerCase() || s.startsWith(x.toLowerCase() + " ")) || null;
+}
+const MONTHS_SHORT = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+/**
+ * Bulk-upload date cell → "YYYY-MM-DD". Accepts Excel date cells (serial numbers), DD-MM-YYYY, DD/MM/YYYY,
+ * DD.MM.YYYY, DD-MMM-YYYY and YYYY-MM-DD. Blank → "" (field left empty); anything else → null (invalid).
+ */
+function sheetDate(v: any): string | null {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  let d: dayjs.Dayjs | null = null;
+  let m: RegExpMatchArray | null;
+  if (/^\d{5}(\.\d+)?$/.test(s)) d = dayjs("1899-12-30").add(Math.floor(Number(s)), "day");
+  else if ((m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/))) d = ymd(+m[1], +m[2], +m[3]);
+  else if ((m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2}|\d{4})$/))) d = ymd(year(m[3]), +m[2], +m[1]);
+  else if ((m = s.match(/^(\d{1,2})[-/. ]([a-z]{3})[a-z]*[-/. ,]+(\d{2}|\d{4})$/i))) d = ymd(year(m[3]), MONTHS_SHORT.indexOf(m[2].toLowerCase()) + 1, +m[1]);
+  return d && d.isValid() ? d.format("YYYY-MM-DD") : null;
+}
+const year = (y: string) => (y.length === 2 ? 2000 + Number(y) : Number(y));
+function ymd(y: number, mo: number, day: number): dayjs.Dayjs | null {
+  if (mo < 1 || mo > 12 || day < 1 || day > 31 || y < 1900 || y > 2100) return null;
+  const d = dayjs(new Date(y, mo - 1, day));
+  return d.month() === mo - 1 && d.date() === day ? d : null; // rejects 31-02-2026 etc.
+}
 
 export default function StickersPage() {
   const [form] = Form.useForm();
@@ -56,6 +92,7 @@ export default function StickersPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(undefined);
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
+  const [range, setRange] = useState<DateRange>(null); // added-on date
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -259,13 +296,53 @@ export default function StickersPage() {
     },
   ];
 
-  // Bulk upload columns spec
+  const filtered = stickers.filter((s) => {
+    const matchesSearch =
+      !search ||
+      s.SerialNo.toLowerCase().includes(search.toLowerCase()) ||
+      (s.InvoiceNo && s.InvoiceNo.toLowerCase().includes(search.toLowerCase())) ||
+      (s.ModelName && s.ModelName.toLowerCase().includes(search.toLowerCase()));
+    const matchesCat = !categoryFilter || s.Category === categoryFilter;
+    const matchesStatus = !statusFilter || s.Status === statusFilter;
+    return matchesSearch && matchesCat && matchesStatus && inDateRange(s.InsertedOn, range);
+  });
+
+  const exportExcel = () => exportTable("Serial & Sticker Register", [
+    { header: "Serial No", value: (s: Sticker) => s.SerialNo },
+    { header: "Category", value: (s: Sticker) => s.Category },
+    { header: "Model Name", value: (s: Sticker) => s.ModelName || "Standard Model" },
+    { header: "Model Code", value: (s: Sticker) => s.ModelCode },
+    { header: "Status", value: (s: Sticker) => s.Status },
+    { header: "Invoice No", value: (s: Sticker) => s.InvoiceNo },
+    { header: "Invoice Location", value: (s: Sticker) => s.InvoiceLocation },
+    { header: "Mfg Date", value: (s: Sticker) => s.MfgDate, type: "date" },
+    { header: "Added On", value: (s: Sticker) => s.InsertedOn, type: "datetime" },
+  ], filtered, { "Added On": rangeLabel(range), Category: categoryFilter, Status: statusFilter, Search: search || null }, "Serials");
+
+  // Bulk upload columns spec — same fields, in the same order, as the Register Serial form.
+  const modelByCode = new Map(productModels.map((m) => [String(m.ModelCode || "").trim().toUpperCase(), m]));
   const bulkColumns = [
     { key: "SerialNo", header: "Serial No", required: true },
-    { key: "Category", header: "Category", required: true },
-    { key: "ModelCode", header: "Model Code", required: false },
+    { key: "Category", header: "Category", required: true,
+      validate: (v: string) => (BULK_CATEGORIES.includes(v.toUpperCase()) ? null : "Category must be PUMP, MOTOR or CONTROLLER") },
+    { key: "ModelCode", header: "Model Code", required: true,
+      validate: (v: string, raw: any) => {
+        const model = modelByCode.get(v.toUpperCase());
+        if (!model) return `Model Code "${v}" is not in Product Models`;
+        const cat = String(raw?.Category ?? raw?.category ?? "").trim().toUpperCase();
+        return cat && model.Category && model.Category !== cat ? `Model ${v} is a ${model.Category} model, not ${cat}` : null;
+      } },
+    { key: "ProductGroup", header: "Product Group", required: false,
+      validate: (v: string) => (v.length > 60 ? "Product Group can be at most 60 characters" : null) },
+    { key: "Status", header: "Status", required: false,
+      validate: (v: string) => (bulkStatus(v) ? null : "Status must be Generated, Registered or Replaced") },
+    { key: "MfgDate", header: "Manufacturing Date", required: false,
+      validate: (v: string) => (sheetDate(v) ? null : `Manufacturing Date "${v}" is not a valid date (use DD-MM-YYYY)`) },
     { key: "InvoiceNo", header: "Invoice No", required: false },
+    { key: "InvoiceDate", header: "Invoice Date", required: false,
+      validate: (v: string) => (sheetDate(v) ? null : `Invoice Date "${v}" is not a valid date (use DD-MM-YYYY)`) },
     { key: "InvoiceLocation", header: "Invoice Location", required: false },
+    { key: "SupplierName", header: "Supplier Name", required: false },
   ];
 
   return (
@@ -283,6 +360,7 @@ export default function StickersPage() {
         </div>
 
         <div className="page-actions">
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button
             icon={<ReloadOutlined />}
             onClick={() => fetchStickers()}
@@ -308,54 +386,25 @@ export default function StickersPage() {
       </div>
 
       {/* Filter toolbar */}
-      <div className="filter-toolbar">
-        <Input
-          prefix={<SearchOutlined className="text-slate-400" />}
-          placeholder="Search by Serial No, Invoice, or Model..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          allowClear
-          className="w-72"
-        />
-
-        <Select
-          placeholder="All Categories"
-          value={categoryFilter}
-          onChange={setCategoryFilter}
-          allowClear
-          className="w-40"
-        >
-          <Select.Option value="PUMP">Pump</Select.Option>
-          <Select.Option value="MOTOR">Motor</Select.Option>
-          <Select.Option value="CONTROLLER">Controller</Select.Option>
-        </Select>
-
-        <Select
-          placeholder="All Statuses"
-          value={statusFilter}
-          onChange={setStatusFilter}
-          allowClear
-          className="w-40"
-        >
-          <Select.Option value="Generated">Generated (In Stock)</Select.Option>
-          <Select.Option value="Registered">Registered (Installed)</Select.Option>
-          <Select.Option value="Replaced">Replaced</Select.Option>
-        </Select>
-      </div>
+      <FilterBar
+        storageKey="stickers"
+        search={{ value: search, onChange: setSearch, placeholder: "Search by Serial No, Invoice, or Model..." }}
+        filters={[
+          { key: "date", label: "Added on", icon: <CalendarOutlined />, pinned: true, active: !!(range?.[0] || range?.[1]), onClear: () => setRange(null),
+            render: () => <DateRangeFilter variant="borderless" value={range} onChange={setRange} placeholder={["From", "To"]} className="" /> },
+          { key: "status", label: "Status", icon: <CheckCircleOutlined />, pinned: true, active: !!statusFilter, onClear: () => setStatusFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={statusFilter} onChange={setStatusFilter} popupMatchSelectWidth={false}
+              options={[{ value: "Generated", label: "Generated (In Stock)" }, { value: "Registered", label: "Registered (Installed)" }, { value: "Replaced", label: "Replaced" }]} /> },
+          { key: "category", label: "Category", group: "Serial details", icon: <AppstoreOutlined />, active: !!categoryFilter, onClear: () => setCategoryFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={categoryFilter} onChange={setCategoryFilter} popupMatchSelectWidth={false}
+              options={[{ value: "PUMP", label: "Pump" }, { value: "MOTOR", label: "Motor" }, { value: "CONTROLLER", label: "Controller" }]} /> },
+        ]}
+      />
 
       {/* Register Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
         <Table
-          dataSource={stickers.filter((s) => {
-            const matchesSearch =
-              !search ||
-              s.SerialNo.toLowerCase().includes(search.toLowerCase()) ||
-              (s.InvoiceNo && s.InvoiceNo.toLowerCase().includes(search.toLowerCase())) ||
-              (s.ModelName && s.ModelName.toLowerCase().includes(search.toLowerCase()));
-            const matchesCat = !categoryFilter || s.Category === categoryFilter;
-            const matchesStatus = !statusFilter || s.Status === statusFilter;
-            return matchesSearch && matchesCat && matchesStatus;
-          })}
+          dataSource={filtered}
           columns={columns}
           rowKey="StickerId"
           loading={isLoading}
@@ -523,12 +572,26 @@ export default function StickersPage() {
             SerialNo: "2611PU30001",
             Category: "PUMP",
             ModelCode: "SSP-30-DC",
+            ProductGroup: "Solar Submersible Pump Set",
+            Status: "Generated",
+            MfgDate: "01-11-2026",
             InvoiceNo: "SI/26/5001",
+            InvoiceDate: "05-11-2026",
             InvoiceLocation: "Greater Noida HO",
+            SupplierName: "Solartive Techno Industries",
           },
         ]}
         onUpload={async (validRows) => {
-          const res = await bulkUploadStickers(validRows);
+          // Send what the form would: model/category/status in canonical case, dates as YYYY-MM-DD.
+          const rows = validRows.map((r) => ({
+            ...r,
+            Category: String(r.Category || "").trim().toUpperCase(),
+            ModelCode: String(r.ModelCode || "").trim().toUpperCase(),
+            Status: bulkStatus(r.Status) || "Generated",
+            MfgDate: sheetDate(r.MfgDate) || null,
+            InvoiceDate: sheetDate(r.InvoiceDate) || null,
+          }));
+          const res = await bulkUploadStickers(rows);
           return res;
         }}
         onClose={() => setBulkOpen(false)}

@@ -6,6 +6,8 @@ import { InboxOutlined, ReloadOutlined, SearchOutlined, WarningOutlined } from "
 import { useStockStore, StockRow } from "@/lib/store/useStockStore";
 import { PageHeader, StatStrip, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 /** Spares stock per service-centre store and engineer van, with faulty (damaged) parts held for warranty claims. */
 export default function StockAvailabilityPage() {
@@ -25,6 +27,27 @@ export default function StockAvailabilityPage() {
       && (!q || [s.SpareCode, s.SpareName, s.LocName, s.ServiceCenterName].some((v) => v?.toLowerCase().includes(q)));
   }).sort((a, b) => a.LocType.localeCompare(b.LocType) || a.LocName.localeCompare(b.LocName) || a.SpareName.localeCompare(b.SpareName));
 
+  const exportExcel = () => exportTable("Stock Availability", [
+    { header: "Location Type", value: (s: StockRow) => (s.LocType === "SC" ? "Store" : "Engineer") },
+    { header: "Location", value: (s: StockRow) => s.LocName },
+    { header: "Service Centre", value: (s: StockRow) => (s.LocType === "ENG" ? s.ServiceCenterName : null) },
+    { header: "Spare Code", value: (s: StockRow) => s.SpareCode },
+    { header: "Spare Name", value: (s: StockRow) => s.SpareName },
+    { header: "Category", value: (s: StockRow) => s.Category },
+    { header: "Good Qty", value: (s: StockRow) => s.Good, type: "number", total: true },
+    { header: "UOM", value: (s: StockRow) => s.Uom },
+    { header: "Min Stock", value: (s: StockRow) => (s.LocType === "SC" ? s.MinStock : null), type: "number" },
+    { header: "Faulty (held)", value: (s: StockRow) => s.Damaged, type: "number", total: true },
+    { header: "Rate ₹", value: (s: StockRow) => s.Rate, type: "money" },
+    { header: "Value ₹", value: (s: StockRow) => s.Value, type: "money", total: true },
+    { header: "Reorder", value: (s: StockRow) => (s.BelowMin ? "Reorder" : null) },
+  ], filtered, {
+    View: view === "SC" ? "Stores" : view === "ENG" ? "Engineer-wise" : null,
+    Location: locations.find((l) => l.value === location)?.label,
+    "Below minimum": lowOnly ? "Only" : null,
+    Search: search || null,
+  }, "Stock");
+
   const columns = [
     { title: "Location", key: "loc", render: (_: any, s: StockRow) => <div><Tag color={s.LocType === "SC" ? "purple" : "cyan"}>{s.LocType === "SC" ? "Store" : "Engineer"}</Tag><span className="font-semibold text-slate-800">{s.LocName}</span>{s.LocType === "ENG" && s.ServiceCenterName && <div className="text-[11px] text-slate-400 mt-0.5">{s.ServiceCenterName}</div>}</div> },
     { title: "Spare", key: "spare", render: (_: any, s: StockRow) => <div><div className="font-semibold text-slate-800">{s.SpareName}</div><div className="text-[11px] text-slate-400 font-mono">{s.SpareCode}{s.Category ? ` · ${s.Category}` : ""}</div></div> },
@@ -39,7 +62,10 @@ export default function StockAvailabilityPage() {
   return (
     <div className="space-y-4">
       <PageHeader icon={<InboxOutlined />} title="Stock Availability" subtitle="Spares at each service-centre store and engineer van · faulty parts from warranty job cards are held separately"
-        actions={<Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>} />
+        actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
+          <Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>
+        </>} />
 
       <StatStrip items={[
         { label: "Stock lines", value: stock.length },

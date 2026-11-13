@@ -22,7 +22,6 @@ import {
   EditOutlined,
   UserSwitchOutlined,
   CheckCircleOutlined,
-  SearchOutlined,
   ReloadOutlined,
   PhoneOutlined,
   EyeOutlined,
@@ -44,8 +43,13 @@ import { ServiceCallFormDrawer } from "@/components/service/ServiceCallFormDrawe
 import { ServiceCallDetailDrawer, ServiceCallDetails } from "@/components/service/ServiceCallDetailDrawer";
 import { ServiceCallProgress } from "@/components/service/ServiceCallProgress";
 import dayjs from "dayjs";
+import { StatStrip } from "@/components/common/PageHeader";
 import axios from "axios";
 import { DeleteOutlined } from "@ant-design/icons";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { FilterBar } from "@/components/common/FilterBar";
+import { AlertOutlined, CalendarOutlined, EnvironmentOutlined, FlagOutlined, ProjectOutlined, SafetyOutlined, ShopOutlined, TagsOutlined, UserOutlined } from "@ant-design/icons";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 export default function ComplaintsPage() {
   const [form] = Form.useForm();
@@ -67,7 +71,7 @@ export default function ComplaintsPage() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string | undefined>(undefined);
-  useUrlQuery("q", (q) => { setSearch(q); setStatusFilter(undefined); setPriorityFilter(undefined); });
+  useUrlQuery("q", (q) => { setSearch(q); setStatusFilter(undefined); setPriorityFilter(undefined); setRange(null); setProjectFilter(undefined); });
   const [priorityFilter, setPriorityFilter] = useState<string | undefined>(undefined);
 
   // Drawer state for Log Complaint
@@ -83,7 +87,9 @@ export default function ComplaintsPage() {
   const [warrantyFilter, setWarrantyFilter] = useState<string>();
   const [dueFilter, setDueFilter] = useState<string>();
   const [stateFilter, setStateFilter] = useState<string>();
-  const isOpen = (c: Complaint) => !["Resolved", "Closed", "Cancelled"].includes(c.Status);
+  const [projectFilter, setProjectFilter] = useState<string>(); // project id, or "__none__" = calls without a project
+  const [range, setRange] = useState<DateRange>(null); // call date
+  const isOpen =(c: Complaint) => !["Resolved", "Closed", "Cancelled"].includes(c.Status);
   const overdue = (c: Complaint) => isOpen(c) && !!c.DueDate && new Date(c.DueDate) < new Date();
   const saveEdit = async () => {
     try { const values = await editForm.validateFields(); setSavingEdit(true); await axios.post("/api/service/complaints/update", { ...values, ComplaintId: editing?.ComplaintId, CallDate: values.CallDate?.toISOString() }); message.success("Service call updated"); setEditing(null); fetchComplaints(); }
@@ -99,6 +105,9 @@ export default function ComplaintsPage() {
   const [assignModalOpen, setAssignModalOpen] = useState(false);
   const [assigningComplaint, setAssigningComplaint] = useState<Complaint | null>(null);
   const [assigning, setAssigning] = useState(false);
+  // Engineers offered in the assign dialog: those of the selected service center (the master list holds active engineers only).
+  const assignCenter: string | undefined = Form.useWatch("serviceCenterId", assignForm);
+  const assignEngineers = engineers.filter((e: any) => assignCenter && String(e.ServiceCenterId || "").toLowerCase() === String(assignCenter).toLowerCase());
 
   // Close Ticket Modal state
   const [closeModalOpen, setCloseModalOpen] = useState(false);
@@ -178,12 +187,11 @@ export default function ComplaintsPage() {
       render: (_: any, row: Complaint) => (
         <div>
           <div className="font-semibold text-slate-800">{row.CustomerName}</div>
-          <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5">
+          <div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5 whitespace-nowrap">
             <PhoneOutlined className="text-slate-400" />
             <span className="font-mono">{row.Mobile}</span>
-            {row.Village && <span>• {row.Village}</span>}
-            {row.District && <span>({row.District})</span>}
           </div>
+          {row.District && <div className="text-xs text-slate-400 mt-0.5 whitespace-nowrap">{row.District}</div>}
         </div>
       ),
     },
@@ -211,6 +219,21 @@ export default function ComplaintsPage() {
           {row.WarrantyStatus && <Tag className="mt-1 text-[10px]" color={row.WarrantyStatus === "In Warranty" ? "green" : row.WarrantyStatus === "Partial" ? "orange" : "default"}>{row.WarrantyStatus}</Tag>}
         </div>
       ),
+    },
+    {
+      title: "Project",
+      key: "Project",
+      width: 170,
+      render: (_: any, row: Complaint) => {
+        if (!row.ProjectId) return <span className="text-xs text-slate-300">—</span>;
+        const p: any = projects.find((x: any) => String(x.ProjectId).toLowerCase() === String(row.ProjectId).toLowerCase());
+        return (
+          <div className="leading-tight">
+            <div className="text-xs font-semibold text-slate-700 whitespace-normal break-words">{row.ProjectName || p?.ProjectName || "—"}</div>
+            {p?.ProjectNo && <div className="text-[11px] text-slate-400 font-mono mt-0.5">{p.ProjectNo}</div>}
+          </div>
+        );
+      },
     },
     {
       title: "Due",
@@ -309,6 +332,15 @@ export default function ComplaintsPage() {
     },
   ];
 
+  // Project / scheme: ids compared case-insensitively (SQL Server GUIDs); "__none__" picks calls without a project.
+  const matchProject = (c: Complaint) => !projectFilter
+    || (projectFilter === "__none__" ? !c.ProjectId : String(c.ProjectId || "").toLowerCase() === projectFilter.toLowerCase());
+  const projectLabel = (id?: string) => {
+    if (!id) return null;
+    if (id === "__none__") return "No project";
+    const p: any = projects.find((x: any) => String(x.ProjectId).toLowerCase() === id.toLowerCase());
+    return p ? `${p.ProjectNo ? `${p.ProjectNo} — ` : ""}${p.ProjectName}` : null;
+  };
   const filtered = complaints.filter((c) => {
     const q = search.toLowerCase();
     const matchSearch =
@@ -321,8 +353,42 @@ export default function ComplaintsPage() {
     const matchStatus = !statusFilter || c.Status === statusFilter;
     const matchPriority = !priorityFilter || c.Priority === priorityFilter;
     const matchDue = !dueFilter || (dueFilter === "overdue" ? overdue(c) : !overdue(c));
-    return matchSearch && matchStatus && matchPriority && matchDue && (!callTypeFilter || c.CallTypeId === callTypeFilter) && (!centerFilter || c.ServiceCenterId === centerFilter) && (!engineerFilter || c.EngineerUserId === engineerFilter) && (!warrantyFilter || c.WarrantyStatus === warrantyFilter) && (!stateFilter || c.StateId === stateFilter);
+    return matchSearch && matchStatus && matchPriority && matchDue && (!callTypeFilter || c.CallTypeId === callTypeFilter) && (!centerFilter || c.ServiceCenterId === centerFilter) && (!engineerFilter || c.EngineerUserId === engineerFilter) && (!warrantyFilter || c.WarrantyStatus === warrantyFilter) && (!stateFilter || c.StateId === stateFilter) && matchProject(c) && inDateRange(c.CallDate, range);
   });
+
+  const exportExcel = () => exportTable("Service Calls", [
+    { header: "Call No", value: (c: Complaint) => c.ComplaintNo },
+    { header: "Date", value: (c: Complaint) => c.CallDate, type: "date" },
+    { header: "Customer", value: (c: Complaint) => c.CustomerName },
+    { header: "Mobile", value: (c: Complaint) => c.Mobile },
+    { header: "Village", value: (c: Complaint) => c.Village },
+    { header: "District", value: (c: Complaint) => c.District },
+    { header: "Faulty components / issue", value: (c: Complaint) => c.ComplaintText },
+    { header: "Call Type", value: (c: Complaint) => c.CallTypeName },
+    { header: "Project", value: (c: Complaint) => c.ProjectName || (c.ProjectId ? projectLabel(c.ProjectId) : "") },
+    { header: "Components", value: (c: Complaint) => c.Components },
+    { header: "Photos", value: (c: Complaint) => c.PhotoCount || null, type: "number" },
+    { header: "Videos", value: (c: Complaint) => (c as any).VideoCount || null, type: "number" },
+    { header: "Warranty", value: (c: Complaint) => c.WarrantyStatus },
+    { header: "Due", value: (c: Complaint) => c.DueDate, type: "date" },
+    { header: "Overdue", value: (c: Complaint) => (overdue(c) ? "Yes" : "") },
+    { header: "Priority", value: (c: Complaint) => c.Priority },
+    { header: "Status", value: (c: Complaint) => c.Status },
+    { header: "Assigned To", value: (c: Complaint) => c.EngineerName || "Unassigned" },
+    { header: "Service Center", value: (c: Complaint) => c.ServiceCenterName },
+  ], filtered, {
+    "Call date": rangeLabel(range),
+    Status: statusFilter,
+    "Call type": callTypes.find((t: any) => t.CallTypeId === callTypeFilter)?.CallTypeName,
+    Project: projectLabel(projectFilter),
+    Warranty: warrantyFilter,
+    Due: dueFilter === "overdue" ? "Overdue" : dueFilter === "current" ? "Not overdue" : null,
+    State: states.find((s: any) => s.StateId === stateFilter)?.StateName,
+    "Service center": serviceCenters.find((s: any) => s.ServiceCenterId === centerFilter)?.ServiceCenterName,
+    Engineer: (() => { const e: any = engineers.find((x: any) => x.UserId === engineerFilter); return e ? `${e.FirstName} ${e.LastName || ""}`.trim() : null; })(),
+    Priority: priorityFilter,
+    Search: search || null,
+  }, "Service Calls");
 
   return (
     <div className="space-y-4">
@@ -346,6 +412,7 @@ export default function ComplaintsPage() {
           >
             Refresh
           </Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button
             type="primary"
             icon={<PlusOutlined />}
@@ -357,61 +424,53 @@ export default function ComplaintsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 xl:grid-cols-6">{[
-        ["New / unassigned", complaints.filter(c => c.Status === "New" || (isOpen(c) && !c.EngineerUserId)).length],
-        ["Assigned", complaints.filter(c => c.Status === "Assigned").length],
-        ["Visited / in approval", complaints.filter(c => ["Visited", "In Approval"].includes(c.Status)).length],
-        ["Overdue", complaints.filter(overdue).length],
-        ["Resolved / closed", complaints.filter(c => ["Resolved", "Closed"].includes(c.Status)).length],
-        ["This month", complaints.filter(c => dayjs(c.CallDate).isSame(dayjs(), "month")).length],
-      ].map(([label, value]) => <div key={String(label)} className="border-r border-slate-100 px-4 py-3"><div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</div><div className="mt-1 text-xl font-bold text-slate-900">{value}</div></div>)}</div>
-      {/* Filter toolbar */}
-      <div className="filter-toolbar">
-        <Input
-          prefix={<SearchOutlined className="text-slate-400" />}
-          placeholder="Search tickets by No, Customer Name, Mobile, Village..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          allowClear
-          className="w-80"
-        />
-
-        <Select
-          placeholder="All Statuses"
-          value={statusFilter}
-          onChange={setStatusFilter}
-          allowClear
-          className="w-36"
-        >
-          <Select.Option value="New">New</Select.Option>
-          <Select.Option value="Assigned">Assigned</Select.Option>
-          <Select.Option value="Visited">Visited</Select.Option>
-          <Select.Option value="In Approval">In Approval</Select.Option>
-          <Select.Option value="Approved">Approved</Select.Option>
-          <Select.Option value="Resolved">Resolved</Select.Option>
-          <Select.Option value="Closed">Closed</Select.Option>
-          <Select.Option value="Cancelled">Cancelled</Select.Option>
-        </Select>
-        <Select placeholder="Call type: All" allowClear value={callTypeFilter} onChange={setCallTypeFilter} className="min-w-36" options={callTypes.map((t: any) => ({ value: t.CallTypeId, label: t.CallTypeName }))} />
-        <Select placeholder="Warranty: All" allowClear value={warrantyFilter} onChange={setWarrantyFilter} className="min-w-36" options={Array.from(new Set(complaints.map(c => c.WarrantyStatus).filter(Boolean))).map(v => ({ value: v, label: v }))} />
-        <Select placeholder="Due: All" allowClear value={dueFilter} onChange={setDueFilter} className="min-w-28" options={[{ value: "overdue", label: "Overdue" }, { value: "current", label: "Not overdue" }]} />
-        <Select placeholder="State: All" allowClear value={stateFilter} onChange={setStateFilter} className="min-w-32" options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))} />
-        <Select placeholder="Service center: All" allowClear value={centerFilter} onChange={setCenterFilter} className="min-w-40" options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} />
-        <Select placeholder="Engineer: All" allowClear value={engineerFilter} onChange={setEngineerFilter} className="min-w-32" options={engineers.map((e: any) => ({ value: e.UserId, label: `${e.FirstName} ${e.LastName || ""}` }))} />
-
-        <Select
-          placeholder="All Priorities"
-          value={priorityFilter}
-          onChange={setPriorityFilter}
-          allowClear
-          className="w-36"
-        >
-          <Select.Option value="High">High</Select.Option>
-          <Select.Option value="Urgent">Urgent</Select.Option>
-          <Select.Option value="Medium">Medium</Select.Option>
-          <Select.Option value="Low">Low</Select.Option>
-        </Select>
-      </div>
+      {(() => {
+        const total = complaints.length || 0;
+        const pct = (n: number) => (total ? `${Math.round((n / total) * 100)}% of all calls` : "no calls yet");
+        const unassigned = complaints.filter(c => c.Status === "New" || (isOpen(c) && !c.EngineerUserId)).length;
+        const assigned = complaints.filter(c => c.Status === "Assigned").length;
+        const inWork = complaints.filter(c => ["Visited", "In Approval"].includes(c.Status)).length;
+        const late = complaints.filter(overdue).length;
+        const done = complaints.filter(c => ["Resolved", "Closed"].includes(c.Status)).length;
+        const month = complaints.filter(c => dayjs(c.CallDate).isSame(dayjs(), "month")).length;
+        return <StatStrip items={[
+          { label: "New / unassigned", value: unassigned, sub: "waiting for an engineer", accent: "#2563eb" },
+          { label: "Assigned", value: assigned, sub: pct(assigned), accent: "#7c3aed" },
+          { label: "Visited / in approval", value: inWork, sub: "engineer has visited", accent: "#0891b2" },
+          { label: "Overdue", value: late, sub: "past the due date", tone: "danger" },
+          { label: "Resolved / closed", value: done, sub: pct(done), tone: "ok" },
+          { label: "This month", value: month, sub: dayjs().format("MMMM YYYY"), accent: "#0d9488" },
+        ]} />;
+      })()}
+      {/* Filters: search, call date and status always shown; the rest under "More Filters" */}
+      <FilterBar
+        storageKey="service-calls"
+        search={{ value: search, onChange: setSearch, placeholder: "Call no, customer, mobile, village…" }}
+        filters={[
+          { key: "date", label: "Call date", icon: <CalendarOutlined />, pinned: true, active: !!(range?.[0] || range?.[1]), onClear: () => setRange(null),
+            render: () => <DateRangeFilter variant="borderless" value={range} onChange={setRange} placeholder={["From", "To"]} className="" /> },
+          { key: "status", label: "Status", icon: <CheckCircleOutlined />, pinned: true, active: !!statusFilter, onClear: () => setStatusFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={statusFilter} onChange={setStatusFilter} popupMatchSelectWidth={false}
+              options={["New", "Assigned", "Visited", "In Approval", "Approved", "Resolved", "Closed", "Cancelled"].map((s) => ({ value: s, label: s }))} /> },
+          { key: "callType", label: "Call type", group: "Call details", icon: <TagsOutlined />, active: !!callTypeFilter, onClear: () => setCallTypeFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={callTypeFilter} onChange={setCallTypeFilter} popupMatchSelectWidth={false} options={callTypes.map((t: any) => ({ value: t.CallTypeId, label: t.CallTypeName }))} /> },
+          { key: "project", label: "Project", group: "Call details", icon: <ProjectOutlined />, active: !!projectFilter, onClear: () => setProjectFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={projectFilter} onChange={setProjectFilter} popupMatchSelectWidth={false}
+              options={[{ value: "__none__", label: "No project" }, ...projects.map((p: any) => ({ value: p.ProjectId, label: `${p.ProjectNo ? `${p.ProjectNo} — ` : ""}${p.ProjectName}` }))]} /> },
+          { key: "priority", label: "Priority", group: "Call details", icon: <FlagOutlined />, active: !!priorityFilter, onClear: () => setPriorityFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={priorityFilter} onChange={setPriorityFilter} popupMatchSelectWidth={false} options={["High", "Urgent", "Medium", "Low"].map((p) => ({ value: p, label: p }))} /> },
+          { key: "warranty", label: "Warranty", group: "Call details", icon: <SafetyOutlined />, active: !!warrantyFilter, onClear: () => setWarrantyFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={warrantyFilter} onChange={setWarrantyFilter} popupMatchSelectWidth={false} options={Array.from(new Set(complaints.map(c => c.WarrantyStatus).filter(Boolean))).map(v => ({ value: v, label: v }))} /> },
+          { key: "due", label: "Due", group: "Status & dates", icon: <AlertOutlined />, active: !!dueFilter, onClear: () => setDueFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={dueFilter} onChange={setDueFilter} popupMatchSelectWidth={false} options={[{ value: "overdue", label: "Overdue" }, { value: "current", label: "Not overdue" }]} /> },
+          { key: "state", label: "State", group: "Location & team", icon: <EnvironmentOutlined />, active: !!stateFilter, onClear: () => setStateFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={stateFilter} onChange={setStateFilter} popupMatchSelectWidth={false} options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))} /> },
+          { key: "center", label: "Service center", group: "Location & team", icon: <ShopOutlined />, active: !!centerFilter, onClear: () => setCenterFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={centerFilter} onChange={setCenterFilter} popupMatchSelectWidth={false} options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} /> },
+          { key: "engineer", label: "Engineer", group: "Location & team", icon: <UserOutlined />, active: !!engineerFilter, onClear: () => setEngineerFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear showSearch optionFilterProp="label" value={engineerFilter} onChange={setEngineerFilter} popupMatchSelectWidth={false} options={engineers.map((e: any) => ({ value: e.UserId, label: `${e.FirstName} ${e.LastName || ""}`.trim() }))} /> },
+        ]}
+      />
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -428,7 +487,7 @@ export default function ComplaintsPage() {
             showTotal: (total, range) => `Showing ${range[0]}-${range[1]} of ${total} complaints`,
           }}
           rowClassName={(row: Complaint) => overdue(row) ? "border-l-2 border-rose-500" : ""}
-          scroll={{ x: 1450 }}
+          scroll={{ x: 1620 }}
         />
       </div>
 
@@ -467,7 +526,11 @@ export default function ComplaintsPage() {
             name="serviceCenterId"
             label={<span className="text-xs font-semibold text-slate-700">Service Center</span>}
           >
-            <Select placeholder="Select regional center">
+            <Select placeholder="Select regional center" onChange={(sc) => {
+              // Keep the engineer only if they belong to the newly picked center.
+              const current = engineers.find((e: any) => e.UserId === assignForm.getFieldValue("engineerUserId"));
+              if (current && sc && String(current.ServiceCenterId || "").toLowerCase() !== String(sc).toLowerCase()) assignForm.setFieldValue("engineerUserId", undefined);
+            }}>
               {serviceCenters.map((sc) => (
                 <Select.Option key={sc.ServiceCenterId} value={sc.ServiceCenterId}>
                   {sc.ServiceCenterName}
@@ -481,7 +544,9 @@ export default function ComplaintsPage() {
             label={<span className="text-xs font-semibold text-slate-700">Assign Field Engineer</span>}
             rules={[{ required: true, message: "Please select an engineer" }]}
           >
-            <Select placeholder="Select engineer" notFoundContent="No engineers available">{engineers.filter((e: any) => e.IsActive).map((e: any) => <Select.Option key={e.UserId} value={e.UserId}>{e.FirstName} {e.LastName}</Select.Option>)}</Select>
+            <Select showSearch optionFilterProp="label" placeholder={assignCenter ? "Select engineer" : "Select the service center first"} disabled={!assignCenter}
+              notFoundContent="No engineers in this service center — add one in Configuration → Service Engineers"
+              options={assignEngineers.map((e: any) => ({ value: e.UserId, label: `${e.FirstName} ${e.LastName || ""}`.trim() }))} />
           </Form.Item>
         </Form>
       </Modal>

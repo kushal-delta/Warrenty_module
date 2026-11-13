@@ -13,6 +13,8 @@ import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const REQUEST_TYPES = [
   { value: "Product", label: "Product items", hint: "Finished products from the iERP" },
@@ -40,6 +42,7 @@ export default function MaterialRequestsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>();
   const [typeFilter, setTypeFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // request date
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<any>(null);
@@ -155,8 +158,23 @@ export default function MaterialRequestsPage() {
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
     return (!q || [r.RequestNo, r.RequestForName, r.Remarks, r.RequestedBy].some((v) => v?.toLowerCase().includes(q)))
-      && (!statusFilter || r.Status === statusFilter) && (!typeFilter || r.RequestType === typeFilter);
+      && (!statusFilter || r.Status === statusFilter) && (!typeFilter || r.RequestType === typeFilter)
+      && inDateRange(r.RequestDate, range);
   });
+
+  const typeLabel = (v: string) => REQUEST_TYPES.find((t) => t.value === v)?.label || v;
+  const exportExcel = () => exportTable("Material Requests", [
+    { header: "Request No.", value: (r: any) => r.RequestNo },
+    { header: "Date", value: (r: any) => r.RequestDate, type: "date" },
+    { header: "Type", value: (r: any) => typeLabel(r.RequestType) },
+    { header: "Warehouse", value: (r: any) => r.RequestForName },
+    { header: "Required By", value: (r: any) => r.RequiredBy, type: "date" },
+    { header: "Priority", value: (r: any) => r.Priority },
+    { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
+    { header: "Total Qty", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
+    { header: "Requested By", value: (r: any) => r.RequestedBy?.trim() },
+    { header: "Status", value: (r: any) => r.Status },
+  ], filtered, { "Request date": rangeLabel(range), Type: typeFilter ? typeLabel(typeFilter) : null, Status: statusFilter, Search: search || null }, "Material requests");
 
   const columns = [
     { title: "Request no.", dataIndex: "RequestNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -183,6 +201,7 @@ export default function MaterialRequestsPage() {
     <div className="space-y-4">
       <PageHeader icon={<ShoppingCartOutlined />} title="Material Request" subtitle="Product items or spare parts requested for a warehouse · items come from the iERP and the Spares master"
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">New Material Request</Button>
         </>} />
@@ -197,6 +216,7 @@ export default function MaterialRequestsPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search request no., warehouse, remarks..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Request date from", "to"]} />
         <Select allowClear placeholder="Type: All" value={typeFilter} onChange={setTypeFilter} options={REQUEST_TYPES.map((t) => ({ value: t.value, label: t.label }))} className="w-44" />
         <Select allowClear placeholder="Status: All" value={statusFilter} onChange={setStatusFilter} options={Object.keys(STATUS_COLOR).map((s) => ({ value: s, label: s }))} className="w-36" />
       </div>

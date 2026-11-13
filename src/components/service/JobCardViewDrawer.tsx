@@ -1,8 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Button, Checkbox, Descriptions, Drawer, Image, Input, Modal, Spin, Steps, Table, Tag, message } from "antd";
-import { CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, PrinterOutlined, SendOutlined, ToolOutlined } from "@ant-design/icons";
+import { Button, Checkbox, Descriptions, Drawer, Empty, Image, Input, Modal, Spin, Steps, Table, Tabs, Tag, message } from "antd";
+import { AuditOutlined, CameraOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, HistoryOutlined, InfoCircleOutlined, PrinterOutlined, SendOutlined, ToolOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { useJobCardStore, JobCardDetail } from "@/lib/store/useJobCardStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
@@ -12,8 +12,23 @@ import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { PageLoader } from "@/components/common/Loader";
 import { VideoList } from "@/components/common/VideoAttachments";
+import { ActivityTimeline } from "@/components/common/ActivityTimeline";
 
 export const JOBCARD_STATUS_COLOR: Record<string, string> = { Draft: "default", "In Approval": "gold", Approved: "green", Rejected: "red", Closed: "blue" };
+
+const tabLabel = (icon: React.ReactNode, text: string, count?: number) => (
+  <span className="inline-flex items-center gap-1.5">{icon}{text}{count !== undefined && <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">{count}</span>}</span>
+);
+
+/** Small white card with a title row, used inside the tabs. */
+function Panel({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5"><h3 className="text-sm font-bold text-slate-800">{title}</h3>{extra}</div>
+      <div className="p-4">{children}</div>
+    </section>
+  );
+}
 
 interface Props {
   jobCardId: string | null;
@@ -35,6 +50,7 @@ export function JobCardViewDrawer({ jobCardId, onClose, onEdit, onChanged }: Pro
   const [closing, setClosing] = useState(false);
   const [resolveCall, setResolveCall] = useState(true);
   const [deleting, setDeleting] = useState(false);
+  const [tab, setTab] = useState("details");
 
   const load = useCallback(async () => {
     if (!jobCardId) return;
@@ -44,7 +60,7 @@ export function JobCardViewDrawer({ jobCardId, onClose, onEdit, onChanged }: Pro
     finally { setLoading(false); }
   }, [jobCardId, fetchJobCardDetail]);
 
-  useEffect(() => { setData(null); load(); }, [load]);
+  useEffect(() => { setData(null); setTab("details"); load(); }, [load]);
 
   const run = async (work: () => Promise<string | void>) => {
     setBusy(true);
@@ -97,73 +113,87 @@ export function JobCardViewDrawer({ jobCardId, onClose, onEdit, onChanged }: Pro
       <Spin spinning={loading && !!data}>
         {job && data && <div className="space-y-5">
           {job.Status === "Rejected" && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Rejected: {[...data.approvals].reverse().find((a) => a.Action === "Rejected")?.Remarks || "no reason given"}. Edit the job card and send it again.</div>}
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }} items={[
-            { key: "d", label: "Date", children: formatDate(job.JobCardDate) },
-            { key: "s", label: "Status", children: <Tag color={JOBCARD_STATUS_COLOR[job.Status]}>{job.Status}</Tag> },
-            { key: "c", label: "Call", children: `${job.ComplaintNo} (${formatDate(job.CallDate)})` },
-            { key: "cu", label: "Customer", children: `${job.CustomerName} · ${job.Mobile}` },
-            { key: "e", label: "Engineer", children: job.EngineerName?.trim() || "-" },
-            { key: "sc", label: "Service Center", children: job.ServiceCenterName || "-" },
-            { key: "w", label: "Warranty Status", children: job.WarrantyStatus || "-" },
-            { key: "p", label: "Problem", span: 2, children: job.ComplaintText },
-            { key: "n", label: "Notes", span: 3, children: job.Remarks || "-" },
-          ]} />
-
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-2">Faults found</h3>
-            {data.faults.length ? <div className="flex flex-wrap gap-1.5">{data.faults.map((f) => <Tag key={f.JobCardFaultLnId} color="volcano">{f.Category} · {f.FaultName}</Tag>)}</div> : <span className="text-xs text-slate-400">None recorded</span>}
-          </div>
-
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-2">Spares &amp; labour</h3>
-            <Table size="small" rowKey="JobCardItemLnId" dataSource={data.items} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: "No lines" }} columns={[
-              { title: "Type", dataIndex: "ItemType", render: (t: string) => <Tag color={t === "Labour" ? "purple" : "blue"}>{t || "Spare"}</Tag> },
-              { title: "Particulars", key: "s", render: (_: any, i: any) => <span><b>{i.Particulars || i.SpareName}</b> <span className="text-xs text-slate-400">{i.ItemCode || i.SpareCode}</span></span> },
-              { title: "Serial", dataIndex: "SerialNo", render: (v: string) => v ? <span className="font-mono text-xs">{v}</span> : "—" },
-              { title: "Qty", dataIndex: "Qty", align: "right" as const, render: (q: number, i: any) => `${q} ${i.Uom || ""}` },
-              { title: "Rate ₹", dataIndex: "Rate", align: "right" as const, render: (v: number) => inr(v, 2) },
-              { title: "GST", key: "gst", align: "right" as const, render: (_: any, i: any) => `${Number(i.GstPct || 0)}% · ${inr(i.GstAmount, 2)}` },
-              { title: "Amount ₹", key: "amt", align: "right" as const, render: (_: any, i: any) => <b>{inr(Number(i.Amount) + Number(i.GstAmount || 0), 2)}</b> },
-              { title: "Warranty", dataIndex: "IsWarranty", align: "center" as const, render: (w: boolean) => w ? <Tag color="green">Warranty</Tag> : <Tag>Chargeable</Tag> },
-            ]} />
-          </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-3 text-sm">
+          {/* At a glance: the money */}
+          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
             {[["Spares", job.SparesTotal], ["Labour", job.LabourTotal], ["GST", job.GstTotal], ["Other charges", job.OtherCharges], ["Grand total", job.TotalEstimate], ["Warranty (company)", Math.min(Number(job.WarrantyAmount), Number(job.TotalEstimate))], ["Customer pays", job.CustomerPayable]].map(([label, value]) => (
-              <div key={label as string} className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2"><div className="text-[11px] text-slate-500">{label}</div><div className="font-bold text-slate-900">₹ {inr(value, 2)}</div></div>
+              <div key={label as string} className={`rounded-lg border px-3 py-2 ${label === "Grand total" ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}><div className="text-[11px] text-slate-500">{label}</div><div className="font-bold text-slate-900">₹ {inr(value, 2)}</div></div>
             ))}
           </div>
 
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-2">Photos</h3>
-            {data.photos?.length ? (
-              <Image.PreviewGroup>
-                <div className="flex flex-wrap gap-3">{data.photos.map((p: any) => <Image key={p.AttachmentId} src={p.FileUrl} alt={p.FileName} width={110} height={110} className="object-cover rounded-lg border border-slate-200" />)}</div>
-              </Image.PreviewGroup>
-            ) : <span className="text-xs text-slate-400">No photos</span>}
-          </div>
-          {data.videos?.length > 0 && (
-            <div>
-              <h3 className="text-sm font-bold text-slate-800 mb-2">Videos</h3>
-              <VideoList videos={data.videos} />
-            </div>
-          )}
-
-          <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-3">Approval chain</h3>
-            {chain.length ? <Steps size="small" items={chain} /> : <span className="text-xs text-slate-400">No approval level applies to this amount — the job card is approved on submission.</span>}
-          </div>
-
-          {data.approvals.length > 0 && <div>
-            <h3 className="text-sm font-bold text-slate-800 mb-2">Approval trail</h3>
-            <Table size="small" rowKey="JobCardApprovalLnId" dataSource={data.approvals} pagination={false} columns={[
-              { title: "When", dataIndex: "ActionDate", render: (v: string) => formatDate(v, true) },
-              { title: "Level", dataIndex: "LevelNo", render: (v: number) => `L${v}` },
-              { title: "By", dataIndex: "ApproverName" },
-              { title: "Action", dataIndex: "Action", render: (a: string) => <Tag color={a === "Approved" ? "green" : "red"}>{a}</Tag> },
-              { title: "Remarks", dataIndex: "Remarks", render: (v: string) => v || "-" },
-            ]} />
-          </div>}
+          <Tabs activeKey={tab} onChange={setTab} items={[
+            { key: "details", label: tabLabel(<InfoCircleOutlined />, "Details"), children: (
+              <div className="space-y-4">
+                <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }} items={[
+                  { key: "d", label: "Date", children: formatDate(job.JobCardDate) },
+                  { key: "s", label: "Status", children: <Tag color={JOBCARD_STATUS_COLOR[job.Status]}>{job.Status}</Tag> },
+                  { key: "c", label: "Call", children: `${job.ComplaintNo} (${formatDate(job.CallDate)})` },
+                  { key: "cu", label: "Customer", children: `${job.CustomerName} · ${job.Mobile}` },
+                  { key: "e", label: "Engineer", children: job.EngineerName?.trim() || "-" },
+                  { key: "sc", label: "Service Center", children: job.ServiceCenterName || "-" },
+                  { key: "w", label: "Warranty Status", children: job.WarrantyStatus || "-" },
+                  { key: "p", label: "Problem", span: 2, children: job.ComplaintText },
+                  { key: "n", label: "Notes", span: 3, children: job.Remarks || "-" },
+                ]} />
+                <Panel title="Faults found" extra={<span className="text-xs text-slate-400">{data.faults.length}</span>}>
+                  {data.faults.length ? <div className="flex flex-wrap gap-1.5">{data.faults.map((f) => <Tag key={f.JobCardFaultLnId} color="volcano">{f.Category} · {f.FaultName}</Tag>)}</div> : <span className="text-xs text-slate-400">None recorded</span>}
+                </Panel>
+              </div>
+            ) },
+            { key: "lines", label: tabLabel(<UnorderedListOutlined />, "Spares & labour", data.items.length), children: (
+              <Table size="middle" rowKey="JobCardItemLnId" dataSource={data.items} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: "No lines" }} columns={[
+                { title: "Type", dataIndex: "ItemType", render: (t: string) => <Tag color={t === "Labour" ? "purple" : "blue"}>{t || "Spare"}</Tag> },
+                { title: "Particulars", key: "s", render: (_: any, i: any) => <span><b>{i.Particulars || i.SpareName}</b> <span className="text-xs text-slate-400">{i.ItemCode || i.SpareCode}</span></span> },
+                { title: "Serial", dataIndex: "SerialNo", render: (v: string) => v ? <span className="font-mono text-xs">{v}</span> : "—" },
+                { title: "Qty", dataIndex: "Qty", align: "right" as const, render: (q: number, i: any) => `${q} ${i.Uom || ""}` },
+                { title: "Rate ₹", dataIndex: "Rate", align: "right" as const, render: (v: number) => inr(v, 2) },
+                { title: "GST", key: "gst", align: "right" as const, render: (_: any, i: any) => `${Number(i.GstPct || 0)}% · ${inr(i.GstAmount, 2)}` },
+                { title: "Amount ₹", key: "amt", align: "right" as const, render: (_: any, i: any) => <b>{inr(Number(i.Amount) + Number(i.GstAmount || 0), 2)}</b> },
+                { title: "Warranty", dataIndex: "IsWarranty", align: "center" as const, render: (w: boolean) => w ? <Tag color="green">Warranty</Tag> : <Tag>Chargeable</Tag> },
+              ]} />
+            ) },
+            { key: "media", label: tabLabel(<CameraOutlined />, "Photos & Videos", (data.photos?.length || 0) + (data.videos?.length || 0)), children: (
+              <div className="space-y-4">
+                <Panel title="Photos" extra={<span className="text-xs text-slate-400">{data.photos?.length || 0}</span>}>
+                  {data.photos?.length ? (
+                    <Image.PreviewGroup>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+                        {data.photos.map((p: any) => (
+                          <div key={p.AttachmentId} className="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                            <Image src={p.FileUrl} alt={p.FileName} width="100%" height={130} className="object-cover" />
+                            <div className="truncate px-2 py-1 text-[11px] text-slate-500" title={p.FileName}>{p.FileName}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </Image.PreviewGroup>
+                  ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No photos" />}
+                </Panel>
+                <Panel title="Videos" extra={<span className="text-xs text-slate-400">{data.videos?.length || 0}</span>}>
+                  {data.videos?.length ? <VideoList videos={data.videos} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No videos" />}
+                </Panel>
+              </div>
+            ) },
+            { key: "approvals", label: tabLabel(<AuditOutlined />, "Approvals", data.approvals.length), children: (
+              <div className="space-y-4">
+                <Panel title="Approval chain">
+                  {chain.length ? <Steps size="small" items={chain} /> : <span className="text-xs text-slate-400">No approval level applies to this amount — the job card is approved on submission.</span>}
+                </Panel>
+                <Panel title="Approval trail" extra={<span className="text-xs text-slate-400">{data.approvals.length}</span>}>
+                  {data.approvals.length ? <Table size="small" rowKey="JobCardApprovalLnId" dataSource={data.approvals} pagination={false} columns={[
+                    { title: "When", dataIndex: "ActionDate", render: (v: string) => formatDate(v, true) },
+                    { title: "Level", dataIndex: "LevelNo", render: (v: number) => `L${v}` },
+                    { title: "By", dataIndex: "ApproverName" },
+                    { title: "Action", dataIndex: "Action", render: (a: string) => <Tag color={a === "Approved" ? "green" : "red"}>{a}</Tag> },
+                    { title: "Remarks", dataIndex: "Remarks", render: (v: string) => v || "-" },
+                  ]} /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No approval decisions yet" />}
+                </Panel>
+              </div>
+            ) },
+            { key: "activity", label: tabLabel(<HistoryOutlined />, "Activity", ((data as any).activity || []).length), children: (
+              <Panel title="Activity" extra={<span className="text-xs text-slate-400">newest first</span>}>
+                <ActivityTimeline items={(data as any).activity || []} />
+              </Panel>
+            ) },
+          ]} />
         </div>}
       </Spin>
 

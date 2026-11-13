@@ -127,24 +127,35 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
       .finally(() => setLoading(false));
   }, [open, jobCardId, complaintId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /** Call components (serial + current warranty) and, for a new card, the call's centre / engineer. */
-  const loadCall = async (id: string, applyDefaults: boolean) => {
-    const call = complaints.find((c) => c.ComplaintId === id);
-    if (applyDefaults && call) {
-      if (call.ServiceCenterId && !form.getFieldValue("ServiceCenterId")) form.setFieldValue("ServiceCenterId", call.ServiceCenterId);
-      if (call.EngineerUserId && !isEngineer) form.setFieldValue("EngineerUserId", call.EngineerUserId);
-      setCallWarranty(call.WarrantyStatus || null);
+  /**
+   * Call components (serial + current warranty) and, for a new card, the call's centre / engineer.
+   * `replace` (the user picked another call): the centre and engineer always follow the newly selected call;
+   * otherwise only empty fields are filled. Only the latest request may update the form, so switching calls quickly
+   * never shows the previous call's data.
+   */
+  const callRequest = useRef(0);
+  const applyCallDefaults = (c: { ServiceCenterId?: string | null; EngineerUserId?: string | null } | undefined, replace: boolean) => {
+    if (!c) return;
+    if (!isEngineer) {
+      if (replace || !form.getFieldValue("ServiceCenterId")) form.setFieldValue("ServiceCenterId", c.ServiceCenterId || undefined);
+      if (replace || !form.getFieldValue("EngineerUserId")) form.setFieldValue("EngineerUserId", c.EngineerUserId || undefined);
+    } else if (!form.getFieldValue("ServiceCenterId") && c.ServiceCenterId) {
+      form.setFieldValue("ServiceCenterId", c.ServiceCenterId);
     }
+  };
+  const loadCall = async (id: string, applyDefaults: boolean, replace = false) => {
+    const request = ++callRequest.current;
+    const call = complaints.find((c) => c.ComplaintId === id);
+    if (applyDefaults) applyCallDefaults(call, replace);
+    if (replace) setCallWarranty(call?.WarrantyStatus || null);
     try {
       const d = (await axios.post("/api/service/complaints/detail", { ComplaintId: id })).data;
+      if (request !== callRequest.current) return; // a newer call was selected meanwhile
       setComponents(d.components || []);
       setCallWarranty(d.complaint?.WarrantyStatus || null);
-      if (applyDefaults) {
-        if (d.complaint?.ServiceCenterId && !form.getFieldValue("ServiceCenterId")) form.setFieldValue("ServiceCenterId", d.complaint.ServiceCenterId);
-        if (d.complaint?.EngineerUserId && !isEngineer && !form.getFieldValue("EngineerUserId")) form.setFieldValue("EngineerUserId", d.complaint.EngineerUserId);
-      }
+      if (applyDefaults) applyCallDefaults(d.complaint, replace);
     } catch {
-      setComponents([]);
+      if (request === callRequest.current) setComponents([]);
     }
   };
 
@@ -291,7 +302,7 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
             <div className="form-grid form-grid-three">
               <div className="entry-field-wide"><Form.Item name="ComplaintId" label={fieldLabel("Service Call")} rules={[{ required: true, message: "Select the service call" }]}>
                 <Select showSearch optionFilterProp="label" placeholder="— select a call —" disabled={!!jobCardId}
-                  onChange={(id) => { setLines([]); setComponents([]); loadCall(id, true); }}
+                  onChange={(id) => { setLines([]); setComponents([]); loadCall(id, true, true); }}
                   options={openCalls.map((c) => ({ value: c.ComplaintId, label: `${c.ComplaintNo} — ${c.CustomerName} (${c.Village || c.District || ""})${c.WarrantyStatus ? ` · ${c.WarrantyStatus}` : ""}` }))} />
               </Form.Item></div>
               <Form.Item name="JobCardDate" label={fieldLabel("Job Card Date")} rules={[{ required: true, message: "Date is required" }]}><SmartDatePicker disabledDate={(d) => d.isAfter(dayjs(), "day")} /></Form.Item>

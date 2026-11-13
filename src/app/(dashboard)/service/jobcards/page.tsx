@@ -11,11 +11,14 @@ import { JOBCARD_STATUSES } from "@/lib/config/service";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 export default function JobCardsPage() {
   const { jobCards, fetchJobCards, isLoading } = useJobCardStore();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>();
+  const [range, setRange] = useState<DateRange>(null); // job card date
   const [formState, setFormState] = useState<{ open: boolean; jobCardId?: string | null; complaintId?: string | null }>({ open: false });
   const [viewId, setViewId] = useState<string | null>(null);
 
@@ -27,9 +30,25 @@ export default function JobCardsPage() {
 
   const filtered = jobCards.filter((j) => {
     const q = search.toLowerCase();
-    return (!q || [j.JobCardNo, j.ComplaintNo, j.CustomerName, j.Mobile].some((v) => v?.toLowerCase().includes(q))) && (!statusFilter || j.Status === statusFilter);
+    return (!q || [j.JobCardNo, j.ComplaintNo, j.CustomerName, j.Mobile].some((v) => v?.toLowerCase().includes(q))) && (!statusFilter || j.Status === statusFilter) && inDateRange(j.JobCardDate, range);
   });
   const count = (s: string) => jobCards.filter((j) => j.Status === s).length;
+
+  const exportExcel = () => exportTable("Job Cards (Repair Estimate)", [
+    { header: "Job Card", value: (j: JobCard) => j.JobCardNo },
+    { header: "Date", value: (j: JobCard) => j.JobCardDate, type: "date" },
+    { header: "Call No", value: (j: JobCard) => j.ComplaintNo },
+    { header: "Customer", value: (j: JobCard) => j.CustomerName },
+    { header: "Mobile", value: (j: JobCard) => j.Mobile },
+    { header: "Engineer", value: (j: JobCard) => j.EngineerName?.trim() || "Unassigned" },
+    { header: "Service Center", value: (j: JobCard) => j.ServiceCenterName },
+    { header: "Total ₹", value: (j: JobCard) => j.TotalEstimate, type: "money", total: true },
+    { header: "Warranty ₹", value: (j: JobCard) => j.WarrantyAmount, type: "money", total: true },
+    { header: "Customer Pays ₹", value: (j: JobCard) => j.CustomerPayable, type: "money", total: true },
+    { header: "Level", value: (j: JobCard) => (j.Status === "In Approval" ? `L${j.LevelPosition} of ${j.LevelsRequired}` : null) },
+    { header: "Pending With", value: (j: JobCard) => (j.Status === "In Approval" ? j.PendingRole : null) },
+    { header: "Status", value: (j: JobCard) => j.Status },
+  ], filtered, { "Job card date": rangeLabel(range), Status: statusFilter, Search: search || null }, "Job Cards");
 
   const columns = [
     { title: "Job Card", dataIndex: "JobCardNo", key: "no", width: 140, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -48,6 +67,7 @@ export default function JobCardsPage() {
       <PageHeader icon={<ToolOutlined />} title="Job Cards (Repair Estimate)" subtitle="Spares and labour estimate for a service call · multi-level approval by amount · stock is consumed on final approval"
         actions={<>
           <Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setFormState({ open: true })} className="bg-blue-600 shadow-sm">New Job Card</Button>
         </>} />
 
@@ -62,6 +82,7 @@ export default function JobCardsPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search job card, call no, customer, mobile..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Job card date from", "to"]} />
         <Select placeholder="All Statuses" value={statusFilter} onChange={setStatusFilter} allowClear className="w-40" options={JOBCARD_STATUSES.map((s) => ({ value: s, label: s }))} />
       </div>
 

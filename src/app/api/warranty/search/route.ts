@@ -26,7 +26,8 @@ export async function POST(request: NextRequest) {
     const sn = String(serialNo || "").trim().toUpperCase();
     if (!sn) return fail("Serial number is required");
 
-    const sticker = (await runQuery<any>(`SELECT TOP 1 s.[SerialNo], s.[Category], s.[Status], s.[ProductModelId], p.[ModelName], p.[ModelCode], p.[Hp], p.[Kw], p.[Technology], p.[WarrantyMonths]
+    const sticker = (await runQuery<any>(`SELECT TOP 1 s.[SerialNo], s.[Category], s.[Status], s.[ProductModelId], p.[ModelName], p.[ModelCode], p.[Hp], p.[Kw], p.[Technology], p.[WarrantyMonths],
+      s.[InvoiceNo], s.[InvoiceDate], s.[InvoiceLocation], s.[MfgDate]
       FROM dbo.[Stickers] s LEFT JOIN dbo.[ProductModels] p ON s.[ProductModelId] = p.[ProductModelId] WHERE s.[SerialNo] = @sn`, { sn }))[0];
     const warranty = (await runQuery<any>(`SELECT TOP 1 w.*, p.[ModelName], p.[Hp], p.[Kw] FROM dbo.[Warranties] w LEFT JOIN dbo.[ProductModels] p ON w.[ProductModelId] = p.[ProductModelId] WHERE w.[SerialNo] = @sn ORDER BY w.[StartDate] DESC`, { sn }))[0];
 
@@ -38,7 +39,7 @@ export async function POST(request: NextRequest) {
     const st = stateOf(warranty);
     const total = Math.max(1, Math.round((new Date(warranty.EndDate).getTime() - new Date(warranty.StartDate).getTime()) / DAY));
     const used = Math.min(total, Math.max(0, Math.round((Date.now() - new Date(warranty.StartDate).getTime()) / DAY)));
-    const base = { success: true, status: "registered", serialNo: sn, category, model, warranty: { WarrantyNo: warranty.WarrantyNo, StartDate: warranty.StartDate, EndDate: warranty.EndDate, WarrantyMonths: warranty.WarrantyMonths, ExtendedMonths: warranty.ExtendedMonths, State: st.state, Label: st.label, DaysLeft: st.days, ElapsedPct: Math.round((used / total) * 100) } };
+    const base = { success: true, status: "registered", serialNo: sn, category, model, warranty: { WarrantyNo: warranty.WarrantyNo, StartDate: warranty.StartDate, EndDate: warranty.EndDate, WarrantyMonths: warranty.WarrantyMonths, ExtendedMonths: warranty.ExtendedMonths, State: st.state, Label: st.label, DaysLeft: st.days, ElapsedPct: Math.round((used / total) * 100), Status: warranty.Status } };
 
     // Owner details and history only for units inside the user's rights.
     const values: Record<string, unknown> = { id: warranty.WarrantyId };
@@ -47,12 +48,16 @@ export async function POST(request: NextRequest) {
     if (!visible) return NextResponse.json({ ...base, visible: false });
 
     const [owner, components, calls, replacements] = await Promise.all([
-      runQuery<any>(`SELECT TOP 1 cu.[CustomerName], cu.[Mobile], i.[InstallNo], i.[InstallDate], i.[Village], i.[District], i.[Pincode], i.[BorewellDepthM], i.[DynamicHeadM], s.[StateName], d.[FirmName] AS [DealerName]
+      runQuery<any>(`SELECT TOP 1 cu.[CustomerName], cu.[Mobile], i.[InstallNo], i.[InstallDate], i.[Village], i.[District], i.[Pincode], i.[BorewellDepthM], i.[DynamicHeadM], s.[StateName], d.[FirmName] AS [DealerName],
+        i.[RegisteredBy] AS [InstallRegisteredBy], i.[RegisteredOn] AS [InstallRegisteredOn], i.[InvoiceNo] AS [SaleInvoiceNo], i.[InvoiceDate] AS [SaleInvoiceDate]
         FROM dbo.[Warranties] w LEFT JOIN dbo.[Customers] cu ON w.[CustomerId] = cu.[CustomerId] LEFT JOIN dbo.[Installations] i ON w.[InstallationId] = i.[InstallationId]
         LEFT JOIN dbo.[States] s ON i.[StateId] = s.[StateId] LEFT JOIN dbo.[Dealers] d ON w.[DealerId] = d.[DealerId] WHERE w.[WarrantyId] = @id`, { id: warranty.WarrantyId }),
-      runQuery<any>(`SELECT w.[SerialNo], w.[Category], w.[EndDate], w.[Status], p.[ModelName] FROM dbo.[Warranties] w LEFT JOIN dbo.[ProductModels] p ON w.[ProductModelId] = p.[ProductModelId]
+      runQuery<any>(`SELECT w.[SerialNo], w.[Category], w.[EndDate], w.[Status], p.[ModelName], w.[StartDate], w.[WarrantyMonths], w.[ExtendedMonths] FROM dbo.[Warranties] w LEFT JOIN dbo.[ProductModels] p ON w.[ProductModelId] = p.[ProductModelId]
         WHERE w.[InstallationId] = @inst AND w.[Status] <> 'Replaced' ORDER BY CASE w.[Category] WHEN 'PUMP' THEN 0 WHEN 'MOTOR' THEN 1 ELSE 2 END`, { inst: warranty.InstallationId }),
-      runQuery<any>(`SELECT c.[ComplaintId], c.[ComplaintNo], c.[CallDate], c.[Status], c.[ComplaintText], i.[ReportedFault] FROM dbo.[ComplaintItemLns] i JOIN dbo.[Complaints] c ON i.[ComplaintId] = c.[ComplaintId] WHERE i.[SerialNo] = @sn`, { sn }),
+      runQuery<any>(`SELECT c.[ComplaintId], c.[ComplaintNo], c.[CallDate], c.[Status], c.[ComplaintText], i.[ReportedFault], c.[ClosedOn],
+        (SELECT COUNT(*) FROM dbo.[VisitReports] v WHERE v.[ComplaintId] = c.[ComplaintId]) AS [VisitCount],
+        (SELECT COUNT(*) FROM dbo.[JobCards] j WHERE j.[ComplaintId] = c.[ComplaintId]) AS [JobCardCount]
+        FROM dbo.[ComplaintItemLns] i JOIN dbo.[Complaints] c ON i.[ComplaintId] = c.[ComplaintId] WHERE i.[SerialNo] = @sn`, { sn }),
       runQuery<any>(`SELECT r.[ReplNo], r.[ReplDate], i.[OldSerialNo], i.[NewSerialNo] FROM dbo.[ReplacementItemLns] i JOIN dbo.[Replacements] r ON i.[ReplacementId] = r.[ReplacementId] WHERE i.[OldSerialNo] = @sn OR i.[NewSerialNo] = @sn`, { sn }),
     ]);
 
@@ -65,6 +70,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ...base, visible: true, owner: owner[0] || null, replacedFromSerial: warranty.ReplacedFromSerial || null, registeredBy: warranty.RegisteredBy, registeredOn: warranty.RegisteredOn,
       components: components.map((c) => ({ ...c, ...(() => { const s = stateOf(c); return { State: s.state, Label: s.label, DaysLeft: s.days }; })() })), history,
+      // Additive detail for the serial passport (same rows as above, so the same visibility gate applies).
+      sticker: sticker ? { InvoiceNo: sticker.InvoiceNo ?? null, InvoiceDate: sticker.InvoiceDate ?? null, InvoiceLocation: sticker.InvoiceLocation ?? null, MfgDate: sticker.MfgDate ?? null } : null,
+      calls: calls.map((c) => ({ ComplaintId: c.ComplaintId, ComplaintNo: c.ComplaintNo, CallDate: c.CallDate, Status: c.Status, ComplaintText: c.ComplaintText, ReportedFault: c.ReportedFault, ClosedOn: c.ClosedOn ?? null, VisitCount: Number(c.VisitCount || 0), JobCardCount: Number(c.JobCardCount || 0) })),
+      replacements: replacements.map((r) => ({ ReplNo: r.ReplNo, ReplDate: r.ReplDate, OldSerialNo: r.OldSerialNo, NewSerialNo: r.NewSerialNo })),
     });
   } catch (err) {
     return handleApiError(err, "Serial search failed");

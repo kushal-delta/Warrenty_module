@@ -18,6 +18,8 @@ import { MAX_REPLACEMENT_PDFS, PRODUCT_CATEGORIES, REPLACEMENT_STATUSES, REPLACE
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const STATUS_COLOR: Record<string, string> = { Open: "blue", Received: "purple", Closed: "green", Cancelled: "default" };
 const DATE_FIELDS = ["ReplDate", "DealerInvoiceDate", "ReceiptDate", "LrDate"];
@@ -34,7 +36,8 @@ export default function ReplacementsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>();
   const [sourceFilter, setSourceFilter] = useState<string>();
-  useUrlQuery("q", (q) => { setSearch(q); setStatusFilter(undefined); setSourceFilter(undefined); });
+  const [range, setRange] = useState<DateRange>(null); // replacement date
+  useUrlQuery("q", (q) => { setSearch(q); setStatusFilter(undefined); setSourceFilter(undefined); setRange(null); });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<Replacement | null>(null);
@@ -102,8 +105,24 @@ export default function ReplacementsPage() {
   const filtered = replacements.filter((r) => {
     const q = search.toLowerCase();
     return (!q || [r.ReplNo, r.DealerName, r.ComplaintNo, r.CustomerName, r.SerialSwaps, r.LrNo, r.CnNo].some((v) => v?.toLowerCase().includes(q)))
-      && (!statusFilter || r.Status === statusFilter) && (!sourceFilter || r.Source === sourceFilter);
+      && (!statusFilter || r.Status === statusFilter) && (!sourceFilter || r.Source === sourceFilter) && inDateRange(r.ReplDate, range);
   });
+
+  const exportExcel = () => exportTable("Replacement / Return Pump", [
+    { header: "Replacement No", value: (r: Replacement) => r.ReplNo },
+    { header: "Date", value: (r: Replacement) => r.ReplDate, type: "date" },
+    { header: "Source", value: (r: Replacement) => r.Source },
+    { header: "Call No", value: (r: Replacement) => r.ComplaintNo },
+    { header: "Dealer / Customer", value: (r: Replacement) => r.DealerName || r.CustomerName },
+    { header: "Old → New Serial", value: (r: Replacement) => r.SerialSwaps },
+    { header: "Type", value: (r: Replacement) => r.ReplacementType },
+    { header: "Out of Warranty", value: (r: Replacement) => (r.OutOfWarranty ? "Yes" : "") },
+    { header: "PDFs", value: (r: Replacement) => r.DocumentCount || 0, type: "number" },
+    { header: "Net Value ₹", value: (r: Replacement) => r.NetValue, type: "money", total: true },
+    { header: "Credit Note No", value: (r: Replacement) => r.CnNo },
+    { header: "Credit Note ₹", value: (r: Replacement) => (r.CnNo ? r.CnAmount : null), type: "money", total: true },
+    { header: "Status", value: (r: Replacement) => r.Status },
+  ], filtered, { "Replacement date": rangeLabel(range), Source: sourceFilter, Status: statusFilter, Search: search || null }, "Replacements");
 
   const columns = [
     { title: "Replacement No", dataIndex: "ReplNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -131,6 +150,7 @@ export default function ReplacementsPage() {
       <PageHeader icon={<SwapOutlined />} title="Replacement / Return Pump" subtitle="In-warranty product replacement · the balance warranty of the old serial moves to the new serial automatically"
         actions={<>
           <Button icon={<ReloadOutlined />} onClick={() => fetchReplacements()} loading={isLoading}>Refresh</Button>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           {role !== "ENGINEER" && <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">New Replacement</Button>}
         </>} />
 
@@ -144,6 +164,7 @@ export default function ReplacementsPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search replacement no, serial, dealer, call, LR, CN..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["Replacement date from", "to"]} />
         <Select placeholder="All Sources" value={sourceFilter} onChange={setSourceFilter} allowClear className="w-32" options={["Dealer", "Service"].map((s) => ({ value: s, label: s }))} />
         <Select placeholder="All Statuses" value={statusFilter} onChange={setStatusFilter} allowClear className="w-36" options={REPLACEMENT_STATUSES.map((s) => ({ value: s, label: s }))} />
       </div>

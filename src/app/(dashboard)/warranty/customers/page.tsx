@@ -14,6 +14,8 @@ import { PageHeader, TABLE_CARD, fieldLabel } from "@/components/common/PageHead
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 const LANGUAGES = [{ value: "EN", label: "English" }, { value: "HI", label: "Hindi" }, { value: "GU", label: "Gujarati" }];
 
@@ -82,6 +84,18 @@ export default function CustomersPage() {
     return matches && (!stateFilter || c.StateId === stateFilter);
   });
 
+  const exportExcel = () => exportTable("Customers", [
+    { header: "Customer", value: (c: Customer) => c.CustomerName },
+    { header: "Mobile", value: (c: Customer) => c.Mobile },
+    { header: "Village / Area", value: (c: Customer) => c.Village },
+    { header: "District", value: (c: Customer) => c.District },
+    { header: "State", value: (c: Customer) => c.StateName },
+    { header: "Pincode", value: (c: Customer) => c.Pincode },
+    { header: "Pump Sets", value: (c: Customer) => c.InstallationCount, type: "number", total: true },
+    { header: "Active Warranties", value: (c: Customer) => c.ActiveWarrantyCount || 0, type: "number", total: true },
+    { header: "Service Calls", value: (c: Customer) => c.ComplaintCount, type: "number", total: true },
+  ], filtered, { State: states.find((s) => s.StateId === stateFilter)?.StateName, Search: search || null });
+
   const columns = [
     { title: "Customer", dataIndex: "CustomerName", key: "name", render: (name: string, row: Customer) => (
       <div><div className="font-semibold text-slate-800">{name}</div><div className="text-xs text-slate-500 flex items-center gap-1.5 mt-0.5"><PhoneOutlined className="text-slate-400" /><span className="font-mono">{row.Mobile}</span></div></div>
@@ -109,6 +123,7 @@ export default function CustomersPage() {
         title="Customers"
         subtitle="End-user customers · created automatically at warranty registration; the mobile number is their login"
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={() => fetchCustomers()} loading={isLoading}>Refresh</Button>
           {isHO && <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">Add Customer</Button>}
         </>}

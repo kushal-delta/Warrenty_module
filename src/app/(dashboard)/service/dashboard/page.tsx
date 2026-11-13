@@ -10,6 +10,7 @@ import { DonutChart, GroupedBarChart, Legend, RankedBars, VIZ } from "@/componen
 import { PageHeader, TABLE_CARD, inr } from "@/components/common/PageHeader";
 import { PageLoader } from "@/components/common/Loader";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ServicePulse } from "@/components/dashboard/ServicePulse";
 
 const STATUS_ORDER = ["New", "Assigned", "Visited", "In Approval", "Approved", "Resolved", "Closed", "Cancelled"];
 const STATUS_COLOR = [VIZ.blue, VIZ.orange, VIZ.aqua, VIZ.yellow, VIZ.magenta, VIZ.green, VIZ.violet, VIZ.red];
@@ -40,7 +41,7 @@ export default function ServiceDashboardPage() {
   const [loading, setLoading] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
-    try { setData((await axios.post("/api/service/dashboard", {})).data); }
+    try { setData((await axios.post("/api/service/dashboard", { tzOffsetMinutes: -new Date().getTimezoneOffset() })).data); }
     catch (err) { reportFormError(err, { fallback: "Could not load the service dashboard" }); }
     finally { setLoading(false); }
   }, []);
@@ -77,6 +78,8 @@ export default function ServiceDashboardPage() {
           <Kpi label="Job cards awaiting approval" value={k.approvalCount} sub={`₹ ${inr(k.approvalAmount)}`} accent="#7c3aed" href="/service/approvals" />
           <Kpi label="Warranty cost (approved)" value={inrShort(k.warrantyCost)} sub="borne by company" accent="#16a34a" href="/service/reports" />
         </div>
+
+        <ServicePulse daily={data.daily} />
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
           <Card title="Calls by status">

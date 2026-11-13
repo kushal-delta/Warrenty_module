@@ -8,7 +8,8 @@ const DONE = "c.[ClosedOn] IS NOT NULL AND c.[Status] IN ('Resolved','Closed')";
 
 /**
  * Service Dashboard (call-type and project-wise view of every service call): KPIs, calls by status, six-month booked vs closed,
- * call type × project matrix, open-call ageing, open calls by service center, top faults and the "needs attention" list.
+ * call type × project matrix, open-call ageing, open calls by service center, top faults, the "needs attention" list
+ * and calls booked per day for the last ~12 months (`daily`).
  * Everything follows the user's rights (state / district, manager centre, engineer's own calls).
  */
 export async function POST(request: NextRequest) {
@@ -21,8 +22,13 @@ export async function POST(request: NextRequest) {
     const cw = calls ? ` AND ${calls}` : "";
     const jobCalls = callFilter(await getScope(user), "cs", add);
     const jw = jobCalls ? ` AND j.[ComplaintId] IN (SELECT cs.[ComplaintId] FROM dbo.[Complaints] cs WHERE ${jobCalls})` : "";
+    // CallDate is stored in UTC; the caller may send its UTC offset (minutes east of UTC, e.g. 330 for IST) so calls are
+    // bucketed by the user's own calendar day. Validated to a whole number in range before it is put into the SQL.
+    const body = await request.json().catch(() => ({}));
+    const rawTz = Math.trunc(Number(body?.tzOffsetMinutes));
+    const tz = Number.isFinite(rawTz) && Math.abs(rawTz) <= 14 * 60 ? rawTz : 0;
 
-    const [kpi, byStatus, months, matrix, ageing, centers, faults, attention, approval, cost] = await Promise.all([
+    const [kpi, byStatus, months, matrix, ageing, centers, faults, attention, approval, cost, daily] = await Promise.all([
       runQuery<any>(`SELECT
           SUM(CASE WHEN ${OPEN} THEN 1 ELSE 0 END) AS [Open],
           SUM(CASE WHEN ${OPEN} AND c.[Status] = 'New' THEN 1 ELSE 0 END) AS [NotAssigned],
@@ -51,6 +57,11 @@ export async function POST(request: NextRequest) {
         WHERE ${OPEN} AND (c.[DueDate] < SYSUTCDATETIME() OR c.[Status] = 'New')${cw} ORDER BY c.[DueDate]`, values),
       runQuery<any>(`SELECT COUNT(*) AS [Count], COALESCE(SUM(j.[TotalEstimate]), 0) AS [Amount] FROM dbo.[JobCards] j WHERE j.[Status] = 'In Approval'${jw}`, values),
       runQuery<any>(`SELECT COALESCE(SUM(i.[Amount] + i.[GstAmount]), 0) AS [Cost] FROM dbo.[JobCardItemLns] i JOIN dbo.[JobCards] j ON i.[JobCardId] = j.[JobCardId] WHERE i.[IsWarranty] = 1 AND j.[Status] IN ('Approved','Closed')${jw}`, values),
+      // Calls booked per calendar day over the last ~12 months (Service pulse calendar); days without calls are filled in by the page.
+      runQuery<any>(`SELECT CONVERT(char(10), x.[Day], 23) AS [Day], COUNT(*) AS [Calls], SUM(x.[InWarranty]) AS [Warranty]
+        FROM (SELECT CAST(DATEADD(minute, ${tz}, c.[CallDate]) AS date) AS [Day], CASE WHEN c.[WarrantyStatus] = 'In Warranty' THEN 1 ELSE 0 END AS [InWarranty]
+          FROM dbo.[Complaints] c WHERE c.[CallDate] >= DATEADD(day, -372, SYSUTCDATETIME())${cw}) x
+        GROUP BY x.[Day] ORDER BY x.[Day]`, values),
     ]);
 
     const k = kpi[0] || {}, n = (v: unknown) => Number(v || 0);
@@ -68,6 +79,7 @@ export async function POST(request: NextRequest) {
       centers: centers.map((c: any) => ({ name: c.Name, count: n(c.Count) })),
       faults: faults.map((f: any) => ({ name: f.Name, count: n(f.Count) })),
       attention,
+      daily: daily.map((d: any) => ({ day: String(d.Day), calls: n(d.Calls), warranty: n(d.Warranty) })),
     });
   } catch (err) {
     return handleApiError(err, "Failed to load the service dashboard");

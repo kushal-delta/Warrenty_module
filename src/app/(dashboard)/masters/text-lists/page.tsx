@@ -9,6 +9,8 @@ import { FormSection } from "@/components/common/FormSection";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 const LISTS = [
   { group: "ChallanPurpose", label: "Purpose", noun: "purpose", hint: "Purpose dropdown on the Delivery Challan" },
@@ -92,10 +94,20 @@ export default function TextListsPage() {
     ) },
   ];
 
+  const exportExcel = () => exportTable(`Text Lists - ${list.label}`, [
+    { header: "Order", value: (r: any) => r.SortOrder, type: "number" },
+    { header: "Value", value: (r: any) => r.Value },
+    { header: "Used on challans", value: (r: any) => Number(r.UsedOn) || 0, type: "number" },
+    { header: "Added by", value: (r: any) => r.AddedBy?.trim() || "Starting value" },
+    { header: "Added on", value: (r: any) => r.InsertedOn, type: "date" },
+    { header: "Status", value: (r: any) => (r.IsActive ? "Active" : "Inactive") },
+  ], filtered, { List: list.label, Search: search || null }, list.label);
+
   return (
     <div className="space-y-4">
       <PageHeader icon={<OrderedListOutlined />} title="Text Lists" subtitle="Values behind the Delivery Challan dropdowns · values added from the challan form appear here · switch a value off to hide it"
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openForm()} className="bg-blue-600 shadow-sm">Add {list.label}</Button>
         </>} />

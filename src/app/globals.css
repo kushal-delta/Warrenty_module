@@ -151,6 +151,9 @@ button { cursor: pointer; }
 }
 
 .app-content.ant-layout-content {
+  /* Dropdowns / pickers of page fields render inside this scrolling area (see AntdPopupContainer),
+     so they move with their field and are clipped under the header instead of floating over the page. */
+  position: relative;
   min-height: 0;
   min-width: 0;
   overflow: auto;
@@ -402,4 +405,39 @@ button { cursor: pointer; }
 @keyframes app-loader-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
   .app-loader-ring { animation-duration: 1.6s; }
+}
+
+/* ── FilterBar (search chip · pinned chips · + More Filters) ─────────────── */
+.fbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 16px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; }
+.fbar-title { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin-right: 2px; }
+.fbar-chip { display: inline-flex; align-items: stretch; height: 36px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; transition: border-color .15s, box-shadow .15s; max-width: 100%; }
+.fbar-chip:hover { border-color: #cbd5e1; }
+.fbar-chip:focus-within { border-color: #60a5fa; box-shadow: 0 0 0 2px rgba(59,130,246,.12); background: white; }
+.fbar-chip-on { border-color: #93c5fd; background: #eff6ff; }
+.fbar-chip-label { display: inline-flex; align-items: center; padding: 0 10px; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #475569; background: #f1f5f9; border-right: 1px solid #e2e8f0; white-space: nowrap; }
+.fbar-chip-on .fbar-chip-label { color: #1d4ed8; background: #dbeafe; border-right-color: #bfdbfe; }
+.fbar-chip-control { display: flex; align-items: center; min-width: 0; }
+.fbar-chip-control > .ant-select { min-width: 150px; max-width: 260px; }
+.fbar-chip-control > .ant-picker { width: 250px; }
+.fbar-chip-search { flex: 1 1 260px; max-width: 420px; }
+.fbar-chip-search .ant-input-affix-wrapper { height: 100%; }
+.fbar-chip-x { display: inline-flex; align-items: center; justify-content: center; width: 28px; border: 0; border-left: 1px solid #e2e8f0; background: transparent; color: #94a3b8; font-size: 11px; cursor: pointer; }
+.fbar-chip-x:hover { color: #dc2626; background: #fef2f2; }
+.fbar-more.ant-btn { height: 36px; border-radius: 10px; color: #475569; }
+.fbar-clear.ant-btn { padding-inline: 4px; }
+.fbar-extra { margin-left: auto; font-size: 12px; color: #94a3b8; }
+.fbar-menu { width: 240px; }
+.fbar-menu-title { font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #64748b; margin: 2px 2px 8px; }
+.fbar-menu-list { max-height: 320px; overflow-y: auto; margin-top: 8px; }
+.fbar-menu-group { font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #6366f1; padding: 8px 6px 4px; }
+.fbar-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; background: transparent; border-radius: 8px; font-size: 13px; color: #334155; text-align: left; cursor: pointer; }
+.fbar-menu-item:hover { background: #f1f5f9; color: #0f172a; }
+.fbar-menu-icon { color: #64748b; width: 16px; display: inline-flex; justify-content: center; }
+.fbar-menu-empty { font-size: 12px; color: #94a3b8; padding: 10px 6px; }
+@media (max-width: 639px) {
+  .fbar { padding: 12px; }
+  .fbar-chip, .fbar-chip-search { flex: 1 1 100%; max-width: none; }
+  .fbar-chip-control { flex: 1; }
+  .fbar-chip-control > .ant-select, .fbar-chip-control > .ant-picker { width: 100%; max-width: none; min-width: 0; }
+  .fbar-extra { margin-left: 0; }
 }

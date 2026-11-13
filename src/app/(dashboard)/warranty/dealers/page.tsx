@@ -23,7 +23,6 @@ import {
   UploadOutlined,
   EditOutlined,
   DeleteOutlined,
-  SearchOutlined,
   ReloadOutlined,
   CheckCircleOutlined,
   StopOutlined,
@@ -38,9 +37,12 @@ import {
   DRAWER_HEADER_STYLE,
 } from "@/components/common/DrawerHeader";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
+import { FilterBar } from "@/components/common/FilterBar";
 import { BulkUploadWizard } from "@/components/common/BulkUploadWizard";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 export default function DealersPage() {
   const [form] = Form.useForm();
@@ -267,6 +269,18 @@ export default function DealersPage() {
     return matchSearch && matchStatus;
   });
 
+  const exportExcel = () => exportTable("Authorized Dealers", [
+    { header: "Dealer Code", value: (d: Dealer) => d.DealerCode },
+    { header: "Firm Name", value: (d: Dealer) => d.FirmName },
+    { header: "Contact Person", value: (d: Dealer) => d.ContactPerson },
+    { header: "Mobile", value: (d: Dealer) => d.Mobile },
+    { header: "Email", value: (d: Dealer) => d.Email },
+    { header: "City", value: (d: Dealer) => d.City },
+    { header: "District", value: (d: Dealer) => d.District },
+    { header: "State", value: (d: Dealer) => d.StateName },
+    { header: "Status", value: (d: Dealer) => d.Status },
+  ], filtered, { Status: statusFilter, Search: search || null }, "Dealers");
+
   return (
     <div className="space-y-4">
       <div className="page-header">
@@ -281,6 +295,7 @@ export default function DealersPage() {
         </div>
 
         <div className="page-actions">
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button
             icon={<ReloadOutlined />}
             onClick={() => fetchDealers()}
@@ -300,28 +315,15 @@ export default function DealersPage() {
       </div>
 
       {/* Filter toolbar */}
-      <div className="filter-toolbar">
-        <Input
-          prefix={<SearchOutlined className="text-slate-400" />}
-          placeholder="Search dealers by Firm Name, Mobile, City, or Code..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          allowClear
-          className="w-80"
-        />
-
-        <Select
-          placeholder="All Statuses"
-          value={statusFilter}
-          onChange={setStatusFilter}
-          allowClear
-          className="w-40"
-        >
-          <Select.Option value="Approved">Approved</Select.Option>
-          <Select.Option value="Pending">Pending</Select.Option>
-          <Select.Option value="Blocked">Blocked</Select.Option>
-        </Select>
-      </div>
+      <FilterBar
+        storageKey="dealers"
+        search={{ value: search, onChange: setSearch, placeholder: "Search dealers by Firm Name, Mobile, City, or Code..." }}
+        filters={[
+          { key: "status", label: "Status", icon: <CheckCircleOutlined />, pinned: true, active: !!statusFilter, onClear: () => setStatusFilter(undefined),
+            render: () => <Select variant="borderless" placeholder="All" allowClear value={statusFilter} onChange={setStatusFilter} popupMatchSelectWidth={false}
+              options={["Approved", "Pending", "Blocked"].map((s) => ({ value: s, label: s }))} /> },
+        ]}
+      />
 
       {/* Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">

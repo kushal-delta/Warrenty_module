@@ -10,6 +10,8 @@ import { FormSection } from "@/components/common/FormSection";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { districtOptions } from "@/lib/utils/selectOptions";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { ExportExcelButton } from "@/components/common/ReportTools";
+import { exportTable } from "@/lib/utils/excelExport";
 
 const FIELDS = ["ServiceCenterCode", "ServiceCenterName", "ContactPerson", "Mobile", "Email", "Gstin", "Address", "City", "StateId", "District", "Pincode", "IsActive", "LoginUsername"];
 const WH_FIELDS = ["WarehouseCode", "WarehouseName", "Location", "ContactNumber", "Email", "CapacitySqft", "Latitude", "Longitude", "Description", "IsActive", "LoginUsername"];
@@ -196,10 +198,38 @@ export default function ServiceCentersPage() {
   const stateOptions = states.map((s: any) => ({ value: s.StateId, label: s.StateName }));
   const isWh = kind === "warehouse";
 
+  const exportExcel = () => view === "warehouse"
+    ? exportTable("Warehouses", [
+      { header: "Code", value: (r: any) => r.WarehouseCode },
+      { header: "Warehouse", value: (r: any) => r.WarehouseName },
+      { header: "Description", value: (r: any) => r.Description },
+      { header: "Location", value: (r: any) => r.Location },
+      { header: "Contact number", value: (r: any) => r.ContactNumber },
+      { header: "E-mail", value: (r: any) => r.Email },
+      { header: "Capacity (sq ft)", value: (r: any) => r.CapacitySqft, type: "number", total: true },
+      { header: "Login", value: (r: any) => r.LoginUsername },
+      { header: "Status", value: (r: any) => (r.IsActive ? "Active" : "Inactive") },
+    ], whFiltered, { Status: statusFilter, Search: search || null })
+    : exportTable("Service Centers", [
+      { header: "Code", value: (r: any) => r.ServiceCenterCode },
+      { header: "Service center", value: (r: any) => r.ServiceCenterName },
+      { header: "District", value: (r: any) => r.District },
+      { header: "Contact", value: (r: any) => r.ContactPerson },
+      { header: "Mobile", value: (r: any) => r.Mobile },
+      { header: "City", value: (r: any) => r.City },
+      { header: "State", value: (r: any) => r.StateName },
+      { header: "Login", value: (r: any) => r.LoginUsername },
+      { header: "Engineers", value: (r: any) => r.Engineers, type: "number", total: true },
+      { header: "Open calls", value: (r: any) => r.OpenCalls, type: "number", total: true },
+      { header: "iERP ledger", value: (r: any) => r.LedgerCode || "Not in iERP" },
+      { header: "Status", value: (r: any) => (r.IsActive ? "Active" : "Inactive") },
+    ], filtered, { State: stateOptions.find((s) => s.value === stateFilter)?.label, Status: statusFilter, Search: search || null });
+
   return (
     <div className="space-y-4">
       <PageHeader icon={<ShopOutlined />} title="Service Centers / Warehouses" subtitle={`${rows.length} service centers · ${whRows.length} warehouses · each service center is a ledger in the iERP; warehouses are kept in this system only`}
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!(view === "warehouse" ? whFiltered : filtered).length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={openNew} className="bg-blue-600 shadow-sm">Add Service Center / Warehouse</Button>
         </>} />

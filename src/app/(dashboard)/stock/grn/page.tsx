@@ -11,6 +11,8 @@ import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { PageHeader, StatStrip, TABLE_CARD, fieldLabel } from "@/components/common/PageHeader";
 import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
+import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
+import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 interface Line { DeliveryChallanItemLnId: string; LineNo: number; ItemCode?: string; ItemName: string; Uom?: string; Dispatched: number; Received: number; Pending: number; QtyReceived?: number; Remarks?: string }
 const qty = (n: unknown) => Number(Number(n || 0).toFixed(3));
@@ -22,6 +24,7 @@ export default function GoodsReceiptPage() {
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
+  const [range, setRange] = useState<DateRange>(null); // GRN date
   // step 1: pick the challan
   const [pickOpen, setPickOpen] = useState(false);
   const [pending, setPending] = useState<any[]>([]);
@@ -100,9 +103,23 @@ export default function GoodsReceiptPage() {
 
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return !q || [r.ReceiptNo, r.ChallanNo, r.JobWorkerName, r.ReceivedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q));
+    return (!q || [r.ReceiptNo, r.ChallanNo, r.JobWorkerName, r.ReceivedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)))
+      && inDateRange(r.ReceiptDate, range);
   });
   const canDelete = (r: any) => headOffice || String(r.InsertedByUserId || "").toLowerCase() === String(user?.UserId || "").toLowerCase();
+
+  const exportExcel = () => exportTable("Goods Receipt (GRN)", [
+    { header: "GRN No", value: (r: any) => r.ReceiptNo },
+    { header: "GRN Date", value: (r: any) => r.ReceiptDate, type: "date" },
+    { header: "Delivery Challan", value: (r: any) => r.ChallanNo },
+    { header: "Challan Date", value: (r: any) => r.ChallanDate, type: "date" },
+    { header: "Challan Type", value: (r: any) => r.ChallanType },
+    { header: "Job Worker", value: (r: any) => r.JobWorkerName },
+    { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
+    { header: "Qty Received", value: (r: any) => qty(r.QtyReceived), type: "number", total: true },
+    { header: "Received By", value: (r: any) => r.ReceivedBy?.trim() },
+    { header: "Remarks", value: (r: any) => r.Remarks },
+  ], filtered, { "GRN date": rangeLabel(range), Search: search || null }, "Goods receipts");
 
   const columns = [
     { title: "GRN no.", dataIndex: "ReceiptNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
@@ -128,6 +145,7 @@ export default function GoodsReceiptPage() {
     <div className="space-y-4">
       <PageHeader icon={<InboxOutlined />} title="Goods Receipt (GRN)" subtitle="Receive the material of a delivery challan — quantity received per item, with remarks for shortage or damage"
         actions={<>
+          <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={startNew} className="bg-blue-600 shadow-sm">New Goods Receipt</Button>
         </>} />
@@ -141,6 +159,7 @@ export default function GoodsReceiptPage() {
 
       <div className="filter-toolbar">
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search GRN, challan, job worker, remarks..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
+        <DateRangeFilter value={range} onChange={setRange} placeholder={["GRN from", "to"]} />
       </div>
 
       <div className={TABLE_CARD}>

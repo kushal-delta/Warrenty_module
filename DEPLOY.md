@@ -10,6 +10,7 @@ Same setup as the Daily Attendance Report project: the image is built on your ma
    - `DATABASE_URL` — SolarativeiWarranty, as seen **from the server**
    - `IERP_DATABASE_URL` — SolarativeiERP, as seen from the server
    - `JWT_SECRET` — a long random value (`openssl rand -hex 48`)
+   - `PUBLIC_BASE_URL` (optional) — the address the mobile app uses, e.g. `http://203.0.113.10:5858` or `https://warranty.example.com`. Photo / video links sent to the app are made full with it; when blank, the address the app called is used.
 4. **Tools on your machine** — Docker, Git Bash / WSL, and `sshpass` if you use a password.
 
 ## Commands
