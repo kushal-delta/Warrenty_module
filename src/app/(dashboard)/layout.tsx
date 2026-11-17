@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import axios from "axios";
 import {
   Layout,
   Menu,
@@ -84,6 +85,18 @@ export default function DashboardLayout({
     fetchCurrentUser();
     fetchBootstrap();
   }, [fetchCurrentUser, fetchBootstrap]);
+
+  // Side-menu badges (pending material approvals, pending returnable challans) — refreshed on every page change
+  // and every 2 minutes, so they follow approvals / receipts made in other screens.
+  const [menuCounts, setMenuCounts] = useState<Record<string, { count: number; overdue?: number }>>({});
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let alive = true;
+    const load = () => axios.post("/api/dashboard/menu-counts", {}).then(({ data }) => { if (alive) setMenuCounts(data.counts || {}); }).catch(() => undefined);
+    load();
+    const timer = window.setInterval(load, 120000);
+    return () => { alive = false; window.clearInterval(timer); };
+  }, [pathname, isAuthenticated]);
 
   const menuItems = [
     {
@@ -319,8 +332,24 @@ export default function DashboardLayout({
   const initialOpenKeys = menuItems.filter((item: any) => item.children?.some((child: any) => pathname === child.key || pathname.startsWith(`${child.key}/`))).map((item: any) => item.key);
   // Screen rights: hide links the user cannot open (the middleware also blocks them), and drop empty groups.
   const allowedPath = (path: string) => { const form = formForPath(path); return !form || canUseForm(user, form.key); };
+  // Count badge after the menu name (inside the link, so the whole row still opens the page).
+  const withCount = (child: any) => {
+    const c = menuCounts[child.key];
+    if (!c?.count || !React.isValidElement(child.label)) return child;
+    const link = child.label as React.ReactElement<any>;
+    const overdue = Number(c.overdue || 0);
+    const title = child.key === "/stock/material-approvals" ? `${c.count} waiting for approval`
+      : `${c.count} returnable challan${c.count === 1 ? "" : "s"} still out${overdue ? ` · ${overdue} overdue` : ""}`;
+    return {
+      ...child,
+      label: React.cloneElement(link, { className: "menu-count-link", title }, <>
+        <span className="menu-count-text">{link.props.children}</span>
+        <span className={`menu-count-badge${overdue ? " is-overdue" : ""}`}>{c.count > 99 ? "99+" : c.count}</span>
+      </>),
+    };
+  };
   const visibleMenu = menuItems
-    .map((item: any) => (item.children ? { ...item, children: item.children.filter((child: any) => allowedPath(child.key)).map(roleLabel) } : item))
+    .map((item: any) => (item.children ? { ...item, children: item.children.filter((child: any) => allowedPath(child.key)).map(roleLabel).map(withCount) } : item))
     .filter((item: any) => !item.children || item.children.length > 0);
   const stateNames = (() => {
     if (!user || user.IsAdmin || user.Role === "SUPER") return "All states";

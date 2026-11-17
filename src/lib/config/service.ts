@@ -24,8 +24,8 @@ export const VIDEO_ACCEPT = "video/mp4,video/webm,video/quicktime,video/3gpp,vid
 export const REPLACEMENT_STATUSES = ["Open", "Received", "Closed", "Cancelled"];
 export const PRODUCT_CATEGORIES = ["PUMP", "MOTOR", "CONTROLLER"];
 
-/** Stock locations: SC = service-centre store, ENG = engineer van, DAMAGED = faulty-parts bin at a service centre. */
-export const STOCK_LOCATION_TYPES = ["SC", "ENG", "DAMAGED"] as const;
+/** Stock locations: SC = service-centre store, WH = warehouse, ENG = engineer van, DAMAGED = faulty-parts bin at a service centre. */
+export const STOCK_LOCATION_TYPES = ["SC", "WH", "ENG", "DAMAGED"] as const;
 
 /** Each transaction type and the locations it moves stock between. */
 export const STOCK_TXN_TYPES: Record<string, { label: string; from: boolean; to: boolean; hint: string }> = {

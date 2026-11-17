@@ -138,7 +138,7 @@ const ANY = "*";
  */
 const API_RULES: [string, string[]][] = [
   ["/api/service/dashboard", ["service.dashboard"]],
-  ["/api/Auth", [ANY]], ["/api/search", [ANY]], ["/api/dashboard", [ANY]], ["/api/masters/bootstrap", [ANY]], ["/api/upload", [ANY]],
+  ["/api/Auth", [ANY]], ["/api/search", [ANY]], ["/api/dashboard", [ANY]], ["/api/masters/bootstrap", [ANY]], ["/api/masters/next-doc-no", [ANY]], ["/api/upload", [ANY]],
   ["/api/masters/company/get", [ANY]], ["/api/masters/company", ["masters.company"]],
   ["/api/masters/product-models/get", [ANY]], ["/api/masters/product-models", ["masters.company"]],
   ["/api/admin/users/get", ["masters.users", "masters.approval-rules"]], ["/api/admin/users", ["masters.users"]],

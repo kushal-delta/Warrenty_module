@@ -8,7 +8,11 @@ import {
   CloseOutlined,
 } from "@ant-design/icons";
 
-export const DRAWER_WIDTH = "min(960px, 100%)";
+/**
+ * One width for every form / detail drawer: it opens up to the edge of the left menu (leaves ~316px of the page
+ * visible on wide screens, e.g. 1594px on a 1910px screen), never narrower than 960px, and full width on small screens.
+ */
+export const DRAWER_WIDTH = "max(min(100vw, 960px), calc(100vw - 316px))";
 
 export const DRAWER_HEADER_STYLE: React.CSSProperties = {
   padding: 0,
@@ -50,6 +54,8 @@ export interface DrawerHeaderProps {
   title: string;
   subtitle?: string;
   meta?: React.ReactNode;
+  /** Document number pill shown on the right, before the controls (e.g. <DocNoChip />). */
+  docNo?: React.ReactNode;
   maximized?: boolean;
   onToggleMaximize?: () => void;
   onClose: () => void;
@@ -63,6 +69,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
   title,
   subtitle,
   meta,
+  docNo,
   maximized = false,
   onToggleMaximize,
   onClose,
@@ -93,6 +100,7 @@ export const DrawerHeader: React.FC<DrawerHeaderProps> = ({
 
       {/* Right: Maximize/Restore & Close controls */}
       <div className="flex items-center space-x-1 shrink-0 ml-4">
+        {docNo && <div className="mr-2 hidden sm:block">{docNo}</div>}
         {onToggleMaximize && (
           <Tooltip title={maximized ? "Restore size" : "Maximize drawer"}>
             <Button

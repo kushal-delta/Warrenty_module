@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tag, Tooltip, message } from "antd";
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, SwapOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import axios from "axios";
 import { useStockStore, StockTxn } from "@/lib/store/useStockStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
@@ -17,17 +18,18 @@ import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from "@/components/common/ReportTools";
 import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
+import { CopyableItemSelect } from "@/components/common/CopyableItemSelect";
 
 const TXN_COLOR: Record<string, string> = { Opening: "blue", Receipt: "green", Transfer: "purple", "Issue-Out": "orange", Consume: "red", "Return-Damaged": "magenta", "Adjust-In": "cyan", "Adjust-Out": "gold" };
 
-/** Location picker: service-centre stores and engineer vans in one grouped list. Values look like "SC|<id>". */
-function LocationSelect({ value, onChange, damaged }: { value?: string; onChange?: (v: string) => void; damaged?: boolean }) {
-  const { serviceCenters, engineers } = useMasterStore();
+/** Location picker: service-centre stores and warehouses in one grouped list. Values look like "SC|<id>" / "WH|<id>". */
+function LocationSelect({ value, onChange, damaged, warehouses = [] }: { value?: string; onChange?: (v: string) => void; damaged?: boolean; warehouses?: any[] }) {
+  const { serviceCenters } = useMasterStore();
   const options = damaged
     ? [{ label: "Faulty-parts bin at store", options: serviceCenters.map((s: any) => ({ value: `DAMAGED|${s.ServiceCenterId}`, label: s.ServiceCenterName })) }]
     : [
       { label: "Service-centre stores", options: serviceCenters.map((s: any) => ({ value: `SC|${s.ServiceCenterId}`, label: s.ServiceCenterName })) },
-      { label: "Engineer vans", options: engineers.map((e: any) => ({ value: `ENG|${e.UserId}`, label: `${e.FirstName} ${e.LastName || ""}` })) },
+      ...(warehouses.length ? [{ label: "Warehouses", options: warehouses.map((w: any) => ({ value: `WH|${w.WarehouseId}`, label: `${w.WarehouseName} (${w.WarehouseCode})` })) }] : []),
     ];
   return <Select value={value} onChange={onChange} showSearch optionFilterProp="label" placeholder="Select location" options={options} />;
 }
@@ -46,10 +48,14 @@ export default function StockLedgerPage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<StockTxn | null>(null);
   const txnType: string = Form.useWatch("TxnType", form) || "Receipt";
+  const spareId: string | undefined = Form.useWatch("SpareId", form);
   const rule = STOCK_TXN_TYPES[txnType];
 
   const refresh = () => fetchTxns().catch((err) => reportFormError(err, { fallback: "Could not load stock ledger" }));
   useEffect(() => { refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Warehouses for the From / To pickers.
+  const [warehouses, setWarehouses] = useState<any[]>([]);
+  useEffect(() => { axios.post("/api/stock/txns/locations", {}).then(({ data }) => setWarehouses(data.warehouses || [])).catch(() => undefined); }, []);
 
   const openForm = () => {
     form.resetFields();
@@ -143,14 +149,15 @@ export default function StockLedgerPage() {
                 <Select options={Object.entries(STOCK_TXN_TYPES).map(([k, v]) => ({ value: k, label: v.label }))} onChange={() => form.setFieldsValue({ From: undefined, To: undefined })} />
               </Form.Item>
               <Form.Item name="TxnDate" label={fieldLabel("Date")} rules={[{ required: true, message: "Date is required" }]}><SmartDatePicker disabledDate={(d) => d.isAfter(dayjs(), "day")} /></Form.Item>
-              {rule?.from && <Form.Item name="From" label={fieldLabel("From Location")} rules={[{ required: true, message: "Select the source" }]}><LocationSelect /></Form.Item>}
-              {rule?.to && <Form.Item name="To" label={fieldLabel(txnType === "Return-Damaged" ? "Faulty-parts Store" : "To Location")} rules={[{ required: true, message: "Select the destination" }]}><LocationSelect damaged={txnType === "Return-Damaged"} /></Form.Item>}
+              {rule?.from && <Form.Item name="From" label={fieldLabel("From Location")} rules={[{ required: true, message: "Select the source" }]}><LocationSelect warehouses={warehouses} /></Form.Item>}
+              {rule?.to && <Form.Item name="To" label={fieldLabel(txnType === "Return-Damaged" ? "Faulty-parts Store" : "To Location")} rules={[{ required: true, message: "Select the destination" }]}><LocationSelect damaged={txnType === "Return-Damaged"} warehouses={warehouses} /></Form.Item>}
             </div>
           </FormSection>
           <FormSection number="02" title="Item" description="Spare, quantity and rate (defaults to the current master rate).">
             <div className="form-grid form-grid-two">
               <div className="entry-field-wide"><Form.Item name="SpareId" label={fieldLabel("Spare")} rules={[{ required: true, message: "Select the spare" }]}>
-                <Select showSearch optionFilterProp="label" placeholder="Select spare" options={spares.map((s: any) => ({ value: s.SpareId, label: `${s.SpareCode} — ${s.SpareName}` }))}
+                <CopyableItemSelect item={(() => { const s: any = spares.find((x: any) => x.SpareId === spareId); return s ? { name: s.SpareName, code: s.SpareCode, uom: s.Uom || s.UOM || null } : null; })()}
+                  showSearch optionFilterProp="label" placeholder="Select spare" options={spares.map((s: any) => ({ value: s.SpareId, label: `${s.SpareCode} — ${s.SpareName}` }))}
                   onChange={(id) => { const s = spares.find((x: any) => x.SpareId === id); if (s) form.setFieldValue("Rate", Number(s.CurrentRate)); }} />
               </Form.Item></div>
               <Form.Item name="Qty" label={fieldLabel("Quantity")} rules={[{ required: true, message: "Quantity is required" }]}><InputNumber min={1} precision={0} className="w-full" /></Form.Item>

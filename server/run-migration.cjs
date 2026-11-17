@@ -4,6 +4,7 @@
  * required — the file is sent as a single batch, so it must not contain GO).
  *
  *   node server/run-migration.cjs server/migrations/<file>.sql
+ *   node server/run-migration.cjs server/migrations/<file>.sql --ierp   (runs on the iERP database, IERP_DATABASE_URL)
  */
 const fs = require("fs");
 const path = require("path");
@@ -30,8 +31,9 @@ function configFrom(raw) {
   if (!file) throw new Error("Usage: node server/run-migration.cjs <file.sql>");
   const statement = fs.readFileSync(path.resolve(file), "utf8");
   if (/^\s*GO\s*$/im.test(statement)) throw new Error("Remove GO separators — the file runs as one batch");
-  const raw = process.env.MSSQL_DATABASE_URL || process.env.DATABASE_URL;
-  if (!raw) throw new Error("DATABASE_URL is not set in .env");
+  const ierp = process.argv.includes("--ierp");
+  const raw = ierp ? process.env.IERP_DATABASE_URL : process.env.MSSQL_DATABASE_URL || process.env.DATABASE_URL;
+  if (!raw) throw new Error(`${ierp ? "IERP_DATABASE_URL" : "DATABASE_URL"} is not set in .env`);
   const pool = await sql.connect(configFrom(raw));
   try {
     await pool.request().batch(statement);

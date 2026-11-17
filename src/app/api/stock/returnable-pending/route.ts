@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
+import { itemNamesSql } from "@/lib/services/itemNames";
 import { JOB_WORKER_COLS, JOB_WORKER_JOINS, challanScope } from "@/lib/services/challans";
 import { RETURN_PENDING_QTY } from "@/lib/services/challanReturns";
 
@@ -23,6 +24,7 @@ export async function POST(request: NextRequest) {
           DATEDIFF(day, d.[ChallanDate], CAST(SYSDATETIME() AS date)) AS [DaysOut],
           CASE WHEN d.[ExpectedBackBy] IS NULL THEN NULL ELSE DATEDIFF(day, d.[ExpectedBackBy], CAST(SYSDATETIME() AS date)) END AS [DaysOverdue],
           (SELECT COUNT(*) FROM dbo.[DeliveryChallanItemLns] l WHERE l.[DeliveryChallanId] = d.[DeliveryChallanId]) AS [ItemCount],
+        ${itemNamesSql("dbo.[DeliveryChallanItemLns] l", "l.[DeliveryChallanId] = d.[DeliveryChallanId]")},
           (SELECT COALESCE(SUM(l.[Qty]), 0) FROM dbo.[DeliveryChallanItemLns] l WHERE l.[DeliveryChallanId] = d.[DeliveryChallanId]) AS [TotalQty]
         FROM dbo.[DeliveryChallans] d ${JOB_WORKER_JOINS} LEFT JOIN dbo.[MaterialRequests] mr ON d.[MaterialRequestId] = mr.[MaterialRequestId]
         WHERE ${where} ORDER BY d.[ExpectedBackBy], d.[ChallanDate]`, values),

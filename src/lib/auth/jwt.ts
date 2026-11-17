@@ -19,11 +19,12 @@ export interface AuthSessionUser {
   FormRights?: string | null;
 }
 
-export async function signAuthToken(user: AuthSessionUser): Promise<string> {
+/** expiresIn: jose time span, e.g. "7d" (password login) or "12h" (iERP single sign-on). */
+export async function signAuthToken(user: AuthSessionUser, expiresIn: string = "7d"): Promise<string> {
   return await new SignJWT({ ...user })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
-    .setExpirationTime("7d")
+    .setExpirationTime(expiresIn)
     .sign(JWT_SECRET);
 }
 

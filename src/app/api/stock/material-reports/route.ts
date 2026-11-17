@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
+import { itemNamesSql } from "@/lib/services/itemNames";
 import { REQUEST_FOR_COLS, REQUEST_FOR_JOINS, requestScope } from "@/lib/services/materialRequests";
 import { JOB_WORKER_COLS, JOB_WORKER_JOINS, challanScope } from "@/lib/services/challans";
 
@@ -26,6 +27,7 @@ export async function POST(request: NextRequest) {
       runQuery(`SELECT r.[MaterialRequestId], r.[RequestNo], r.[RequestDate], r.[RequestType], r.[RequiredBy], r.[Priority], r.[Status], r.[Remarks], r.[DecisionOn], r.[DecisionRemarks],
           sc.[ServiceCenterName], ${REQUEST_FOR_COLS}, CONCAT(u.[FirstName], ' ', u.[LastName]) AS [RequestedBy], (SELECT CONCAT(du.[FirstName], ' ', du.[LastName]) FROM dbo.[Users] du WHERE du.[UserId] = r.[DecisionByUserId]) AS [DecisionBy],
           (SELECT COUNT(*) FROM dbo.[MaterialRequestItemLns] l WHERE l.[MaterialRequestId] = r.[MaterialRequestId]) AS [ItemCount],
+        ${itemNamesSql("dbo.[MaterialRequestItemLns] l", "l.[MaterialRequestId] = r.[MaterialRequestId]")},
           (SELECT COALESCE(SUM(l.[Qty]), 0) FROM dbo.[MaterialRequestItemLns] l WHERE l.[MaterialRequestId] = r.[MaterialRequestId]) AS [TotalQty],
           (SELECT TOP 1 dc.[ChallanNo] FROM dbo.[DeliveryChallans] dc WHERE dc.[MaterialRequestId] = r.[MaterialRequestId]) AS [ChallanNo]
         FROM dbo.[MaterialRequests] r ${REQUEST_FOR_JOINS} LEFT JOIN dbo.[Users] u ON u.[UserId] = r.[InsertedByUserId]

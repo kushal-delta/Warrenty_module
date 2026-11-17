@@ -3,6 +3,8 @@
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
 import { Button, DatePicker, Input, InputNumber, Modal, Select, Table, Tooltip, message } from "antd";
+import { ItemInfoCell } from "@/components/common/CopyableItemSelect";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ArrowRightOutlined, DeleteOutlined, PlusOutlined, ReloadOutlined, RollbackOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -36,6 +38,7 @@ export default function DefectiveFreshReceiptPage() {
   const [picked, setPicked] = useState<string>();
   const [opening, setOpening] = useState(false);
   const [challan, setChallan] = useState<any>(null);
+  const nextDocNo = useNextDocNo("DCRETURN", Boolean(challan));
   const [lines, setLines] = useState<Line[]>([]);
   const [date, setDate] = useState<Dayjs>(dayjs());
   const [through, setThrough] = useState<string>();
@@ -200,7 +203,7 @@ export default function DefectiveFreshReceiptPage() {
       </Modal>
 
       {/* Step 2 — fresh / defective per item */}
-      <Modal open={!!challan} onCancel={() => setChallan(null)} title={challan ? `Defective / fresh receipt — ${challan.ChallanNo}` : ""} width={1200} destroyOnClose maskClosable={false}
+      <Modal open={!!challan} onCancel={() => setChallan(null)} title={challan ? <div className="flex items-center justify-between gap-3 pr-8"><span>Defective / fresh receipt — {challan.ChallanNo}</span><DocNoChip onLight preview docNo={nextDocNo} /></div> : ""} width={1200} destroyOnClose maskClosable={false}
         footer={<div className="flex items-center justify-between gap-2">
           <span className="text-xs text-slate-500">Receiving <b className="text-slate-800">{qty(totNow)}</b> of <b className="text-slate-800">{qty(totPending)}</b> pending</span>
           <div className="flex gap-2"><Button onClick={() => setChallan(null)} disabled={saving}>Cancel</Button><Button type="primary" icon={<SaveOutlined />} className="bg-blue-600" loading={saving} onClick={save}>Save receipt</Button></div>
@@ -217,16 +220,26 @@ export default function DefectiveFreshReceiptPage() {
             <div><div className="mb-1">{fieldLabel("Remarks")}</div>
               <Input maxLength={500} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Docket no., condition on arrival…" /></div>
           </div>
-          <Table size="middle" rowKey="DeliveryChallanItemLnId" dataSource={lines} pagination={false} scroll={{ x: 1150 }} columns={[
-            { title: "Item", key: "item", render: (_: any, l: Line) => <div><div className="font-semibold text-slate-800">{l.ItemName}</div>{l.ItemCode && <div className="text-[11px] font-mono text-slate-400">{l.ItemCode}</div>}</div> },
-            { title: "Issued", dataIndex: "Issued", key: "i", width: 85, align: "right" as const, render: (v: number, l: Line) => `${qty(v)}${l.Uom ? ` ${l.Uom}` : ""}` },
-            { title: "Back so far", key: "b", width: 110, align: "right" as const, render: (_: any, l: Line) => <span className="text-xs"><span className="text-emerald-600">{qty(l.Fresh)} F</span> · <span className="text-red-600">{qty(l.Defective)} D</span></span> },
-            { title: "Pending", dataIndex: "Pending", key: "p", width: 85, align: "right" as const, render: (v: number) => v > 0 ? <b>{qty(v)}</b> : <span className="text-emerald-600">Done</span> },
-            { title: "Fresh now", key: "fn", width: 120, render: (_: any, l: Line) => <InputNumber className="w-full" min={0} precision={3} disabled={l.Pending <= 0} value={l.QtyFresh} status={over(l) ? "error" : undefined} onChange={(v) => updateLine(l.DeliveryChallanItemLnId, { QtyFresh: v ?? 0 })} /> },
-            { title: "Defective now", key: "dn", width: 125, render: (_: any, l: Line) => <InputNumber className="w-full" min={0} precision={3} disabled={l.Pending <= 0} value={l.QtyDefective} status={over(l) ? "error" : undefined} onChange={(v) => updateLine(l.DeliveryChallanItemLnId, { QtyDefective: v ?? 0, ...(v ? {} : { DefectSerial: "" }) })} /> },
-            { title: "Defect serial", key: "s", width: 170, render: (_: any, l: Line) => <Input maxLength={60} disabled={!Number(l.QtyDefective)} value={l.DefectSerial} placeholder={Number(l.QtyDefective) ? "Serial / tag" : "—"} className="font-mono" onChange={(e) => updateLine(l.DeliveryChallanItemLnId, { DefectSerial: e.target.value })} /> },
-            { title: "Remarks", key: "r", width: 200, render: (_: any, l: Line) => <Input maxLength={250} disabled={l.Pending <= 0} value={l.Remarks} placeholder="Condition…" onChange={(e) => updateLine(l.DeliveryChallanItemLnId, { Remarks: e.target.value })} /> },
-          ]} />
+          <div className="overflow-x-auto">
+            <div className="line-grid min-w-[1120px]" style={{ ["--lg-cols" as any]: "minmax(240px,1fr) 90px 120px 90px 130px 130px 160px minmax(160px,200px)" }}>
+              <div className="line-grid-head">
+                <span>Item</span><span className="num">Issued</span><span className="num">Back so far</span><span className="num">Pending</span><span className="num">Fresh now</span><span className="num">Defective now</span><span>Defect serial</span><span>Remarks</span>
+              </div>
+              {lines.map((l) => (
+                <div key={l.DeliveryChallanItemLnId} className="line-grid-row">
+                  <div className="lg-cell"><ItemInfoCell item={{ name: l.ItemName, code: l.ItemCode, uom: l.Uom }} /></div>
+                  <div className="lg-cell"><div className="lg-static">{qty(l.Issued)}{l.Uom && <span className="lg-unit">{l.Uom}</span>}</div></div>
+                  <div className="lg-cell"><div className="lg-static text-xs"><span className="text-emerald-600">{qty(l.Fresh)} F</span><span className="text-slate-300">·</span><span className="text-red-600">{qty(l.Defective)} D</span></div></div>
+                  <div className="lg-cell"><div className="lg-static">{l.Pending > 0 ? <b>{qty(l.Pending)}</b> : <span className="text-emerald-600">Done</span>}</div></div>
+                  <div className="lg-cell"><InputNumber className="w-full lg-num" min={0} precision={3} disabled={l.Pending <= 0} value={l.QtyFresh} status={over(l) ? "error" : undefined} onChange={(v) => updateLine(l.DeliveryChallanItemLnId, { QtyFresh: v ?? 0 })} /></div>
+                  <div className="lg-cell"><InputNumber className="w-full lg-num" min={0} precision={3} disabled={l.Pending <= 0} value={l.QtyDefective} status={over(l) ? "error" : undefined} onChange={(v) => updateLine(l.DeliveryChallanItemLnId, { QtyDefective: v ?? 0, ...(v ? {} : { DefectSerial: "" }) })} /></div>
+                  <div className="lg-cell"><Input maxLength={60} disabled={!Number(l.QtyDefective)} value={l.DefectSerial} placeholder={Number(l.QtyDefective) ? "Serial / tag" : "—"} className="font-mono" onChange={(e) => updateLine(l.DeliveryChallanItemLnId, { DefectSerial: e.target.value })} /></div>
+                  <div className="lg-cell"><Input maxLength={250} disabled={l.Pending <= 0} value={l.Remarks} placeholder="Condition…" onChange={(e) => updateLine(l.DeliveryChallanItemLnId, { Remarks: e.target.value })} /></div>
+                </div>
+              ))}
+              <div className="line-grid-foot"><span className="text-slate-500">{lines.length} item{lines.length === 1 ? "" : "s"} · Receiving now</span><b>{qty(totNow)}</b><span className="text-slate-400">of {qty(totPending)} pending</span></div>
+            </div>
+          </div>
         </div>}
       </Modal>
 

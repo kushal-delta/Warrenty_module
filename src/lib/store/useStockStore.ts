@@ -10,7 +10,7 @@ const API = {
 
 export interface StockRow {
   key: string;
-  LocType: "SC" | "ENG";
+  LocType: "SC" | "WH" | "ENG";
   LocId: string;
   LocName: string;
   ServiceCenterName?: string;

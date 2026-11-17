@@ -2,12 +2,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
+import { CopyableItemSelect } from "@/components/common/CopyableItemSelect";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tag, Tooltip, message } from "antd";
 import type { InputRef } from "antd";
 import { CodeSandboxOutlined, DeleteOutlined, EditOutlined, FilePdfOutlined, FileTextOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { openChallanPrint } from "@/lib/print/challanPrint";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { FormSection } from "@/components/common/FormSection";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
@@ -112,6 +115,7 @@ export default function DeliveryChallansPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const nextDocNo = useNextDocNo("DCHALLAN", drawerOpen && !editing);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<any>(null);
   const [lines, setLines] = useState<Line[]>([newLine()]);
@@ -255,7 +259,7 @@ export default function DeliveryChallansPage() {
   const overdue = (r: any) => r.ChallanType === "Returnable" && r.Status === "Dispatched" && r.ExpectedBackBy && new Date(r.ExpectedBackBy) < new Date(new Date().toDateString());
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!typeFilter || r.ChallanType === typeFilter) && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.TransporterName, r.VehicleNo, r.RequestNo, r.DispatchLocName].some((v) => v?.toLowerCase().includes(q)))
+    return (!typeFilter || r.ChallanType === typeFilter) && (!q || [r.ChallanNo, r.JobWorkerName, r.Purpose, r.TransporterName, r.VehicleNo, r.RequestNo, r.DispatchLocName, r.ItemNames].some((v) => v?.toLowerCase().includes(q)))
       && inDateRange(r.ChallanDate, range);
   });
 
@@ -271,6 +275,7 @@ export default function DeliveryChallansPage() {
     { header: "Transporter", value: (r: any) => r.TransporterName },
     { header: "Vehicle No", value: (r: any) => r.VehicleNo },
     { header: "Expected Back", value: (r: any) => r.ExpectedBackBy, type: "date" },
+    { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
     { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
     { header: "Total Qty", value: (r: any) => r.TotalQty, type: "number", total: true },
     { header: "Value ₹", value: (r: any) => r.TotalValue, type: "money", total: true },
@@ -284,6 +289,7 @@ export default function DeliveryChallansPage() {
     { title: "From store", dataIndex: "DispatchLocName", key: "loc", render: (v: string) => v || "—" },
     { title: "Transport", key: "transport", render: (_: any, r: any) => <div className="text-xs"><div>{[r.TransportMode, r.TransporterName].filter(Boolean).join(" · ") || "—"}</div>{r.VehicleNo && <div className="font-mono text-slate-400">{r.VehicleNo}</div>}</div> },
     { title: "Expected back", dataIndex: "ExpectedBackBy", key: "back", width: 120, render: (v: string, r: any) => (v ? <span className={overdue(r) ? "font-semibold text-red-600" : ""}>{formatDate(v)}</span> : "—") },
+    { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
     { title: "Items", key: "items", width: 75, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
     { title: "Value ₹", dataIndex: "TotalValue", key: "value", width: 110, align: "right" as const, render: (v: number) => inr(v, 2) },
     { title: "Actions", key: "actions", width: 120, render: (_: any, r: any) => (
@@ -327,7 +333,7 @@ export default function DeliveryChallansPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={<FileTextOutlined />} title={editing ? `Edit — ${editing.ChallanNo}` : "New Delivery Challan"} subtitle="Material sent out from an iERP store to a job worker"
+        title={<DrawerHeader docNo={<DocNoChip docNo={editing ? editing.ChallanNo : nextDocNo} preview={!editing} />} icon={<FileTextOutlined />} title={editing ? `Edit — ${editing.ChallanNo}` : "New Delivery Challan"} subtitle="Material sent out from an iERP store to a job worker"
           meta={<DrawerChip label={editing ? editing.Status : "New"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>Cancel</Button>{!readOnly && <Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">{editing ? "Update" : "Save"}</Button>}</div>}
       >
@@ -394,30 +400,30 @@ export default function DeliveryChallansPage() {
             {!readOnly && <Button size="small" icon={<PlusOutlined />} onClick={() => setLines((ls) => [...ls, newLine()])}>Add item</Button>}
           </div>
           <div className="p-3 overflow-x-auto">
-            <div className="min-w-[760px] rounded-lg border border-slate-200">
-              <div className="grid grid-cols-[minmax(0,1fr)_130px_140px_110px_44px] gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                <span>Item</span><span className="text-right">Quantity</span><span className="text-right">Value / unit</span><span className="text-right">Value</span><span />
+            <div className="line-grid min-w-[880px]" style={{ ["--lg-cols" as any]: "minmax(280px,1fr) 150px 150px 130px minmax(160px,220px) 48px" }}>
+              <div className="line-grid-head">
+                <span>Item</span><span className="num">Quantity</span><span className="num">Value / unit</span><span className="num">Value</span><span>Remarks</span><span />
               </div>
               {lines.map((l) => {
                 const item = l.ItemKey ? itemByKey.get(l.ItemKey.toUpperCase()) : undefined;
+                const amount = (Number(l.Qty) || 0) * (Number(l.Rate) || 0);
                 return (
-                  <div key={l.key} className="px-3 py-2 border-b border-slate-100 last:border-b-0">
-                    <div className="grid grid-cols-[minmax(0,1fr)_130px_140px_110px_44px] items-center gap-2">
-                      <Select showSearch allowClear optionFilterProp="label" disabled={readOnly} loading={lookupsLoading} placeholder={lookupsLoading ? "Loading items…" : "Item"} value={l.ItemKey} options={optionsFor(l)}
+                  <div key={l.key} className="line-grid-row">
+                    <div className="lg-cell">
+                      <CopyableItemSelect item={l.ItemKey ? { name: item?.name || l._name, code: item?.code ?? l._code, uom: item?.uom } : null}
+                        showSearch allowClear optionFilterProp="label" disabled={readOnly} loading={lookupsLoading} placeholder={lookupsLoading ? "Loading items…" : "Search item"} value={l.ItemKey} options={optionsFor(l)}
                         notFoundContent={lookupsLoading ? "Loading…" : "No items"}
                         onChange={(v) => { const picked = v ? itemByKey.get(String(v).toUpperCase()) : undefined; updateLine(l.key, { ItemKey: v, Qty: v && !l.Qty ? 1 : l.Qty, Rate: picked?.rate ?? (v ? l.Rate : undefined) }); }} />
-                      <InputNumber className="w-full" min={0} precision={3} placeholder="Qty" value={l.Qty} disabled={readOnly} onChange={(v) => updateLine(l.key, { Qty: v ?? undefined })} addonAfter={item?.uom || undefined} />
-                      <InputNumber className="w-full" min={0} precision={2} prefix="₹" placeholder="0.00" value={l.Rate} disabled={readOnly} onChange={(v) => updateLine(l.key, { Rate: v ?? undefined })} />
-                      <span className="text-right text-sm font-semibold text-slate-800">₹{inr((Number(l.Qty) || 0) * (Number(l.Rate) || 0), 2)}</span>
-                      {!readOnly ? <Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} /></Tooltip> : <span />}
                     </div>
-                    <Input variant="borderless" size="small" className="!mt-1 !px-0 text-xs" maxLength={250} disabled={readOnly} placeholder="Remarks for this item (condition, what is to be done...)" value={l.Remarks} onChange={(e) => updateLine(l.key, { Remarks: e.target.value })} />
+                    <div className="lg-cell"><InputNumber className="w-full lg-num" min={0} precision={3} placeholder="Qty" value={l.Qty} disabled={readOnly} onChange={(v) => updateLine(l.key, { Qty: v ?? undefined })} suffix={item?.uom || undefined} /></div>
+                    <div className="lg-cell"><InputNumber className="w-full lg-num" min={0} precision={2} prefix="₹" placeholder="0.00" value={l.Rate} disabled={readOnly} onChange={(v) => updateLine(l.key, { Rate: v ?? undefined })} /></div>
+                    <div className="lg-cell"><div className="lg-static lg-strong">{amount ? `₹${inr(amount, 2)}` : <span className="font-normal text-slate-300">—</span>}</div></div>
+                    <div className="lg-cell"><Input maxLength={250} disabled={readOnly} placeholder="Condition, what is to be done…" value={l.Remarks} onChange={(e) => updateLine(l.key, { Remarks: e.target.value })} /></div>
+                    <div className="lg-cell lg-icon"><div className="lg-static">{!readOnly && <Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} /></Tooltip>}</div></div>
                   </div>
                 );
               })}
-              <div className="flex items-center justify-end gap-3 px-3 py-2.5 bg-slate-50 border-t border-slate-200 text-sm">
-                <span className="text-slate-500">Total value</span><b className="text-slate-900">₹{inr(total, 2)}</b>
-              </div>
+              <div className="line-grid-foot"><span className="text-slate-500">{lines.filter((l) => l.ItemKey).length} item{lines.filter((l) => l.ItemKey).length === 1 ? "" : "s"} · Total value</span><b>₹{inr(total, 2)}</b></div>
             </div>
           </div>
         </section>

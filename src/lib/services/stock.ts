@@ -6,6 +6,11 @@ import type { AuthSessionUser } from "@/lib/auth/jwt";
 /** Location ids a user may see: HO everything (undefined), a manager their centre and its engineers, an engineer their own van. */
 export async function visibleStockLocations(user: AuthSessionUser): Promise<string[] | undefined> {
   if (user.Role === "ENGINEER") return [user.UserId];
+  // Warehouse Manager: the warehouses they run.
+  if (user.Role === "WAREHOUSE") {
+    const own = await query<any>(`SELECT [WarehouseId] FROM dbo.[Warehouses] WHERE [LoginUserId] = @p0`, [user.UserId]);
+    return own.map((w) => w.WarehouseId);
+  }
   if ((user.Role === "MANAGER" || user.Role === "SERVICE_CENTER") && user.ServiceCenterId) {
     const engineers = await query<any>(`SELECT [UserId] FROM dbo.[Users] WHERE [Role] = 'ENGINEER' AND [ServiceCenterId] = @p0`, [user.ServiceCenterId]);
     return [user.ServiceCenterId, ...engineers.map((e) => e.UserId)];
@@ -19,9 +24,9 @@ export async function visibleStockLocations(user: AuthSessionUser): Promise<stri
  * network (supplier, customer, written off) are recorded with a NULL type and add nothing.
  */
 const MOVEMENTS = `
-  SELECT [ToLocType] AS [LocType], [ToLocId] AS [LocId], [SpareId], [Qty] FROM dbo.[StockTxns] WHERE [ToLocType] IN ('SC','ENG','DAMAGED')
+  SELECT [ToLocType] AS [LocType], [ToLocId] AS [LocId], [SpareId], [Qty] FROM dbo.[StockTxns] WHERE [ToLocType] IN ('SC','WH','ENG','DAMAGED')
   UNION ALL
-  SELECT [FromLocType], [FromLocId], [SpareId], -[Qty] FROM dbo.[StockTxns] WHERE [FromLocType] IN ('SC','ENG','DAMAGED')`;
+  SELECT [FromLocType], [FromLocId], [SpareId], -[Qty] FROM dbo.[StockTxns] WHERE [FromLocType] IN ('SC','WH','ENG','DAMAGED')`;
 
 export interface StockBalanceRow {
   LocType: string;

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
+import { itemNamesSql } from "@/lib/services/itemNames";
 import { JOB_WORKER_COLS, JOB_WORKER_JOINS, challanScope } from "@/lib/services/challans";
 import { OUT_OF_SCOPE } from "@/lib/auth/scope";
 
@@ -28,6 +29,7 @@ export async function POST(request: NextRequest) {
     const receipts = await runQuery(`SELECT r.[ChallanReceiptId], r.[ReceiptNo], r.[ReceiptDate], r.[Remarks], r.[InsertedByUserId], r.[InsertedOn], d.[DeliveryChallanId], d.[ChallanNo], d.[ChallanDate], d.[ChallanType], ${JOB_WORKER_COLS},
         CONCAT(u.[FirstName], ' ', u.[LastName]) AS [ReceivedBy],
         (SELECT COUNT(*) FROM dbo.[ChallanReceiptItemLns] ri WHERE ri.[ChallanReceiptId] = r.[ChallanReceiptId] AND ri.[QtyReceived] > 0) AS [ItemCount],
+        ${itemNamesSql("dbo.[ChallanReceiptItemLns] ri JOIN dbo.[DeliveryChallanItemLns] l ON l.[DeliveryChallanItemLnId] = ri.[DeliveryChallanItemLnId]", "ri.[ChallanReceiptId] = r.[ChallanReceiptId] AND ri.[QtyReceived] > 0")},
         (SELECT COALESCE(SUM(ri.[QtyReceived]), 0) FROM dbo.[ChallanReceiptItemLns] ri WHERE ri.[ChallanReceiptId] = r.[ChallanReceiptId]) AS [QtyReceived]
       ${base}${scope ? ` WHERE ${scope}` : ""} ORDER BY r.[ReceiptDate] DESC, r.[InsertedOn] DESC`, values);
     return NextResponse.json({ success: true, receipts });

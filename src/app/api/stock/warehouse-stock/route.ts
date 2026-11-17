@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { fail, handleApiError, isHeadOffice, requireUser, runQuery } from "@/lib/services/apiHelpers";
 import { challanScope } from "@/lib/services/challans";
 import { erpRun } from "@/lib/services/erpLedgers";
+import { STOCK_LEDGER_WAREHOUSE_MOVEMENTS } from "@/lib/services/warehouseStock";
 
 /**
  * Warehouse stock report: per warehouse and item —
@@ -41,7 +42,9 @@ export async function POST(request: NextRequest) {
       UNION ALL
       SELECT mi.[WarehouseId], mi.[IssueDate], il.[ItemSource], COALESCE(il.[ErpItmId], il.[SpareId]), il.[ItemCode], il.[ItemName], il.[Uom], il.[Rate], 0, il.[Qty]
         FROM dbo.[MaterialIssueItemLns] il JOIN dbo.[MaterialIssues] mi ON mi.[MaterialIssueId] = il.[MaterialIssueId]
-        WHERE 1 = 1${issueWhere}`;
+        WHERE 1 = 1${issueWhere}
+      UNION ALL
+      ${STOCK_LEDGER_WAREHOUSE_MOVEMENTS(issueWhere.replace(/mi\.\[WarehouseId\]/g, "{wh}"))}`;
 
     const [rows, warehouses] = await Promise.all([
       runQuery<any>(`SELECT m.[WarehouseId], w.[WarehouseName], w.[WarehouseCode], m.[ItemSource], m.[ItemId], MAX(m.[ItemCode]) AS [ItemCode], MAX(m.[ItemName]) AS [ItemName], MAX(m.[Uom]) AS [Uom], MAX(m.[Rate]) AS [Rate],

@@ -12,6 +12,7 @@ import { useMasterStore } from "@/lib/store/useMasterStore";
 import { useServiceStore } from "@/lib/store/useServiceStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { FormSection } from "@/components/common/FormSection";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
 import { fieldLabel, inr } from "@/components/common/PageHeader";
@@ -69,6 +70,7 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
   const isEngineer = user?.Role === "ENGINEER";
 
   const [maximized, setMaximized] = useState(true);
+  const nextDocNo = useNextDocNo("JOBCARD", Boolean(open) && !jobCardId);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState<"draft" | "submit" | null>(null);
   const [status, setStatus] = useState("Draft");
@@ -286,7 +288,7 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
 
   return (
     <Drawer rootClassName="entry-drawer" open={open} onClose={onClose} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-      title={<DrawerHeader icon={<ToolOutlined />} title={jobCardNo ? `Edit Job Card — ${jobCardNo}` : "New Job Card (Estimate)"} subtitle="Spares and labour needed for the repair — warranty lines are borne by the company, the rest is charged to the customer" meta={<DrawerChip label={status} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={onClose} />}
+      title={<DrawerHeader docNo={<DocNoChip docNo={jobCardNo || nextDocNo} preview={!jobCardId} />} icon={<ToolOutlined />} title={jobCardNo ? `Edit Job Card — ${jobCardNo}` : "New Job Card (Estimate)"} subtitle="Spares and labour needed for the repair — warranty lines are borne by the company, the rest is charged to the customer" meta={<DrawerChip label={status} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={onClose} />}
       footer={<div className="flex flex-wrap items-center justify-between gap-2 py-2">
         <div className="text-xs text-slate-500">Grand total <b className="text-slate-900">₹ {inr(totals.grand, 2)}</b> · Company <b className="text-emerald-700">₹ {inr(totals.borne, 2)}</b> · Customer pays <b className="text-blue-700">₹ {inr(totals.payable, 2)}</b></div>
         <div className="flex gap-2">

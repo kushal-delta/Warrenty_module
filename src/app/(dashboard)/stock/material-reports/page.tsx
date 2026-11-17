@@ -2,6 +2,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
 import { Button, Segmented, Select, Table, Tabs, Tag, Tooltip } from "antd";
 import { AuditOutlined, CloseCircleOutlined, FileTextOutlined, ReloadOutlined, RollbackOutlined, ShoppingCartOutlined, UnorderedListOutlined } from "@ant-design/icons";
 import { PageHeader, inr } from "@/components/common/PageHeader";
@@ -95,6 +96,7 @@ export default function MaterialChallanReportsPage() {
         { header: "Warehouse", value: (r) => r.RequestForName },
         { header: "Priority", value: (r) => r.Priority },
         { header: "Required By", value: (r) => r.RequiredBy, type: "date" },
+        { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
         { header: "Items", value: (r) => Number(r.ItemCount), type: "number", total: true },
         { header: "Total Qty", value: (r) => qty(r.TotalQty), type: "number", total: true },
         { header: "Status", value: (r) => r.Status },
@@ -212,6 +214,7 @@ export default function MaterialChallanReportsPage() {
                 { title: "Type", dataIndex: "RequestType", render: (v: string) => (v === "Product" ? "Product items" : "Spare parts") },
                 { title: "Warehouse", dataIndex: "RequestForName", render: (v: string) => v || "—" },
                 { title: "Priority", dataIndex: "Priority", render: (v: string) => <Tag color={PRIORITY_COLOR[v]}>{v}</Tag> },
+                { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
                 { title: "Items", dataIndex: "ItemCount", align: "right" as const }, { title: "Qty", dataIndex: "TotalQty", align: "right" as const, render: (v: number) => qty(v) },
                 { title: "Status", dataIndex: "Status", render: (v: string, r: any) => <div><Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag>{r.DecisionBy?.trim() && <div className="text-[11px] text-slate-400">by {r.DecisionBy.trim()}</div>}</div> },
                 { title: "Challan", dataIndex: "ChallanNo", render: (v: string) => v ? <span className="font-mono text-teal-700">{v}</span> : <span className="text-slate-300">—</span> },

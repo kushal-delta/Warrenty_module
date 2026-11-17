@@ -10,6 +10,7 @@ import { useMasterStore } from "@/lib/store/useMasterStore";
 import { useWarrantyStore } from "@/lib/store/useWarrantyStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { FormSection } from "@/components/common/FormSection";
 import { DistrictSelect } from "@/components/common/DistrictSelect";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
@@ -63,6 +64,7 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
   const portal = user && !user.IsAdmin && (user.Role === "DEALER" || user.Role === "CUSTOMER") ? user.Role : null;
 
   const [maximized, setMaximized] = useState(false);
+  const nextDocNo = useNextDocNo("COMPLAINT", Boolean(open) && !complaintId);
   const [saving, setSaving] = useState(false);
   const [photos, setPhotos] = useState<UploadFile[]>([]);
   const [videos, setVideos] = useState<VideoItem[]>([]);
@@ -206,7 +208,7 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
 
   return (
     <Drawer rootClassName="entry-drawer" open={open} onClose={onClose} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-      title={<DrawerHeader icon={<CustomerServiceOutlined />} title={complaintId ? `Edit service call ${record?.ComplaintNo || ""}` : "New service call"} subtitle="Call details, components, photos / videos and assignment" meta={<DrawerChip label={complaintId ? "Edit mode" : "New Service Call"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={onClose} />}
+      title={<DrawerHeader docNo={<DocNoChip docNo={complaintId ? record?.ComplaintNo : nextDocNo} preview={!complaintId} />} icon={<CustomerServiceOutlined />} title={complaintId ? `Edit service call ${record?.ComplaintNo || ""}` : "New service call"} subtitle="Call details, components, photos / videos and assignment" meta={<DrawerChip label={complaintId ? "Edit mode" : "New Service Call"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={onClose} />}
       footer={<div className="flex items-center justify-end gap-2 py-2"><Button onClick={onClose} disabled={saving}>Cancel</Button><Button type="primary" onClick={save} disabled={loadingEdit || loadFailed} loading={saving} className="bg-teal-600">{complaintId ? "Save changes" : "Register call"}</Button></div>}
     >
       {record && <div className="mb-5"><ServiceCallProgress status={record.Status} /></div>}

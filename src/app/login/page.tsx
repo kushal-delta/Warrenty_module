@@ -17,11 +17,28 @@ const FEATURES = [
   "Engineer-wise spares stock",
 ];
 
+/** Messages for /login?sso=<reason>, set by /api/Auth/sso when an iERP sign-in ticket cannot be used. */
+const SSO_MESSAGES: Record<string, string> = {
+  invalid: "The sign-in link from iERP is not valid. Please click WARRANTY in iERP again.",
+  expired: "The sign-in link from iERP has expired or was already used. Please click WARRANTY in iERP again.",
+  disabled: "Your iERP account is disabled. Please contact administrator.",
+  noaccess: "Your iERP user does not have access to the Warranty module. Ask your administrator to create your user here with the same user name.",
+  inactive: "Your Warranty account is deactivated. Please contact administrator.",
+  error: "Could not sign you in from iERP right now. Please try again, or sign in below.",
+};
+
 export default function LoginPage() {
   const [form] = Form.useForm();
   const router = useRouter();
   const { login, isLoading, error, clearError } = useAuthStore();
   const [submitting, setSubmitting] = useState(false);
+  const [ssoError, setSsoError] = useState<string | null>(null);
+
+  // Arriving from a failed iERP single sign-on → explain why.
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get("sso");
+    if (reason) setSsoError(SSO_MESSAGES[reason] || SSO_MESSAGES.error);
+  }, []);
 
   // Arriving here right after "Sign Out" → confirm it.
   useEffect(() => {
@@ -103,6 +120,7 @@ export default function LoginPage() {
           </div>
 
           {error && <Alert message={error} type="error" showIcon closable onClose={clearError} className="mb-4 rounded-lg border-red-200 py-1.5 text-xs" />}
+          {!error && ssoError && <Alert message={ssoError} type="warning" showIcon closable onClose={() => setSsoError(null)} className="mb-4 rounded-lg py-1.5 text-xs" />}
 
           <Form form={form} layout="vertical" onFinish={handleFinish} requiredMark={false}>
             <Form.Item name="username" className="!mb-4"

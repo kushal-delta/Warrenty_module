@@ -2,11 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
+import { CopyableItemSelect } from "@/components/common/CopyableItemSelect";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tooltip, message } from "antd";
 import { CodeSandboxOutlined, DeleteOutlined, EyeOutlined, ExportOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { FormSection } from "@/components/common/FormSection";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
@@ -36,6 +39,7 @@ export default function MaterialIssuePage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [viewing, setViewing] = useState<any>(null);
+  const nextDocNo = useNextDocNo("MATISSUE", drawerOpen && !viewing);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<any>(null);
   const [stock, setStock] = useState<StockItem[]>([]);
@@ -130,7 +134,7 @@ export default function MaterialIssuePage() {
 
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!warehouseFilter || r.WarehouseId === warehouseFilter) && (!q || [r.IssueNo, r.Purpose, r.WarehouseName, r.IssuedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)))
+    return (!warehouseFilter || r.WarehouseId === warehouseFilter) && (!q || [r.IssueNo, r.Purpose, r.WarehouseName, r.IssuedBy, r.Remarks, r.ItemNames].some((v) => v?.toLowerCase().includes(q)))
       && inDateRange(r.IssueDate, range);
   });
   const canDelete = (r: any) => headOffice || String(r.InsertedByUserId || "").toLowerCase() === String(user?.UserId || "").toLowerCase();
@@ -138,11 +142,11 @@ export default function MaterialIssuePage() {
   const exportExcel = () => exportTable("Material Issues", [
     { header: "Issue No.", value: (r: any) => r.IssueNo },
     { header: "Date", value: (r: any) => r.IssueDate, type: "date" },
+    { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
+    { header: "Quantity", value: (r: any) => qty(r.TotalQty), type: "number", total: true },
     { header: "Warehouse", value: (r: any) => r.WarehouseName },
     { header: "Warehouse Code", value: (r: any) => r.WarehouseCode },
     { header: "Purpose", value: (r: any) => r.Purpose },
-    { header: "Items", value: (r: any) => Number(r.ItemCount), type: "number", total: true },
-    { header: "Qty Issued", value: (r: any) => qty(r.TotalQty), type: "number", total: true },
     { header: "Value", value: (r: any) => Number(r.TotalValue), type: "money", total: true },
     { header: "Issued By", value: (r: any) => r.IssuedBy?.trim() },
     { header: "Remarks", value: (r: any) => r.Remarks },
@@ -151,10 +155,10 @@ export default function MaterialIssuePage() {
   const columns = [
     { title: "Issue no.", dataIndex: "IssueNo", key: "no", width: 140, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
     { title: "Date", dataIndex: "IssueDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
+    { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
+    { title: "Quantity", dataIndex: "TotalQty", key: "q", width: 100, align: "right" as const, render: (v: number, r: any) => <Tooltip title={`${r.ItemCount} item${Number(r.ItemCount) === 1 ? "" : "s"}`}><b>{qty(v)}</b></Tooltip> },
     { title: "Warehouse", dataIndex: "WarehouseName", key: "wh", render: (v: string, r: any) => <div><b className="text-slate-800">{v}</b><div className="text-[11px] font-mono text-slate-400">{r.WarehouseCode}</div></div> },
     { title: "Purpose", dataIndex: "Purpose", key: "p", render: (v: string) => <span className="text-sm">{v}</span> },
-    { title: "Items", dataIndex: "ItemCount", key: "i", width: 75, align: "right" as const },
-    { title: "Qty issued", dataIndex: "TotalQty", key: "q", width: 110, align: "right" as const, render: (v: number) => <b>{qty(v)}</b> },
     { title: "Value ₹", dataIndex: "TotalValue", key: "v", width: 120, align: "right" as const, render: (v: number) => inr(v, 2) },
     { title: "Issued by", dataIndex: "IssuedBy", key: "by", render: (v: string) => v?.trim() || "—" },
     { title: "Actions", key: "a", width: 90, render: (_: any, r: any) => (
@@ -197,7 +201,7 @@ export default function MaterialIssuePage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={<ExportOutlined />} title={viewing ? `View — ${viewing.IssueNo}` : "New Material Issue"} subtitle="Material issued out of the warehouse's stock"
+        title={<DrawerHeader docNo={<DocNoChip docNo={viewing ? viewing.IssueNo : nextDocNo} preview={!viewing} />} icon={<ExportOutlined />} title={viewing ? `View — ${viewing.IssueNo}` : "New Material Issue"} subtitle="Material issued out of the warehouse's stock"
           meta={<DrawerChip label={viewing ? "Issued" : "New"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>{readOnly ? "Close" : "Cancel"}</Button>{!readOnly && <Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">Save</Button>}</div>}
       >
@@ -239,27 +243,36 @@ export default function MaterialIssuePage() {
                   { title: "Remarks", dataIndex: "Remarks", render: (v: string) => v || <span className="text-slate-300">—</span> },
                 ]} />
               ) : (
-                <div className="min-w-[760px] rounded-lg border border-slate-200">
-                  <div className="grid grid-cols-[minmax(0,1fr)_110px_140px_220px_44px] gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                    <span>Item</span><span className="text-right">In stock</span><span className="text-right">Quantity</span><span>Remarks</span><span />
+                <div className="line-grid min-w-[860px]" style={{ ["--lg-cols" as any]: "minmax(280px,1fr) 104px 150px 120px minmax(170px,220px) 48px" }}>
+                  <div className="line-grid-head">
+                    <span>Item</span><span className="num">In stock</span><span className="num">Quantity</span><span className="num">Value</span><span>Remarks</span><span />
                   </div>
                   {lines.map((l, index) => {
                     const s = l.ItemKey ? stockByKey.get(l.ItemKey) : undefined;
                     const last = index === lines.length - 1;
                     return (
-                      <div key={l.key} className="grid grid-cols-[minmax(0,1fr)_110px_140px_220px_44px] items-center gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0">
-                        <Select showSearch allowClear optionFilterProp="label" autoFocus={l.key === focusKey} disabled={!warehouseId} loading={stockLoading} value={l.ItemKey} options={optionsFor(l)}
-                          placeholder={warehouseId ? (stockLoading ? "Loading stock…" : "Search item in stock") : "Select the warehouse first"} notFoundContent={stockLoading ? "Loading…" : "Nothing in stock at this warehouse"}
-                          onChange={(v) => updateLine(l.key, { ItemKey: v, Qty: v && !l.Qty ? 1 : l.Qty })} />
-                        <span className="text-right text-sm text-slate-600">{s ? <>{qty(s.Available)}<span className="ml-1 text-[11px] text-slate-400">{s.Uom || ""}</span></> : <span className="text-slate-300">—</span>}</span>
-                        <InputNumber className="w-full" min={0} max={s?.Available} precision={3} placeholder="0" value={l.Qty} status={over(l) ? "error" : undefined} onChange={(v) => updateLine(l.key, { Qty: v ?? undefined })} />
-                        <Input placeholder="Optional note for this item" maxLength={250} value={l.Remarks} onChange={(e) => updateLine(l.key, { Remarks: e.target.value })}
-                          onKeyDown={(e) => { if (e.key === "Tab" && !e.shiftKey && last && warehouseId) { e.preventDefault(); addLine(); } }} />
-                        <Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} /></Tooltip>
+                      <div key={l.key} className="line-grid-row">
+                        <div className="lg-cell">
+                          <CopyableItemSelect item={s ? { name: s.ItemName, code: s.ItemCode, uom: s.Uom } : null}
+                            showSearch allowClear optionFilterProp="label" autoFocus={l.key === focusKey} disabled={!warehouseId} loading={stockLoading} value={l.ItemKey} options={optionsFor(l)}
+                            placeholder={warehouseId ? (stockLoading ? "Loading stock…" : "Search item in stock") : "Select the warehouse first"} notFoundContent={stockLoading ? "Loading…" : "Nothing in stock at this warehouse"}
+                            onChange={(v) => updateLine(l.key, { ItemKey: v, Qty: v && !l.Qty ? 1 : l.Qty })} />
+                        </div>
+                        <div className="lg-cell"><div className="lg-static">{s ? <>{qty(s.Available)}<span className="lg-unit">{s.Uom || ""}</span></> : <span className="text-slate-300">—</span>}</div></div>
+                        <div className="lg-cell">
+                          <InputNumber className="w-full lg-num" min={0} max={s?.Available} precision={3} placeholder="Qty" value={l.Qty} status={over(l) ? "error" : undefined}
+                            suffix={s?.Uom || undefined} onChange={(v) => updateLine(l.key, { Qty: v ?? undefined })} />
+                        </div>
+                        <div className="lg-cell"><div className="lg-static lg-strong">{s && l.Qty ? `₹${inr(Number(l.Qty) * Number(s.Rate || 0), 2)}` : <span className="font-normal text-slate-300">—</span>}</div></div>
+                        <div className="lg-cell">
+                          <Input placeholder="Optional note" maxLength={250} value={l.Remarks} onChange={(e) => updateLine(l.key, { Remarks: e.target.value })}
+                            onKeyDown={(e) => { if (e.key === "Tab" && !e.shiftKey && last && warehouseId) { e.preventDefault(); addLine(); } }} />
+                        </div>
+                        <div className="lg-cell lg-icon"><div className="lg-static"><Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} /></Tooltip></div></div>
                       </div>
                     );
                   })}
-                  <div className="flex items-center justify-end gap-3 px-3 py-2.5 bg-slate-50 border-t border-slate-200 text-sm"><span className="text-slate-500">Value issued</span><b className="text-slate-900">₹{inr(totalNow, 2)}</b></div>
+                  <div className="line-grid-foot"><span className="text-slate-500">{lines.filter((l) => l.ItemKey).length} item{lines.filter((l) => l.ItemKey).length === 1 ? "" : "s"} · Value issued</span><b>₹{inr(totalNow, 2)}</b></div>
                 </div>
               )}
             </div>

@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
 import { Button, Input, Segmented, Select, Table, Tag, Tooltip } from "antd";
 import { ReloadOutlined, RollbackOutlined, SearchOutlined } from "@ant-design/icons";
 import { PageHeader, StatStrip, TABLE_CARD, inr } from "@/components/common/PageHeader";
@@ -91,6 +92,7 @@ export default function PendingReturnablePage() {
           { header: "Purpose", value: (r: any) => r.Purpose },
           { header: "Dispatched From", value: (r: any) => r.DispatchLocName },
           { header: "Material Request", value: (r: any) => r.RequestNo },
+          { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
           { header: "Items", value: (r: any) => Number(r.ItemCount), type: "number", total: true },
           { header: "Total Qty", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
           { header: "Value", value: (r: any) => Number(r.TotalValue), type: "money", total: true },
@@ -128,6 +130,7 @@ export default function PendingReturnablePage() {
     { title: "Expected back", dataIndex: "ExpectedBackBy", key: "back", width: 120, render: (v: string, r: any) => (v ? <span className={dueState(r) === "Overdue" ? "font-semibold text-red-600" : ""}>{formatDate(v)}</span> : "—") },
     { title: "Status", key: "due", width: 150, render: (_: any, r: any) => <div><Tag color={DUE_COLOR[dueState(r)]}>{dueState(r)}</Tag><div className="mt-0.5 text-[11px] text-slate-400">{dueText(r)}</div></div> },
     { title: "Days out", dataIndex: "DaysOut", key: "out", width: 90, align: "right" as const, render: (v: number) => <b>{v}</b> },
+    { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
     { title: "Items", key: "items", width: 75, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
     { title: "Value ₹", dataIndex: "TotalValue", key: "value", width: 110, align: "right" as const, render: (v: number) => inr(v, 2) },
   ];

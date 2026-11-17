@@ -14,14 +14,15 @@ import { ExportExcelButton } from "@/components/common/ReportTools";
 import { exportTable } from "@/lib/utils/excelExport";
 
 const FIELDS = ["ServiceCenterCode", "ServiceCenterName", "ContactPerson", "Mobile", "Email", "Gstin", "Address", "City", "StateId", "District", "Pincode", "IsActive", "LoginUsername"];
-const WH_FIELDS = ["WarehouseCode", "WarehouseName", "Location", "ContactNumber", "Email", "CapacitySqft", "Latitude", "Longitude", "Description", "IsActive", "LoginUsername"];
+const WH_FIELDS = ["WarehouseCode", "WarehouseName", "Location", "StateId", "ContactNumber", "Email", "CapacitySqft", "Latitude", "Longitude", "Description", "IsActive", "ManagerUserId"];
 type Kind = "center" | "warehouse";
 const KIND_OPTIONS = [{ value: "center", label: "Service center" }, { value: "warehouse", label: "Warehouse" }];
 
 /**
  * Service Centers / Warehouses master.
  *  - Service center: also an iERP ledger ("Service Center" group) with its address in LgrAddresses (flow unchanged).
- *  - Warehouse: kept in the warranty database only (no iERP ledger), with a login of role WAREHOUSE.
+ *  - Warehouse: kept in the warranty database only (no iERP ledger), run by a Warehouse Manager (role WAREHOUSE)
+ *    picked from User Management — that user signs in with their own credentials.
  */
 export default function ServiceCentersPage() {
   const [form] = Form.useForm();
@@ -29,6 +30,7 @@ export default function ServiceCentersPage() {
   const { states, districts, fetchBootstrap } = useMasterStore();
   const [rows, setRows] = useState<any[]>([]);
   const [whRows, setWhRows] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
   const [view, setView] = useState<Kind>("center");
   const [kind, setKind] = useState<Kind>("center");
   const [loading, setLoading] = useState(false);
@@ -43,7 +45,6 @@ export default function ServiceCentersPage() {
   const stateId = Form.useWatch("StateId", form);
   const loginName = Form.useWatch("LoginUsername", form);
   const hasLogin = Boolean(editing?.LoginUsername);
-  const whHasLogin = Boolean(editing?.LoginUserId);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,6 +52,7 @@ export default function ServiceCentersPage() {
       const [sc, wh] = await Promise.all([axios.post("/api/masters/service-centers/get", {}), axios.post("/api/masters/warehouses/get", {})]);
       setRows(sc.data.centers);
       setWhRows(wh.data.warehouses);
+      setManagers(wh.data.managers || []);
     }
     catch (err) { reportFormError(err, { fallback: "Could not load service centers and warehouses" }); }
     finally { setLoading(false); }
@@ -110,7 +112,7 @@ export default function ServiceCentersPage() {
       const values = await whForm.validateFields();
       setSaving(true);
       const wh = await saveWarehouse(values, editing?.WarehouseId);
-      message.success(`${wh.WarehouseName} ${editing ? "updated" : "added"} — login @${wh.LoginUsername}`);
+      message.success(`${wh.WarehouseName} ${editing ? "updated" : "added"} — manager @${wh.LoginUsername}`);
       setView("warehouse");
       setDrawerOpen(false);
     } catch (err) {
@@ -174,18 +176,19 @@ export default function ServiceCentersPage() {
 
   const whFiltered = whRows.filter((r) => {
     const q = search.toLowerCase();
-    return (!q || [r.WarehouseCode, r.WarehouseName, r.Location, r.ContactNumber, r.LoginUsername].some((v) => v?.toLowerCase().includes(q)))
-      && (!statusFilter || (r.IsActive ? "Active" : "Inactive") === statusFilter);
+    return (!q || [r.WarehouseCode, r.WarehouseName, r.Location, r.ContactNumber, r.LoginUsername, r.ManagerName, r.StateName].some((v) => v?.toLowerCase().includes(q)))
+      && (!stateFilter || r.StateId === stateFilter) && (!statusFilter || (r.IsActive ? "Active" : "Inactive") === statusFilter);
   });
 
   const whColumns = [
     { title: "Code", dataIndex: "WarehouseCode", key: "code", width: 110, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
     { title: "Warehouse", dataIndex: "WarehouseName", key: "name", render: (v: string, r: any) => <div><b className="text-slate-800">{v}</b>{r.Description && <div className="text-[11px] text-slate-400 truncate max-w-xs">{r.Description}</div>}</div> },
     { title: "Location", dataIndex: "Location", key: "loc", render: (v: string) => <span className="text-xs">{v}</span> },
+    { title: "State", dataIndex: "StateName", key: "state", render: (v: string) => v || <span className="text-slate-400">—</span> },
     { title: "Contact number", dataIndex: "ContactNumber", key: "mobile", width: 130 },
     { title: "E-mail", dataIndex: "Email", key: "email", render: (v: string) => v || "—" },
     { title: "Capacity (sq ft)", dataIndex: "CapacitySqft", key: "cap", width: 130, align: "right" as const, render: (v: number) => (v == null ? "—" : Number(v).toLocaleString("en-IN")) },
-    { title: "Login", dataIndex: "LoginUsername", key: "login", render: (v: string) => v ? <span className="font-mono text-xs">{v}</span> : <span className="text-slate-400">—</span> },
+    { title: "Warehouse manager", dataIndex: "LoginUsername", key: "login", render: (v: string, r: any) => v ? <div><div className="text-slate-700">{r.ManagerName || v}</div><div className="font-mono text-[11px] text-slate-400">@{v}</div></div> : <span className="text-slate-400">—</span> },
     { title: "Status", dataIndex: "IsActive", key: "status", width: 95, render: (a: boolean) => a ? <Tag color="green">Active</Tag> : <Tag>Inactive</Tag> },
     { title: "Actions", key: "actions", width: 90, render: (_: any, r: any) => (
       <Space size="small">
@@ -196,6 +199,13 @@ export default function ServiceCentersPage() {
   ];
 
   const stateOptions = states.map((s: any) => ({ value: s.StateId, label: s.StateName }));
+  // Warehouse Manager users (role WAREHOUSE in User Management). Inactive ones stay selectable only if already assigned here.
+  const managerOptions = managers
+    .filter((m) => m.IsActive || m.UserId === editing?.ManagerUserId)
+    .map((m) => {
+      const name = [m.FirstName, m.LastName].filter(Boolean).join(" ") || m.Username;
+      return { value: m.UserId, label: `${name} (@${m.Username})${m.IsActive ? "" : " · inactive"}`, search: `${name} ${m.Username} ${m.Phone || ""}` };
+    });
   const isWh = kind === "warehouse";
 
   const exportExcel = () => view === "warehouse"
@@ -204,12 +214,13 @@ export default function ServiceCentersPage() {
       { header: "Warehouse", value: (r: any) => r.WarehouseName },
       { header: "Description", value: (r: any) => r.Description },
       { header: "Location", value: (r: any) => r.Location },
+      { header: "State", value: (r: any) => r.StateName },
       { header: "Contact number", value: (r: any) => r.ContactNumber },
       { header: "E-mail", value: (r: any) => r.Email },
       { header: "Capacity (sq ft)", value: (r: any) => r.CapacitySqft, type: "number", total: true },
-      { header: "Login", value: (r: any) => r.LoginUsername },
+      { header: "Warehouse manager", value: (r: any) => (r.LoginUsername ? `${r.ManagerName || r.LoginUsername} (@${r.LoginUsername})` : "") },
       { header: "Status", value: (r: any) => (r.IsActive ? "Active" : "Inactive") },
-    ], whFiltered, { Status: statusFilter, Search: search || null })
+    ], whFiltered, { State: stateOptions.find((s) => s.value === stateFilter)?.label, Status: statusFilter, Search: search || null })
     : exportTable("Service Centers", [
       { header: "Code", value: (r: any) => r.ServiceCenterCode },
       { header: "Service center", value: (r: any) => r.ServiceCenterName },
@@ -250,7 +261,7 @@ export default function ServiceCentersPage() {
       <div className="filter-toolbar">
         <Segmented value={view} onChange={(v) => setView(v as Kind)} options={[{ value: "center", label: `Service Centers (${rows.length})` }, { value: "warehouse", label: `Warehouses (${whRows.length})` }]} />
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder={view === "warehouse" ? "Search warehouse…" : "Search service center…"} value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-80" />
-        {view === "center" && <Select allowClear showSearch optionFilterProp="label" placeholder="State: All" value={stateFilter} onChange={setStateFilter} options={stateOptions} className="w-48" />}
+        {<Select allowClear showSearch optionFilterProp="label" placeholder="State: All" value={stateFilter} onChange={setStateFilter} options={stateOptions} className="w-48" />}
         <Select allowClear placeholder="Status: All" value={statusFilter} onChange={setStatusFilter} options={["Active", "Inactive"].map((s) => ({ value: s, label: s }))} className="w-36" />
       </div>
 
@@ -261,7 +272,7 @@ export default function ServiceCentersPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={isWh ? <HomeOutlined /> : <ShopOutlined />} title={editing ? `Edit — ${isWh ? editing.WarehouseName : editing.ServiceCenterName}` : isWh ? "Add Warehouse" : "Add Service Center"} subtitle={isWh ? "Saved in this system only (not an iERP ledger), with a warehouse login" : "Saved here and as a ledger (with address) in the iERP"}
+        title={<DrawerHeader icon={isWh ? <HomeOutlined /> : <ShopOutlined />} title={editing ? `Edit — ${isWh ? editing.WarehouseName : editing.ServiceCenterName}` : isWh ? "Add Warehouse" : "Add Service Center"} subtitle={isWh ? "Saved in this system only (not an iERP ledger), run by a Warehouse Manager" : "Saved here and as a ledger (with address) in the iERP"}
           meta={<>{!isWh && editing?.LedgerCode && <DrawerChip label={`iERP ${editing.LedgerCode}`} tone="outline" />}<DrawerChip label={editing ? "Edit" : "New"} tone="solid" /></>}
           maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>Cancel</Button><Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">{editing ? "Update" : "Save"}</Button></div>}
@@ -271,7 +282,7 @@ export default function ServiceCentersPage() {
             <div className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-100 bg-white px-4 py-3">
               <span className="text-xs font-semibold text-slate-700"><span className="text-rose-600">* </span>Type</span>
               <Select value={kind} onChange={changeKind} options={KIND_OPTIONS} className="w-56" />
-              <span className="text-xs text-slate-500">{isWh ? "Warehouse: kept in this system only, with its own login (role Warehouse)." : "Service center: also created as a ledger in the iERP."}</span>
+              <span className="text-xs text-slate-500">{isWh ? "Warehouse: kept in this system only, run by a Warehouse Manager user from User Management." : "Service center: also created as a ledger in the iERP."}</span>
             </div>
           </div>
         )}
@@ -283,22 +294,20 @@ export default function ServiceCentersPage() {
               <Form.Item name="WarehouseCode" label={fieldLabel("Warehouse code")} rules={[{ required: true, message: "Warehouse code is required" }, { max: 30 }]} normalize={(v) => v?.toUpperCase()}><Input placeholder="e.g. WH-NOIDA" className="font-mono" /></Form.Item>
               <Form.Item name="WarehouseName" label={fieldLabel("Warehouse name")} rules={[{ required: true, message: "Warehouse name is required" }, { max: 150 }]}><Input placeholder="e.g. Central Warehouse Noida" /></Form.Item>
               <Form.Item name="Location" label={fieldLabel("Location")} rules={[{ required: true, message: "Location is required" }, { max: 300 }]}><Input placeholder="Address / area of the warehouse" /></Form.Item>
+              <Form.Item name="StateId" label={fieldLabel("State")} rules={[{ required: true, message: "State is required" }]}><Select showSearch optionFilterProp="label" placeholder="Select state" options={stateOptions} /></Form.Item>
               <Form.Item name="ContactNumber" label={fieldLabel("Contact number")} rules={[{ required: true, message: "Contact number is required" }, { pattern: /^[6-9]\d{9}$/, message: "Enter a valid 10-digit mobile number" }]}><Input maxLength={10} placeholder="10-digit mobile" /></Form.Item>
               <Form.Item name="Email" label={fieldLabel("E-mail")} rules={[{ type: "email", message: "Enter a valid e-mail address" }, { max: 120 }]}><Input /></Form.Item>
               <Form.Item name="CapacitySqft" label={fieldLabel("Capacity (sq ft)")}><InputNumber min={0} precision={0} className="w-full" placeholder="e.g. 5000" /></Form.Item>
               <Form.Item name="Latitude" label={fieldLabel("Latitude")}><InputNumber min={-90} max={90} precision={6} className="w-full" placeholder="e.g. 28.474388" /></Form.Item>
               <Form.Item name="Longitude" label={fieldLabel("Longitude")}><InputNumber min={-180} max={180} precision={6} className="w-full" placeholder="e.g. 77.503990" /></Form.Item>
+              {/* Warehouse manager: a role WAREHOUSE user from User Management; signs in with their own login and sees only their warehouses' stock. */}
+              <Form.Item name="ManagerUserId" label={fieldLabel("Warehouse manager")} rules={[{ required: true, message: "Warehouse manager is required" }]}
+                extra={managerOptions.length ? "Users with the role Warehouse Manager in User Management" : <span>No Warehouse Manager users yet — create one in <a href="/admin/users" className="text-blue-600">User Management</a>.</span>}>
+                <Select showSearch allowClear placeholder="Select warehouse manager" options={managerOptions}
+                  filterOption={(input, o: any) => String(o?.search || "").toLowerCase().includes(input.toLowerCase())} />
+              </Form.Item>
               <div className="entry-field-wide md:col-span-2"><Form.Item name="Description" label={fieldLabel("Description")} rules={[{ max: 500 }]}><Input.TextArea rows={3} maxLength={500} showCount /></Form.Item></div>
-              <Form.Item name="IsActive" label={fieldLabel("Active")} valuePropName="checked" extra="Off also switches the warehouse login off"><Switch /></Form.Item>
-            </div>
-          </FormSection>
-
-          <FormSection number="02" title="Warehouse login" description="Sign-in for the warehouse (role Warehouse) — shown in User Management.">
-            <div className="form-grid form-grid-two">
-              <Form.Item name="LoginUsername" label={fieldLabel("User name (login)")} extra="Used to sign in" normalize={(v) => v?.toLowerCase().replace(/\s/g, "")}
-                rules={[{ required: true, message: "User name is required" }, { pattern: /^[a-z0-9._-]{3,50}$/, message: "3–50 lowercase letters, digits, dot, dash or underscore" }]}><Input prefix="@" placeholder="e.g. wh.noida" /></Form.Item>
-              <Form.Item name="LoginPassword" label={fieldLabel("Password")} extra={whHasLogin ? "Leave blank to keep the current password" : "Stored as a salted hash"}
-                rules={[{ required: !whHasLogin, message: "Password is required" }, { min: 6, message: "At least 6 characters" }]}><Input.Password prefix={<LockOutlined className="text-slate-400" />} placeholder={whHasLogin ? "Unchanged" : undefined} autoComplete="new-password" /></Form.Item>
+              <Form.Item name="IsActive" label={fieldLabel("Active")} valuePropName="checked"><Switch /></Form.Item>
             </div>
           </FormSection>
         </Form>

@@ -2,11 +2,14 @@
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
 import { Button, Drawer, Form, Input, InputNumber, Select, Table, Tag, Tooltip, message } from "antd";
+import { CopyableItemSelect } from "@/components/common/CopyableItemSelect";
 import { CodeSandboxOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ShoppingCartOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { FormSection } from "@/components/common/FormSection";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
@@ -46,6 +49,7 @@ export default function MaterialRequestsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<any>(null);
+  const nextDocNo = useNextDocNo("MATREQ", drawerOpen && !editing);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<any>(null);
   const [lines, setLines] = useState<Line[]>([newLine()]);
@@ -94,7 +98,7 @@ export default function MaterialRequestsPage() {
       const r = data.request;
       setEditing(r);
       form.setFieldsValue({ RequestType: r.RequestType, WarehouseId: r.WarehouseId || undefined, RequestDate: dayjs(r.RequestDate), RequiredBy: r.RequiredBy ? dayjs(r.RequiredBy) : undefined, Priority: r.Priority, Remarks: r.Remarks || undefined });
-      setLines(data.items.map((i: any) => ({ key: `l${++lineSeq}`, ItemKey: `${i.ItemSource}|${i.ItemSource === "ERP" ? i.ErpItmId : i.SpareId}`.toUpperCase(), Qty: Number(i.Qty), Remarks: i.Remarks || undefined, _name: i.ItemName, _code: i.ItemCode })));
+      setLines(data.items.map((i: any) => ({ key: `l${++lineSeq}`, ItemKey: `${i.ItemSource}|${i.ItemSource === "ERP" ? i.ErpItmId : i.SpareId}`.toUpperCase(), Qty: Number(i.Qty), Remarks: i.Remarks || undefined, _name: i.ItemName, _code: i.ItemCode, _uom: i.Uom })));
       setDrawerOpen(true);
       loadItems(r.RequestType);
     } catch (err) {
@@ -157,7 +161,7 @@ export default function MaterialRequestsPage() {
 
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!q || [r.RequestNo, r.RequestForName, r.Remarks, r.RequestedBy].some((v) => v?.toLowerCase().includes(q)))
+    return (!q || [r.RequestNo, r.RequestForName, r.Remarks, r.RequestedBy, r.ItemNames].some((v) => v?.toLowerCase().includes(q)))
       && (!statusFilter || r.Status === statusFilter) && (!typeFilter || r.RequestType === typeFilter)
       && inDateRange(r.RequestDate, range);
   });
@@ -166,11 +170,12 @@ export default function MaterialRequestsPage() {
   const exportExcel = () => exportTable("Material Requests", [
     { header: "Request No.", value: (r: any) => r.RequestNo },
     { header: "Date", value: (r: any) => r.RequestDate, type: "date" },
+    { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
+    { header: "Quantity", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
     { header: "Type", value: (r: any) => typeLabel(r.RequestType) },
     { header: "Warehouse", value: (r: any) => r.RequestForName },
     { header: "Required By", value: (r: any) => r.RequiredBy, type: "date" },
     { header: "Priority", value: (r: any) => r.Priority },
-    { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
     { header: "Total Qty", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
     { header: "Requested By", value: (r: any) => r.RequestedBy?.trim() },
     { header: "Status", value: (r: any) => r.Status },
@@ -179,11 +184,12 @@ export default function MaterialRequestsPage() {
   const columns = [
     { title: "Request no.", dataIndex: "RequestNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
     { title: "Date", dataIndex: "RequestDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
+    { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
+    { title: "Quantity", key: "qty", width: 95, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`${r.ItemCount} item${Number(r.ItemCount) === 1 ? "" : "s"}`}><span>{Number(r.TotalQty).toLocaleString("en-IN")}</span></Tooltip> },
     { title: "Type", dataIndex: "RequestType", key: "type", width: 120, render: (v: string) => REQUEST_TYPES.find((t) => t.value === v)?.label || v },
     { title: "Warehouse", dataIndex: "RequestForName", key: "sc", render: (v: string) => v || "—" },
     { title: "Required by", dataIndex: "RequiredBy", key: "req", width: 115, render: (v: string) => (v ? formatDate(v) : "—") },
     { title: "Priority", dataIndex: "Priority", key: "priority", width: 95, render: (v: string) => <Tag color={PRIORITY_COLOR[v]}>{v}</Tag> },
-    { title: "Items", key: "items", width: 90, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
     { title: "Requested by", dataIndex: "RequestedBy", key: "by", render: (v: string) => v?.trim() || "—" },
     { title: "Status", dataIndex: "Status", key: "status", width: 100, render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag> },
     { title: "Actions", key: "actions", width: 90, render: (_: any, r: any) => (
@@ -227,7 +233,7 @@ export default function MaterialRequestsPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={<ShoppingCartOutlined />} title={editing ? `${readOnly ? "View" : "Edit"} — ${editing.RequestNo}` : "New Material Request"} subtitle="Product items or spare parts needed at the warehouse"
+        title={<DrawerHeader docNo={<DocNoChip docNo={editing ? editing.RequestNo : nextDocNo} preview={!editing} />} icon={<ShoppingCartOutlined />} title={editing ? `${readOnly ? "View" : "Edit"} — ${editing.RequestNo}` : "New Material Request"} subtitle="Product items or spare parts needed at the warehouse"
           meta={<DrawerChip label={editing ? editing.Status : "New"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>{readOnly ? "Close" : "Cancel"}</Button>{!readOnly && <Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">{editing ? "Update" : "Save"}</Button>}</div>}
       >
@@ -247,7 +253,7 @@ export default function MaterialRequestsPage() {
               <Form.Item name="RequestDate" label={fieldLabel("Request date")} rules={[{ required: true, message: "Request date is required" }]}>
                 <SmartDatePicker disabledDate={(d) => d.isAfter(dayjs(), "day")} />
               </Form.Item>
-              <Form.Item name="RequiredBy" label={fieldLabel("Required by")} dependencies={["RequestDate"]}
+              <Form.Item name="RequiredBy" label={fieldLabel("Required Date")} dependencies={["RequestDate"]}
                 rules={[({ getFieldValue }) => ({ validator: (_, v) => (!v || !getFieldValue("RequestDate") || !v.isBefore(getFieldValue("RequestDate"), "day") ? Promise.resolve() : Promise.reject(new Error("Cannot be before the request date"))) })]}>
                 <SmartDatePicker disabledDate={(d) => Boolean(requestDate) && d.isBefore(requestDate, "day")} />
               </Form.Item>
@@ -269,26 +275,36 @@ export default function MaterialRequestsPage() {
             </div>}
           </div>
           <div className="p-3 overflow-x-auto">
-            <div className="min-w-[760px] rounded-lg border border-slate-200">
-              <div className="grid grid-cols-[minmax(0,1fr)_130px_240px_44px] gap-2 px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                <span>Item</span><span className="text-right">Quantity</span><span>Remarks</span><span />
+            <div className="line-grid min-w-[760px]" style={{ ["--lg-cols" as any]: "minmax(300px,1fr) 160px minmax(200px,280px) 48px" }}>
+              <div className="line-grid-head">
+                <span>Item</span><span className="num">Quantity</span><span>Remarks</span><span />
               </div>
               {lines.map((l, index) => {
                 const item = l.ItemKey ? itemByKey.get(l.ItemKey.toUpperCase()) : undefined;
                 const last = index === lines.length - 1;
+                // Selected item details (catalogue item, or the saved line when the item has left the list).
+                const saved = l as any;
+                const picked = l.ItemKey ? { name: item?.name || saved._name, code: item?.code ?? saved._code, uom: item?.uom ?? saved._uom } : null;
                 return (
-                  <div key={l.key} className="grid grid-cols-[minmax(0,1fr)_130px_240px_44px] items-center gap-2 px-3 py-2 border-b border-slate-100 last:border-b-0">
-                    <Select showSearch allowClear optionFilterProp="label" autoFocus={l.key === focusKey} disabled={readOnly || !requestType} loading={itemsLoading}
-                      placeholder={requestType ? (itemsLoading ? "Loading items…" : "Search item") : "Select the request type first"} value={l.ItemKey} options={optionsFor(l)}
-                      notFoundContent={itemsLoading ? "Loading…" : "No items"} onChange={(v) => updateLine(l.key, { ItemKey: v, Qty: v && !l.Qty ? 1 : l.Qty })} />
-                    <InputNumber className="w-full" min={0} precision={3} placeholder="0" value={l.Qty} disabled={readOnly} onChange={(v) => updateLine(l.key, { Qty: v ?? undefined })}
-                      addonAfter={item?.uom || undefined} />
-                    <Input placeholder="Optional note for this item" maxLength={250} value={l.Remarks} disabled={readOnly} onChange={(e) => updateLine(l.key, { Remarks: e.target.value })}
-                      onKeyDown={(e) => { if (e.key === "Tab" && !e.shiftKey && last && !readOnly && requestType) { e.preventDefault(); addLine(); } }} />
-                    {!readOnly ? <Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} /></Tooltip> : <span />}
+                  <div key={l.key} className="line-grid-row">
+                    <div className="lg-cell">
+                      <CopyableItemSelect item={picked} showSearch allowClear optionFilterProp="label" autoFocus={l.key === focusKey} disabled={readOnly || !requestType} loading={itemsLoading}
+                        placeholder={requestType ? (itemsLoading ? "Loading items…" : "Search item") : "Select the request type first"} value={l.ItemKey} options={optionsFor(l)}
+                        notFoundContent={itemsLoading ? "Loading…" : "No items"} onChange={(v) => updateLine(l.key, { ItemKey: v, Qty: v && !l.Qty ? 1 : l.Qty })} />
+                    </div>
+                    <div className="lg-cell">
+                      <InputNumber className="w-full lg-num" min={0} precision={3} placeholder="Qty" value={l.Qty} disabled={readOnly} onChange={(v) => updateLine(l.key, { Qty: v ?? undefined })}
+                        suffix={picked?.uom || undefined} />
+                    </div>
+                    <div className="lg-cell">
+                      <Input placeholder="Optional note" maxLength={250} value={l.Remarks} disabled={readOnly} onChange={(e) => updateLine(l.key, { Remarks: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === "Tab" && !e.shiftKey && last && !readOnly && requestType) { e.preventDefault(); addLine(); } }} />
+                    </div>
+                    <div className="lg-cell lg-icon"><div className="lg-static">{!readOnly && <Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => removeLine(l.key)} /></Tooltip>}</div></div>
                   </div>
                 );
               })}
+              <div className="line-grid-foot"><span className="text-slate-500">{lines.filter((l) => l.ItemKey).length} item{lines.filter((l) => l.ItemKey).length === 1 ? "" : "s"} · Total quantity</span><b>{lines.reduce((s, l) => s + (l.ItemKey ? Number(l.Qty) || 0 : 0), 0).toLocaleString("en-IN", { maximumFractionDigits: 3 })}</b></div>
             </div>
           </div>
         </section>

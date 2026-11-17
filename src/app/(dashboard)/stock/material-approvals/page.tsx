@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
 import { Button, Drawer, Input, Segmented, Table, Tag, Tooltip, message } from "antd";
 import { AuditOutlined, CheckCircleOutlined, CloseCircleOutlined, CodeSandboxOutlined, EyeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
@@ -73,7 +74,7 @@ export default function MaterialApprovalsPage() {
   const filtered = rows
     .filter((r) => {
       const q = search.toLowerCase();
-      return (view === "All" || r.Status === view) && (!q || [r.RequestNo, r.RequestForName, r.RequestedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)))
+      return (view === "All" || r.Status === view) && (!q || [r.RequestNo, r.RequestForName, r.RequestedBy, r.Remarks, r.ItemNames].some((v) => v?.toLowerCase().includes(q)))
         && inDateRange(r.RequestDate, range);
     })
     // Pending: most urgent first, then the oldest; decided: latest first (as loaded).
@@ -84,11 +85,11 @@ export default function MaterialApprovalsPage() {
   const exportExcel = () => exportTable("Material Approvals", [
     { header: "Request No.", value: (r: any) => r.RequestNo },
     { header: "Date", value: (r: any) => r.RequestDate, type: "date" },
+    { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
+    { header: "Quantity", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
     { header: "Warehouse", value: (r: any) => r.RequestForName },
     { header: "Requested By", value: (r: any) => r.RequestedBy?.trim() },
     { header: "Type", value: (r: any) => TYPE_LABEL[r.RequestType] || r.RequestType },
-    { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
-    { header: "Total Qty", value: (r: any) => Number(r.TotalQty), type: "number", total: true },
     { header: "Required By", value: (r: any) => r.RequiredBy, type: "date" },
     { header: "Priority", value: (r: any) => r.Priority },
     { header: "Status", value: (r: any) => r.Status },
@@ -98,9 +99,10 @@ export default function MaterialApprovalsPage() {
   const columns = [
     { title: "Request no.", dataIndex: "RequestNo", key: "no", width: 150, render: (v: string) => <span className="font-mono font-bold text-blue-700">{v}</span> },
     { title: "Date", dataIndex: "RequestDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
+    { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
+    { title: "Quantity", key: "qty", width: 95, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`${r.ItemCount} item${Number(r.ItemCount) === 1 ? "" : "s"}`}><span>{Number(r.TotalQty).toLocaleString("en-IN")}</span></Tooltip> },
     { title: "Warehouse", dataIndex: "RequestForName", key: "sc", render: (v: string, r: any) => <div><b className="text-slate-800">{v || "—"}</b><div className="text-[11px] text-slate-400">{r.RequestedBy?.trim() || ""}</div></div> },
     { title: "Type", dataIndex: "RequestType", key: "type", width: 120, render: (v: string) => TYPE_LABEL[v] || v },
-    { title: "Items", key: "items", width: 80, align: "right" as const, render: (_: any, r: any) => <Tooltip title={`Total quantity ${Number(r.TotalQty)}`}><span>{r.ItemCount}</span></Tooltip> },
     { title: "Required by", dataIndex: "RequiredBy", key: "req", width: 120, render: (v: string, r: any) => (v ? <span className={overdue(r) ? "font-semibold text-red-600" : ""}>{formatDate(v)}</span> : "—") },
     { title: "Priority", dataIndex: "Priority", key: "priority", width: 95, render: (v: string) => <Tag color={PRIORITY_COLOR[v]}>{v}</Tag> },
     { title: "Status", dataIndex: "Status", key: "status", width: 160, render: (v: string, r: any) => <div><Tag color={STATUS_COLOR[v] || "default"}>{v}</Tag>{r.DecisionBy?.trim() && <div className="mt-0.5 text-[11px] text-slate-400">by {r.DecisionBy.trim()}</div>}</div> },

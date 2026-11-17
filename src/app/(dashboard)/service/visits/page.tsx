@@ -9,6 +9,7 @@ import { useServiceStore } from "@/lib/store/useServiceStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { FormSection } from "@/components/common/FormSection";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
@@ -35,6 +36,7 @@ export default function VisitReportsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<VisitReport | null>(null);
+  const nextDocNo = useNextDocNo("VISIT", drawerOpen && !editing);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<VisitReport | null>(null);
 
@@ -149,7 +151,7 @@ export default function VisitReportsPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={<CarOutlined />} title={editing ? `Edit Visit — ${editing.VisitNo}` : "New Visit Report"} subtitle="Record what the engineer found at site and what was done." meta={<DrawerChip label={editing ? "Edit" : "New Visit"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
+        title={<DrawerHeader docNo={<DocNoChip docNo={editing ? editing.VisitNo : nextDocNo} preview={!editing} />} icon={<CarOutlined />} title={editing ? `Edit Visit — ${editing.VisitNo}` : "New Visit Report"} subtitle="Record what the engineer found at site and what was done." meta={<DrawerChip label={editing ? "Edit" : "New Visit"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>Cancel</Button><Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">{editing ? "Update Visit" : "Save Visit"}</Button></div>}
       >
         <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form">

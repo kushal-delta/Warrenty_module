@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
+import { itemNamesSql } from "@/lib/services/itemNames";
 import { JOB_WORKER_COLS, JOB_WORKER_JOINS, challanScope, loadChallan } from "@/lib/services/challans";
 import { OUT_OF_SCOPE } from "@/lib/auth/scope";
 
@@ -24,6 +25,7 @@ export async function POST(request: NextRequest) {
     const challans = await runQuery(`SELECT d.*, sc.[ServiceCenterName], sc.[ServiceCenterCode], ${JOB_WORKER_COLS}, mr.[RequestNo],
         (SELECT COUNT(*) FROM dbo.[ChallanReceipts] cr WHERE cr.[DeliveryChallanId] = d.[DeliveryChallanId]) + (SELECT COUNT(*) FROM dbo.[ChallanReturns] cn WHERE cn.[DeliveryChallanId] = d.[DeliveryChallanId]) AS [ReceiptCount],
         (SELECT COUNT(*) FROM dbo.[DeliveryChallanItemLns] l WHERE l.[DeliveryChallanId] = d.[DeliveryChallanId]) AS [ItemCount],
+        ${itemNamesSql("dbo.[DeliveryChallanItemLns] l", "l.[DeliveryChallanId] = d.[DeliveryChallanId]")},
         (SELECT COALESCE(SUM(l.[Qty]), 0) FROM dbo.[DeliveryChallanItemLns] l WHERE l.[DeliveryChallanId] = d.[DeliveryChallanId]) AS [TotalQty]
       FROM dbo.[DeliveryChallans] d ${JOB_WORKER_JOINS} LEFT JOIN dbo.[MaterialRequests] mr ON d.[MaterialRequestId] = mr.[MaterialRequestId]
       ${scope ? `WHERE ${scope}` : ""} ORDER BY d.[ChallanDate] DESC, d.[InsertedOn] DESC`, values);

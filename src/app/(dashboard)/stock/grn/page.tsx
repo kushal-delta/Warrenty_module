@@ -2,7 +2,10 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import axios from "axios";
+import { ItemNamesCell, itemNamesText } from "@/components/common/ItemNamesCell";
 import { Button, DatePicker, Input, InputNumber, Modal, Select, Table, Tag, Tooltip, message } from "antd";
+import { ItemInfoCell } from "@/components/common/CopyableItemSelect";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ArrowRightOutlined, DeleteOutlined, EyeOutlined, InboxOutlined, PlusOutlined, ReloadOutlined, SaveOutlined, SearchOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
@@ -32,6 +35,7 @@ export default function GoodsReceiptPage() {
   const [picked, setPicked] = useState<string>();
   // step 2: receive the lines
   const [challan, setChallan] = useState<any>(null);
+  const nextDocNo = useNextDocNo("CHGRN", Boolean(challan));
   const [lines, setLines] = useState<Line[]>([]);
   const [grnDate, setGrnDate] = useState<Dayjs>(dayjs());
   const [remarks, setRemarks] = useState("");
@@ -103,7 +107,7 @@ export default function GoodsReceiptPage() {
 
   const filtered = rows.filter((r) => {
     const q = search.toLowerCase();
-    return (!q || [r.ReceiptNo, r.ChallanNo, r.JobWorkerName, r.ReceivedBy, r.Remarks].some((v) => v?.toLowerCase().includes(q)))
+    return (!q || [r.ReceiptNo, r.ChallanNo, r.JobWorkerName, r.ReceivedBy, r.Remarks, r.ItemNames].some((v) => v?.toLowerCase().includes(q)))
       && inDateRange(r.ReceiptDate, range);
   });
   const canDelete = (r: any) => headOffice || String(r.InsertedByUserId || "").toLowerCase() === String(user?.UserId || "").toLowerCase();
@@ -115,6 +119,7 @@ export default function GoodsReceiptPage() {
     { header: "Challan Date", value: (r: any) => r.ChallanDate, type: "date" },
     { header: "Challan Type", value: (r: any) => r.ChallanType },
     { header: "Job Worker", value: (r: any) => r.JobWorkerName },
+    { header: "Item name", value: (r: any) => itemNamesText(r.ItemNames) },
     { header: "Items", value: (r: any) => r.ItemCount, type: "number", total: true },
     { header: "Qty Received", value: (r: any) => qty(r.QtyReceived), type: "number", total: true },
     { header: "Received By", value: (r: any) => r.ReceivedBy?.trim() },
@@ -126,6 +131,7 @@ export default function GoodsReceiptPage() {
     { title: "GRN date", dataIndex: "ReceiptDate", key: "date", width: 110, render: (v: string) => formatDate(v) },
     { title: "Delivery challan", key: "dc", render: (_: any, r: any) => <div><span className="font-mono text-slate-800">{r.ChallanNo}</span><div className="text-[11px] text-slate-400">{formatDate(r.ChallanDate)} · {r.ChallanType}</div></div> },
     { title: "Job worker", dataIndex: "JobWorkerName", key: "jw", render: (v: string) => v || "—" },
+    { title: "Item name", key: "itemNames", width: 260, render: (_: any, r: any) => <ItemNamesCell names={r.ItemNames} /> },
     { title: "Items", dataIndex: "ItemCount", key: "items", width: 75, align: "right" as const },
     { title: "Qty received", dataIndex: "QtyReceived", key: "qty", width: 120, align: "right" as const, render: (v: number) => <b>{qty(v)}</b> },
     { title: "Received by", dataIndex: "ReceivedBy", key: "by", render: (v: string) => v?.trim() || "—" },
@@ -180,7 +186,7 @@ export default function GoodsReceiptPage() {
       </Modal>
 
       {/* Step 2 — receive the lines */}
-      <Modal open={!!challan} onCancel={() => setChallan(null)} title={challan ? `Goods receipt (GRN) — ${challan.ChallanNo}` : ""} width={1100} destroyOnClose maskClosable={false}
+      <Modal open={!!challan} onCancel={() => setChallan(null)} title={challan ? <div className="flex items-center justify-between gap-3 pr-8"><span>Goods receipt (GRN) — {challan.ChallanNo}</span><DocNoChip onLight preview docNo={nextDocNo} /></div> : ""} width={1100} destroyOnClose maskClosable={false}
         footer={<div className="flex items-center justify-between gap-2">
           <span className="text-xs text-slate-500">Receiving <b className="text-slate-800">{qty(totalNow)}</b> of <b className="text-slate-800">{qty(totalPending)}</b> pending</span>
           <div className="flex gap-2"><Button onClick={() => setChallan(null)} disabled={saving}>Cancel</Button><Button type="primary" icon={<SaveOutlined />} className="bg-blue-600" loading={saving} onClick={save}>Save GRN</Button></div>
@@ -200,17 +206,27 @@ export default function GoodsReceiptPage() {
               <Input maxLength={500} value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="Shortage / damage in transit, if any" />
             </div>
           </div>
-          <Table size="middle" rowKey="DeliveryChallanItemLnId" dataSource={lines} pagination={false} scroll={{ x: 980 }} columns={[
-            { title: "Item", key: "item", render: (_: any, l: Line) => <div><div className="font-semibold text-slate-800">{l.ItemName}</div>{l.ItemCode && <div className="text-[11px] font-mono text-slate-400">{l.ItemCode}</div>}</div> },
-            { title: "Dispatched", dataIndex: "Dispatched", key: "d", width: 110, align: "right" as const, render: (v: number, l: Line) => `${qty(v)}${l.Uom ? ` ${l.Uom}` : ""}` },
-            { title: "Already received", dataIndex: "Received", key: "r", width: 140, align: "right" as const, render: (v: number) => qty(v) },
-            { title: "Pending", dataIndex: "Pending", key: "p", width: 100, align: "right" as const, render: (v: number) => v > 0 ? <b>{qty(v)}</b> : <Tag color="green" className="!mr-0">Done</Tag> },
-            { title: "Received now", key: "now", width: 140, render: (_: any, l: Line) => (
-              <InputNumber className="w-full" min={0} max={l.Pending} precision={3} disabled={l.Pending <= 0} value={l.QtyReceived} status={Number(l.QtyReceived || 0) > l.Pending ? "error" : undefined}
-                onChange={(v) => updateLine(l.DeliveryChallanItemLnId, { QtyReceived: v ?? 0 })} />
-            ) },
-            { title: "Remarks", key: "rem", width: 260, render: (_: any, l: Line) => <Input maxLength={250} disabled={l.Pending <= 0} value={l.Remarks} placeholder="Condition, shortage…" onChange={(e) => updateLine(l.DeliveryChallanItemLnId, { Remarks: e.target.value })} /> },
-          ]} />
+          <div className="overflow-x-auto">
+            <div className="line-grid min-w-[960px]" style={{ ["--lg-cols" as any]: "minmax(260px,1fr) 110px 120px 100px 150px minmax(180px,240px)" }}>
+              <div className="line-grid-head">
+                <span>Item</span><span className="num">Dispatched</span><span className="num">Already received</span><span className="num">Pending</span><span className="num">Received now</span><span>Remarks</span>
+              </div>
+              {lines.map((l) => (
+                <div key={l.DeliveryChallanItemLnId} className="line-grid-row">
+                  <div className="lg-cell"><ItemInfoCell item={{ name: l.ItemName, code: l.ItemCode, uom: l.Uom }} /></div>
+                  <div className="lg-cell"><div className="lg-static">{qty(l.Dispatched)}{l.Uom && <span className="lg-unit">{l.Uom}</span>}</div></div>
+                  <div className="lg-cell"><div className="lg-static">{qty(l.Received)}</div></div>
+                  <div className="lg-cell"><div className="lg-static">{l.Pending > 0 ? <b>{qty(l.Pending)}</b> : <Tag color="green" className="!mr-0">Done</Tag>}</div></div>
+                  <div className="lg-cell">
+                    <InputNumber className="w-full lg-num" min={0} max={l.Pending} precision={3} disabled={l.Pending <= 0} value={l.QtyReceived} status={Number(l.QtyReceived || 0) > l.Pending ? "error" : undefined}
+                      suffix={l.Uom || undefined} onChange={(v) => updateLine(l.DeliveryChallanItemLnId, { QtyReceived: v ?? 0 })} />
+                  </div>
+                  <div className="lg-cell"><Input maxLength={250} disabled={l.Pending <= 0} value={l.Remarks} placeholder="Condition, shortage…" onChange={(e) => updateLine(l.DeliveryChallanItemLnId, { Remarks: e.target.value })} /></div>
+                </div>
+              ))}
+              <div className="line-grid-foot"><span className="text-slate-500">{lines.length} item{lines.length === 1 ? "" : "s"} · Receiving now</span><b>{qty(totalNow)}</b><span className="text-slate-400">of {qty(totalPending)} pending</span></div>
+            </div>
+          </div>
         </div>}
       </Modal>
 

@@ -10,6 +10,7 @@ import { useServiceStore } from "@/lib/store/useServiceStore";
 import { useWarrantyStore } from "@/lib/store/useWarrantyStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
+import { DocNoChip, useNextDocNo } from "@/components/common/DocNoChip";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { FormSection } from "@/components/common/FormSection";
 import { SmartDatePicker } from "@/components/ui/smart-date-picker";
@@ -41,6 +42,7 @@ export default function ReplacementsPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [editing, setEditing] = useState<Replacement | null>(null);
+  const nextDocNo = useNextDocNo("REPL", drawerOpen && !editing);
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<Replacement | null>(null);
@@ -174,7 +176,7 @@ export default function ReplacementsPage() {
       </div>
 
       <Drawer rootClassName="entry-drawer" open={drawerOpen} onClose={() => setDrawerOpen(false)} closable={false} width={maximized ? "100%" : DRAWER_WIDTH} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
-        title={<DrawerHeader icon={<SwapOutlined />} title={editing ? `Edit Replacement — ${editing.ReplNo}` : "New Replacement"} subtitle="Old serial must be in warranty; new serial must be an unregistered sticker of the same category." meta={<DrawerChip label={editing ? "Edit" : "New"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
+        title={<DrawerHeader docNo={<DocNoChip docNo={editing ? editing.ReplNo : nextDocNo} preview={!editing} />} icon={<SwapOutlined />} title={editing ? `Edit Replacement — ${editing.ReplNo}` : "New Replacement"} subtitle="Old serial must be in warranty; new serial must be an unregistered sticker of the same category." meta={<DrawerChip label={editing ? "Edit" : "New"} tone="solid" />} maximized={maximized} onToggleMaximize={() => setMaximized(!maximized)} onClose={() => setDrawerOpen(false)} />}
         footer={<div className="flex items-center justify-end space-x-2 py-2"><Button onClick={() => setDrawerOpen(false)} disabled={saving}>Cancel</Button><Button type="primary" onClick={handleSave} loading={saving} className="bg-blue-600">{editing ? "Update Replacement" : "Save & Transfer Warranty"}</Button></div>}
       >
         <Spin spinning={loadingDetail}>

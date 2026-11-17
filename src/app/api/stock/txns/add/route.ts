@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     let to = rule.to ? { type: body.ToLocType, id: body.ToLocId } : null;
     if (body.TxnType === "Return-Damaged" && to) to = { type: "DAMAGED", id: body.ToLocId };
     for (const [side, loc] of [["Source", from], ["Destination", to]] as const) {
-      if (loc && (!["SC", "ENG", "DAMAGED"].includes(loc.type) || !loc.id)) throw new InputError(`${side} location is required`);
+      if (loc && (!["SC", "WH", "ENG", "DAMAGED"].includes(loc.type) || !loc.id)) throw new InputError(`${side} location is required`);
     }
     if (from && to && from.type === to.type && from.id === to.id) throw new InputError("Source and destination must be different");
 

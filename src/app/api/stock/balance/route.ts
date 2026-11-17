@@ -12,14 +12,16 @@ export async function POST(request: NextRequest) {
     const { locType, locId, spareId } = await request.json().catch(() => ({}));
     const visible = await visibleStockLocations(user);
     const locIds = locId ? (visible && !visible.includes(locId) ? [] : [locId]) : visible;
-    const [balances, spares, centers, engineers] = await Promise.all([
+    const [balances, spares, centers, engineers, warehouses] = await Promise.all([
       stockBalances(runQuery, { locIds, spareId }),
       query<any>(`SELECT [SpareId], [SpareCode], [SpareName], [Category], [Uom], [CurrentRate], [MinStock] FROM dbo.[Spares]`),
       query<any>(`SELECT [ServiceCenterId], [ServiceCenterName] FROM dbo.[ServiceCenters]`),
       query<any>(`SELECT [UserId], [FirstName], [LastName], [ServiceCenterId] FROM dbo.[Users] WHERE [Role] = 'ENGINEER'`),
+      query<any>(`SELECT [WarehouseId], [WarehouseName] FROM dbo.[Warehouses]`),
     ]);
     const spareById = new Map(spares.map((s) => [s.SpareId, s]));
     const centerName = new Map(centers.map((c) => [c.ServiceCenterId, c.ServiceCenterName]));
+    const warehouseName = new Map(warehouses.map((w) => [w.WarehouseId, w.WarehouseName]));
     const engineerById = new Map(engineers.map((e) => [e.UserId, e]));
 
     // Fold the DAMAGED bin into its service-centre row so each store shows good + faulty side by side.
@@ -32,8 +34,8 @@ export async function POST(request: NextRequest) {
       const engineer = engineerById.get(b.LocId);
       const row = rows.get(key) || {
         key, LocType: type, LocId: b.LocId, SpareId: b.SpareId, Good: 0, Damaged: 0,
-        LocName: type === "SC" ? centerName.get(b.LocId) || "Unknown store" : engineer ? `${engineer.FirstName} ${engineer.LastName || ""}`.trim() : "Unknown engineer",
-        ServiceCenterName: type === "SC" ? centerName.get(b.LocId) : centerName.get(engineer?.ServiceCenterId),
+        LocName: type === "SC" ? centerName.get(b.LocId) || "Unknown store" : type === "WH" ? warehouseName.get(b.LocId) || "Unknown warehouse" : engineer ? `${engineer.FirstName} ${engineer.LastName || ""}`.trim() : "Unknown engineer",
+        ServiceCenterName: type === "SC" ? centerName.get(b.LocId) : type === "WH" ? null : centerName.get(engineer?.ServiceCenterId),
         SpareCode: spare.SpareCode, SpareName: spare.SpareName, Category: spare.Category, Uom: spare.Uom, Rate: Number(spare.CurrentRate || 0), MinStock: Number(spare.MinStock || 0),
       };
       if (b.LocType === "DAMAGED") row.Damaged += Number(b.Balance); else row.Good += Number(b.Balance);

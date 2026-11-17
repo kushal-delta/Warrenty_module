@@ -23,6 +23,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/login" ||
     pathname === "/api/Auth/login" ||
     pathname === "/api/Auth/logout" ||
+    pathname === "/api/Auth/sso" || // iERP single sign-on: the one-time ticket is the credential
+    pathname === "/sso" || pathname === "/api/Auth/ssoLogin" || // iERP single sign-on (token variant used by the live iERP)
     pathname === "/api/health" ||
     pathname === "/api/upload/local"
   ) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { fail, handleApiError, requireUser, runQuery } from "@/lib/services/apiHelpers";
+import { itemNamesSql } from "@/lib/services/itemNames";
 import { issueScope } from "@/lib/services/warehouseStock";
 import { OUT_OF_SCOPE } from "@/lib/auth/scope";
 
@@ -25,6 +26,7 @@ export async function POST(request: NextRequest) {
     const issues = await runQuery(`SELECT i.[MaterialIssueId], i.[IssueNo], i.[IssueDate], i.[WarehouseId], i.[Purpose], i.[Remarks], i.[InsertedByUserId], w.[WarehouseName], w.[WarehouseCode],
         CONCAT(u.[FirstName], ' ', u.[LastName]) AS [IssuedBy],
         (SELECT COUNT(*) FROM dbo.[MaterialIssueItemLns] l WHERE l.[MaterialIssueId] = i.[MaterialIssueId]) AS [ItemCount],
+        ${itemNamesSql("dbo.[MaterialIssueItemLns] l", "l.[MaterialIssueId] = i.[MaterialIssueId]")},
         (SELECT COALESCE(SUM(l.[Qty]), 0) FROM dbo.[MaterialIssueItemLns] l WHERE l.[MaterialIssueId] = i.[MaterialIssueId]) AS [TotalQty],
         (SELECT COALESCE(SUM(l.[Qty] * l.[Rate]), 0) FROM dbo.[MaterialIssueItemLns] l WHERE l.[MaterialIssueId] = i.[MaterialIssueId]) AS [TotalValue]
       ${base}${scope ? ` WHERE ${scope}` : ""} ORDER BY i.[IssueDate] DESC, i.[IssueNo] DESC`, values);

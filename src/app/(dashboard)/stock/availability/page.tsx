@@ -12,7 +12,8 @@ import { exportTable } from "@/lib/utils/excelExport";
 /** Spares stock per service-centre store and engineer van, with faulty (damaged) parts held for warranty claims. */
 export default function StockAvailabilityPage() {
   const { stock, fetchStock, isLoading } = useStockStore();
-  const [view, setView] = useState<"ALL" | "SC" | "ENG">("ALL");
+  const [view, setView] = useState<"ALL" | "SC" | "WH" | "ENG">("ALL");
+  const typeLabel = (t: string) => (t === "SC" ? "Store" : t === "WH" ? "Warehouse" : "Engineer");
   const [location, setLocation] = useState<string>();
   const [search, setSearch] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
@@ -20,7 +21,7 @@ export default function StockAvailabilityPage() {
   const refresh = () => fetchStock().catch((err) => reportFormError(err, { fallback: "Could not load stock" }));
   useEffect(() => { refresh(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const locations = useMemo(() => Array.from(new Map(stock.filter((s) => view === "ALL" || s.LocType === view).map((s) => [s.LocId, { value: s.LocId, label: `${s.LocType === "SC" ? "Store" : "Engineer"} · ${s.LocName}` }])).values()), [stock, view]);
+  const locations = useMemo(() => Array.from(new Map(stock.filter((s) => view === "ALL" || s.LocType === view).map((s) => [s.LocId, { value: s.LocId, label: `${typeLabel(s.LocType)} · ${s.LocName}` }])).values()), [stock, view]); // eslint-disable-line react-hooks/exhaustive-deps
   const filtered = stock.filter((s) => {
     const q = search.toLowerCase();
     return (view === "ALL" || s.LocType === view) && (!location || s.LocId === location) && (!lowOnly || s.BelowMin)
@@ -28,7 +29,7 @@ export default function StockAvailabilityPage() {
   }).sort((a, b) => a.LocType.localeCompare(b.LocType) || a.LocName.localeCompare(b.LocName) || a.SpareName.localeCompare(b.SpareName));
 
   const exportExcel = () => exportTable("Stock Availability", [
-    { header: "Location Type", value: (s: StockRow) => (s.LocType === "SC" ? "Store" : "Engineer") },
+    { header: "Location Type", value: (s: StockRow) => typeLabel(s.LocType) },
     { header: "Location", value: (s: StockRow) => s.LocName },
     { header: "Service Centre", value: (s: StockRow) => (s.LocType === "ENG" ? s.ServiceCenterName : null) },
     { header: "Spare Code", value: (s: StockRow) => s.SpareCode },
@@ -42,14 +43,14 @@ export default function StockAvailabilityPage() {
     { header: "Value ₹", value: (s: StockRow) => s.Value, type: "money", total: true },
     { header: "Reorder", value: (s: StockRow) => (s.BelowMin ? "Reorder" : null) },
   ], filtered, {
-    View: view === "SC" ? "Stores" : view === "ENG" ? "Engineer-wise" : null,
+    View: view === "SC" ? "Stores" : view === "WH" ? "Warehouses" : view === "ENG" ? "Engineer-wise" : null,
     Location: locations.find((l) => l.value === location)?.label,
     "Below minimum": lowOnly ? "Only" : null,
     Search: search || null,
   }, "Stock");
 
   const columns = [
-    { title: "Location", key: "loc", render: (_: any, s: StockRow) => <div><Tag color={s.LocType === "SC" ? "purple" : "cyan"}>{s.LocType === "SC" ? "Store" : "Engineer"}</Tag><span className="font-semibold text-slate-800">{s.LocName}</span>{s.LocType === "ENG" && s.ServiceCenterName && <div className="text-[11px] text-slate-400 mt-0.5">{s.ServiceCenterName}</div>}</div> },
+    { title: "Location", key: "loc", render: (_: any, s: StockRow) => <div><Tag color={s.LocType === "SC" ? "purple" : s.LocType === "WH" ? "gold" : "cyan"}>{typeLabel(s.LocType)}</Tag><span className="font-semibold text-slate-800">{s.LocName}</span>{s.LocType === "ENG" && s.ServiceCenterName && <div className="text-[11px] text-slate-400 mt-0.5">{s.ServiceCenterName}</div>}</div> },
     { title: "Spare", key: "spare", render: (_: any, s: StockRow) => <div><div className="font-semibold text-slate-800">{s.SpareName}</div><div className="text-[11px] text-slate-400 font-mono">{s.SpareCode}{s.Category ? ` · ${s.Category}` : ""}</div></div> },
     { title: "Good Qty", dataIndex: "Good", key: "good", width: 110, align: "right" as const, render: (v: number, s: StockRow) => <span className={`font-bold ${v <= 0 ? "text-red-600" : s.BelowMin ? "text-amber-600" : "text-emerald-700"}`}>{v} {s.Uom}</span> },
     { title: "Min Stock", dataIndex: "MinStock", key: "min", width: 100, align: "right" as const, render: (v: number, s: StockRow) => s.LocType === "SC" ? v : "—" },
@@ -61,7 +62,7 @@ export default function StockAvailabilityPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader icon={<InboxOutlined />} title="Stock Availability" subtitle="Spares at each service-centre store and engineer van · faulty parts from warranty job cards are held separately"
+      <PageHeader icon={<InboxOutlined />} title="Stock Availability" subtitle="Spares at each service-centre store, warehouse and engineer van · faulty parts from warranty job cards are held separately"
         actions={<>
           <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={refresh} loading={isLoading}>Refresh</Button>
@@ -71,13 +72,14 @@ export default function StockAvailabilityPage() {
         { label: "Stock lines", value: stock.length },
         { label: "Stock value ₹", value: inr(stock.reduce((s, r) => s + r.Value, 0)) },
         { label: "In stores", value: stock.filter((s) => s.LocType === "SC").reduce((s, r) => s + r.Good, 0) },
+        { label: "In warehouses", value: stock.filter((s) => s.LocType === "WH").reduce((s, r) => s + r.Good, 0) },
         { label: "With engineers", value: stock.filter((s) => s.LocType === "ENG").reduce((s, r) => s + r.Good, 0) },
         { label: "Faulty held", value: stock.reduce((s, r) => s + r.Damaged, 0), tone: "danger" },
         { label: "Below minimum", value: stock.filter((s) => s.BelowMin).length, tone: "warn" },
       ]} />
 
       <div className="filter-toolbar">
-        <Segmented value={view} onChange={(v) => { setView(v as any); setLocation(undefined); }} options={[{ value: "ALL", label: "All" }, { value: "SC", label: "Stores" }, { value: "ENG", label: "Engineer-wise" }]} />
+        <Segmented value={view} onChange={(v) => { setView(v as any); setLocation(undefined); }} options={[{ value: "ALL", label: "All" }, { value: "SC", label: "Stores" }, { value: "WH", label: "Warehouses" }]} />
         <Select placeholder="All Locations" value={location} onChange={setLocation} allowClear showSearch optionFilterProp="label" className="w-64" options={locations} />
         <Input prefix={<SearchOutlined className="text-slate-400" />} placeholder="Search spare code or name..." value={search} onChange={(e) => setSearch(e.target.value)} allowClear className="w-64" />
         <Button type={lowOnly ? "primary" : "default"} icon={<WarningOutlined />} onClick={() => setLowOnly(!lowOnly)}>Below minimum</Button>

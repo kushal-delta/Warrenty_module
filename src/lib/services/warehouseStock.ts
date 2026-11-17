@@ -2,7 +2,20 @@ import type { AuthSessionUser } from "@/lib/auth/jwt";
 import { isHeadOffice, runQuery, type Run } from "@/lib/services/apiHelpers";
 
 /**
+ * Spares moved into / out of a warehouse on the Stock Ledger (Opening, Receipt, Transfer, Adjustment…, location type 'WH').
+ * Same columns as the other warehouse movements. `extraWhere` (e.g. " AND {wh} = @fWarehouse") is appended to both halves,
+ * with `{wh}` replaced by that half's warehouse id column.
+ */
+export const STOCK_LEDGER_WAREHOUSE_MOVEMENTS = (extraWhere: string) => `
+  SELECT t.[ToLocId] AS [WarehouseId], t.[TxnDate], 'LOCAL' AS [ItemSource], t.[SpareId], sp.[SpareCode], sp.[SpareName], sp.[Uom], t.[Rate], CAST(t.[Qty] AS decimal(18,3)), CAST(0 AS decimal(18,3))
+    FROM dbo.[StockTxns] t JOIN dbo.[Spares] sp ON sp.[SpareId] = t.[SpareId] WHERE t.[ToLocType] = 'WH'${extraWhere.replace(/\{wh\}/g, "t.[ToLocId]")}
+  UNION ALL
+  SELECT t.[FromLocId], t.[TxnDate], 'LOCAL', t.[SpareId], sp.[SpareCode], sp.[SpareName], sp.[Uom], t.[Rate], CAST(0 AS decimal(18,3)), CAST(t.[Qty] AS decimal(18,3))
+    FROM dbo.[StockTxns] t JOIN dbo.[Spares] sp ON sp.[SpareId] = t.[SpareId] WHERE t.[FromLocType] = 'WH'${extraWhere.replace(/\{wh\}/g, "t.[FromLocId]")}`;
+
+/**
  * Warehouse stock movements (same basis as the Warehouse Stock report):
+ *   + spares put into the warehouse on the Stock Ledger (and − taken out of it there)
  *   + goods received at the warehouse (GRN against a delivery challan)
  *   − material sent back on a defective / fresh receipt (returns against RDC)
  *   − material issued out of the warehouse (Material Issue)
@@ -20,7 +33,9 @@ export const WAREHOUSE_MOVEMENTS = `
     WHERE d.[WarehouseId] IS NOT NULL
   UNION ALL
   SELECT i.[WarehouseId], i.[IssueDate], il.[ItemSource], COALESCE(il.[ErpItmId], il.[SpareId]), il.[ItemCode], il.[ItemName], il.[Uom], il.[Rate], 0, il.[Qty]
-    FROM dbo.[MaterialIssueItemLns] il JOIN dbo.[MaterialIssues] i ON i.[MaterialIssueId] = il.[MaterialIssueId]`;
+    FROM dbo.[MaterialIssueItemLns] il JOIN dbo.[MaterialIssues] i ON i.[MaterialIssueId] = il.[MaterialIssueId]
+  UNION ALL
+${STOCK_LEDGER_WAREHOUSE_MOVEMENTS("")}`;
 
 export interface StockItem { key: string; ItemSource: "ERP" | "LOCAL"; ItemId: string; ItemCode: string | null; ItemName: string; Uom: string | null; Rate: number; Available: number }
 

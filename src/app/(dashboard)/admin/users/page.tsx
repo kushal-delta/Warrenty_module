@@ -66,7 +66,7 @@ const ROLE_OPTIONS: { value: UserRole; label: string; color: string }[] = [
   { value: "MANAGER", label: "Manager", color: "blue" },
   { value: "ENGINEER", label: "Field Engineer", color: "cyan" },
   { value: "SERVICE_CENTER", label: "Service Center", color: "geekblue" },
-  { value: "WAREHOUSE", label: "Warehouse", color: "gold" },
+  { value: "WAREHOUSE", label: "Warehouse Manager", color: "gold" },
   { value: "DEALER", label: "Dealer", color: "orange" },
   { value: "CUSTOMER", label: "Customer", color: "green" },
 ];
@@ -598,7 +598,7 @@ export default function UsersPage() {
       <Drawer
         open={drawerOpen}
         onClose={closeDrawer}
-        width={maximized ? "100%" : "min(760px, 100vw)"}
+        width={maximized ? "100%" : DRAWER_WIDTH}
         styles={{ header: DRAWER_HEADER_STYLE, body: { padding: 0 } }}
         closeIcon={null}
         title={

@@ -6,6 +6,7 @@ import { visibleStockLocations } from "@/lib/services/stock";
 
 const LOCATION_NAME = (side: "From" | "To") => `CASE t.[${side}LocType]
   WHEN 'SC' THEN (SELECT [ServiceCenterName] FROM dbo.[ServiceCenters] WHERE [ServiceCenterId] = t.[${side}LocId])
+  WHEN 'WH' THEN (SELECT [WarehouseName] FROM dbo.[Warehouses] WHERE [WarehouseId] = t.[${side}LocId])
   WHEN 'DAMAGED' THEN CONCAT((SELECT [ServiceCenterName] FROM dbo.[ServiceCenters] WHERE [ServiceCenterId] = t.[${side}LocId]), ' (faulty)')
   WHEN 'ENG' THEN (SELECT CONCAT([FirstName], ' ', [LastName]) FROM dbo.[Users] WHERE [UserId] = t.[${side}LocId])
   ELSE NULL END`;
