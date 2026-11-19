@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Button, Checkbox, Drawer, Empty, Form, Image, Input, InputNumber, Select, Spin, Table, Tag, Tooltip, Upload, message } from "antd";
+import { Button, Checkbox, Drawer, Form, Image, Input, InputNumber, Select, Spin, Tag, Tooltip, Upload, message } from "antd";
 import type { UploadFile } from "antd";
-import { CameraOutlined, DeleteOutlined, DownloadOutlined, SendOutlined, SaveOutlined, ToolOutlined, UploadOutlined, UndoOutlined } from "@ant-design/icons";
+import { CameraOutlined, DeleteOutlined, DownloadOutlined, SendOutlined, SaveOutlined, ToolOutlined, UploadOutlined, UndoOutlined, AuditOutlined, PlusOutlined, UserOutlined } from "@ant-design/icons";
+import { CategoryIcon } from "@/components/warranty/SerialPassport";
 import axios from "axios";
 import dayjs from "dayjs";
 import * as XLSX from "xlsx";
@@ -36,6 +37,7 @@ interface CallComponent { Category: string; SerialNo: string | null; ModelName?:
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const uid = () => Math.random().toString(36).slice(2);
 const WARRANTY_TAG: Record<string, string> = { in: "green", out: "red", unreg: "default", unk: "red" };
+const CAT_COLOR: Record<string, string> = { PUMP: "#2563eb", MOTOR: "#0891b2", CONTROLLER: "#7c3aed" };
 const TEMPLATE_HEADERS = ["Type", "Code", "Qty", "Rate", "GST %", "Warranty (Y/N)", "Serial No", "Remarks"];
 
 /** Shrinks a photo to ≤1600px JPEG before upload. */
@@ -86,6 +88,8 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [videoUploading, setVideoUploading] = useState(false);
   const [stock, setStock] = useState<Record<string, number>>({});
+  /** Which master the "Add line" picker searches: spares or labour. */
+  const [addType, setAddType] = useState<"Spare" | "Labour">("Spare");
   const importInput = useRef<HTMLInputElement>(null);
 
   const selectedCallId = Form.useWatch("ComplaintId", form);
@@ -200,13 +204,50 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
 
   const approvalRoute = approvalRules.filter((r: any) => r.IsActive && Number(r.MinAmount) <= totals.grand).sort((a: any, b: any) => a.LevelNo - b.LevelNo).map((r: any) => `L${r.LevelNo} ${r.RoleName}`).join(" → ");
 
+  const availableOf = (spareId: string) => {
+    const id = String(spareId).toLowerCase();
+    const eng = engineerUserId ? stock[`ENG|${String(engineerUserId).toLowerCase()}|${id}`] || 0 : 0;
+    const store = serviceCenterId ? stock[`SC|${String(serviceCenterId).toLowerCase()}|${id}`] || 0 : 0;
+    return { eng, store };
+  };
+  /** Rich picker options: name, code, rate and (spares) stock in hand. Products of the Spares & Products master are left out. */
+  const addOptions = addType === "Spare"
+    ? spares.filter((s: any) => s.IsActive && (s.ItemType || "SPARE") !== "PRODUCT").map((s: any) => {
+        const { eng, store } = availableOf(s.SpareId), added = lines.some((l) => l.ItemType === "Spare" && l.ItemId === s.SpareId);
+        return {
+          value: s.SpareId, search: `${s.SpareName} ${s.SpareCode} ${s.Category || ""}`,
+          label: (
+            <div className="jcf-opt">
+              <span className="min-w-0 flex-1">
+                <span className="jcf-opt-name">{s.SpareName}</span>
+                <span className="jcf-opt-meta"><span className="font-mono">{s.SpareCode}</span>{s.Category ? ` · ${s.Category}` : ""}{added ? " · already added" : ""}</span>
+              </span>
+              <span className={`jcf-opt-stock ${eng + store > 0 ? "is-ok" : "is-low"}`}>{eng + store} in stock</span>
+              <b className="jcf-opt-rate">₹{inr(s.CurrentRate, 2)}</b>
+            </div>
+          ),
+        };
+      })
+    : labourMasters.filter((l: any) => l.IsActive).map((l: any) => ({
+        value: l.LabourMasterId, search: `${l.LabourName} ${l.LabourCode || ""}`,
+        label: (
+          <div className="jcf-opt">
+            <span className="min-w-0 flex-1">
+              <span className="jcf-opt-name">{l.LabourName}</span>
+              <span className="jcf-opt-meta"><span className="font-mono">{l.LabourCode}</span>{l.SkillLevel ? ` · ${l.SkillLevel}` : ""}</span>
+            </span>
+            <b className="jcf-opt-rate">₹{inr(l.StandardRate, 2)}</b>
+          </div>
+        ),
+      }));
+
   const stockChip = (l: Line) => {
     if (l.ItemType !== "Spare") return null;
     const id = l.ItemId.toLowerCase();
     const eng = engineerUserId ? stock[`ENG|${String(engineerUserId).toLowerCase()}|${id}`] || 0 : 0;
     const store = serviceCenterId ? stock[`SC|${String(serviceCenterId).toLowerCase()}|${id}`] || 0 : 0;
     const ok = eng + store >= (Number(l.Qty) || 0);
-    return <div className={`text-[11px] mt-0.5 ${ok ? "text-emerald-600" : "text-red-600"}`}>{ok ? "✓" : "✗"} stock: engineer {eng} · store {store}</div>;
+    return <span className={`jcf-stock ${ok ? "is-ok" : "is-low"}`}>{ok ? "✓" : "✗"} Stock · engineer {eng} · store {store}</span>;
   };
 
   // ---------- Excel ----------
@@ -299,10 +340,10 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
       </div>}
     >
       <Spin spinning={loading}>
-        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form !max-w-none">
+        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form entry-form-compact !max-w-none">
           <FormSection number="01" title="Job card header" description="The call, where the repair is done and who does it.">
-            <div className="form-grid form-grid-three">
-              <div className="entry-field-wide"><Form.Item name="ComplaintId" label={fieldLabel("Service Call")} rules={[{ required: true, message: "Select the service call" }]}>
+            <div className="form-grid form-grid-four">
+              <div className="sc-span-2"><Form.Item name="ComplaintId" label={fieldLabel("Service Call")} rules={[{ required: true, message: "Select the service call" }]}>
                 <Select showSearch optionFilterProp="label" placeholder="— select a call —" disabled={!!jobCardId}
                   onChange={(id) => { setLines([]); setComponents([]); loadCall(id, true, true); }}
                   options={openCalls.map((c) => ({ value: c.ComplaintId, label: `${c.ComplaintNo} — ${c.CustomerName} (${c.Village || c.District || ""})${c.WarrantyStatus ? ` · ${c.WarrantyStatus}` : ""}` }))} />
@@ -315,117 +356,175 @@ export function JobCardFormDrawer({ open, jobCardId, complaintId, onClose, onSav
               <Form.Item name="EngineerUserId" label={fieldLabel("Engineer")}>
                 <Select allowClear disabled={isEngineer} placeholder="— unassigned —" options={(isEngineer && user ? [{ UserId: user.UserId, FirstName: user.FirstName, LastName: user.LastName }] : engineerOptions).map((e: any) => ({ value: e.UserId, label: `${e.FirstName} ${e.LastName || ""}`.trim() }))} />
               </Form.Item>
-              <div className="entry-field-wide"><Form.Item name="Remarks" label={fieldLabel("Notes / Remarks")}><Input placeholder="e.g. Motor rewinding needed; customer informed of charges" /></Form.Item></div>
+              <div className="jcf-span-3"><Form.Item name="Remarks" label={fieldLabel("Notes / Remarks")}><Input placeholder="e.g. Motor rewinding needed; customer informed of charges" /></Form.Item></div>
             </div>
             {components.length > 0 && (
-              <div className="pb-5">
-                <div className="text-xs font-semibold text-slate-500 mb-1.5">Components on this call</div>
-                <Table size="small" rowKey={(r: any, i) => `${r.SerialNo || r.Category}-${i}`} dataSource={components} pagination={false} scroll={{ x: 600 }} columns={[
-                  { title: "Component", dataIndex: "Category" },
-                  { title: "Serial", dataIndex: "SerialNo", render: (v: string) => v ? <span className="font-mono">{v}</span> : "—" },
-                  { title: "Model", dataIndex: "ModelName", render: (v: string) => v || "—" },
-                  { title: "Warranty", dataIndex: "Warranty", render: (w: any) => w ? <Tag color={WARRANTY_TAG[w.State]}>{w.Label}</Tag> : "—" },
-                  { title: "Valid till", key: "end", render: (_: any, r: any) => r.Warranty?.EndDate ? dayjs(r.Warranty.EndDate).format("DD-MMM-YYYY") : "—" },
-                  { title: "Fault reported", dataIndex: "ReportedFault", render: (v: string) => v || "—" },
-                ]} />
+              <div className="pb-4">
+                <div className="jc-label mb-2">Components on this call · {components.length}</div>
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                  {components.map((c: any, i: number) => {
+                    const color = CAT_COLOR[String(c.Category).toUpperCase()] || "#64748b", w = c.Warranty;
+                    return (
+                      <div key={`${c.SerialNo || c.Category}-${i}`} className="jc-fault" style={{ ["--c" as any]: color }}>
+                        <span className="jc-fault-icon"><CategoryIcon category={c.Category} /></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="jc-fault-cat">{c.Category}{c.ModelName ? ` · ${c.ModelName}` : ""}</span>
+                          <span className="jc-fault-name font-mono">{c.SerialNo || "No serial"}</span>
+                          {c.ReportedFault && <span className="block truncate text-[11px] text-slate-500" title={c.ReportedFault}>{c.ReportedFault}</span>}
+                        </span>
+                        {w && <span className="shrink-0 text-right"><Tag color={WARRANTY_TAG[w.State]} className="m-0">{w.Label}</Tag>{w.EndDate && <span className="mt-0.5 block text-[10.5px] text-slate-400">till {dayjs(w.EndDate).format("DD-MMM-YYYY")}</span>}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </FormSection>
         </Form>
 
-        <section className="entry-section">
-          <div className="entry-section-heading justify-between flex-wrap">
-            <div className="flex items-start gap-3"><span className="entry-section-number">02</span><div><h3>Fault details</h3><p>What was found.</p></div></div>
-            <Select className="w-72" value={null as any} placeholder="+ Add fault…" showSearch optionFilterProp="label" options={faultOptions}
-              onChange={(id: string) => { const f: any = faultMasters.find((x: any) => x.FaultMasterId === id); if (f && !faults.some((x) => x.FaultMasterId === id)) setFaults((fs) => [...fs, { key: uid(), FaultMasterId: id, Category: f.Category, FaultName: f.FaultName, Remarks: f.DefaultNature || "" }]); }} />
-          </div>
-          <div className="entry-section-fields !pb-5">
-            {!faults.length ? <span className="text-xs text-slate-500">No fault added — pick from “Add fault”.</span> : (
-              <Table size="small" rowKey="key" dataSource={faults} pagination={false} columns={[
-                { title: "Component", dataIndex: "Category", width: 120, render: (v: string) => <Tag>{v}</Tag> },
-                { title: "Fault", dataIndex: "FaultName", width: "30%" },
-                { title: "Nature / diagnosis", key: "nature", render: (_: any, f: FaultLine) => <Input size="small" value={f.Remarks} maxLength={250} onChange={(e) => setFaults((fs) => fs.map((x) => (x.key === f.key ? { ...x, Remarks: e.target.value } : x)))} /> },
-                { title: "", key: "del", width: 44, render: (_: any, f: FaultLine) => <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => setFaults((fs) => fs.filter((x) => x.key !== f.key))} /> },
-              ]} />
+        <FormSection number="02" title="Fault details" description="What was found during the visit."
+          extra={<Select className="w-72" value={null as any} placeholder="+ Add fault…" showSearch optionFilterProp="label" options={faultOptions}
+            onChange={(id: string) => { const f: any = faultMasters.find((x: any) => x.FaultMasterId === id); if (f && !faults.some((x) => x.FaultMasterId === id)) setFaults((fs) => [...fs, { key: uid(), FaultMasterId: id, Category: f.Category, FaultName: f.FaultName, Remarks: f.DefaultNature || "" }]); }} />}>
+          <div className="pb-4">
+            {!faults.length ? <div className="jcf-empty">No fault added yet — pick one from “+ Add fault…”.</div> : (
+              <div className="line-grid" style={{ ["--lg-cols" as any]: "170px minmax(200px,.8fr) minmax(260px,1.4fr) 48px" }}>
+                <div className="line-grid-head"><span>Component</span><span>Fault</span><span>Nature / diagnosis</span><span /></div>
+                {faults.map((f) => {
+                  const color = CAT_COLOR[String(f.Category).toUpperCase()] || "#ea580c";
+                  return (
+                    <div key={f.key} className="line-grid-row">
+                      <div className="lg-cell"><div className="lg-static !justify-start font-semibold" style={{ color }}><span className="sc-cat-icon"><CategoryIcon category={f.Category} /></span>{f.Category}</div></div>
+                      <div className="lg-cell"><div className="lg-static !justify-start !whitespace-normal font-semibold text-slate-800">{f.FaultName}</div></div>
+                      <div className="lg-cell"><Input value={f.Remarks} maxLength={250} placeholder="What exactly is wrong" onChange={(e) => setFaults((fs) => fs.map((x) => (x.key === f.key ? { ...x, Remarks: e.target.value } : x)))} /></div>
+                      <div className="lg-cell lg-icon"><div className="lg-static"><Tooltip title="Remove fault"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => setFaults((fs) => fs.filter((x) => x.key !== f.key))} /></Tooltip></div></div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
-        </section>
+        </FormSection>
 
-        <section className="entry-section">
-          <div className="entry-section-heading justify-between flex-wrap">
-            <div className="flex items-start gap-3"><span className="entry-section-number">03</span><div><h3>Spares &amp; labour</h3><p>Tick Warranty when the company bears the line.</p></div></div>
-            <div className="flex flex-wrap gap-2">
-              <Select className="w-64" value={null as any} placeholder="+ Add spare…" showSearch optionFilterProp="label"
-                options={spares.filter((s: any) => s.IsActive).map((s: any) => ({ value: s.SpareId, label: `${s.SpareName} (${s.SpareCode}) — ₹${inr(s.CurrentRate)}` }))} onChange={(id: string) => addItem("Spare", id)} />
-              <Select className="w-60" value={null as any} placeholder="+ Add labour…" showSearch optionFilterProp="label"
-                options={labourMasters.filter((l: any) => l.IsActive).map((l: any) => ({ value: l.LabourMasterId, label: `${l.LabourName} — ₹${inr(l.StandardRate)}` }))} onChange={(id: string) => addItem("Labour", id)} />
-              <Button icon={<UploadOutlined />} onClick={() => importInput.current?.click()}>Import lines (Excel)</Button>
-              <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>Template</Button>
-              <input ref={importInput} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importLines(f); e.target.value = ""; }} />
+        <FormSection number="03" title="Spares & labour" description="Tick Warranty when the company bears the line."
+          extra={<div className="flex flex-wrap justify-end gap-2">
+            <Tooltip title="Import lines from Excel"><Button icon={<UploadOutlined />} onClick={() => importInput.current?.click()}>Import Excel</Button></Tooltip>
+            <Tooltip title="Download the Excel template"><Button icon={<DownloadOutlined />} onClick={downloadTemplate}>Template</Button></Tooltip>
+            <input ref={importInput} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importLines(f); e.target.value = ""; }} />
+          </div>}>
+          <div className="pb-4">
+            {/* Add a line: choose spare or labour, then search and pick — the line is added straight away */}
+            <div className={`jcf-addbar is-${addType.toLowerCase()}`}>
+              <div className="jcf-addbar-type" role="radiogroup" aria-label="Line type">
+                {(["Spare", "Labour"] as const).map((t) => (
+                  <button key={t} type="button" role="radio" aria-checked={addType === t} className={addType === t ? "is-on" : ""} onClick={() => setAddType(t)}>
+                    {t === "Spare" ? <ToolOutlined /> : <UserOutlined />} {t === "Spare" ? "Spare part" : "Labour / service"}
+                    <span className="jcf-addbar-count">{lines.filter((l) => l.ItemType === t).length}</span>
+                  </button>
+                ))}
+              </div>
+              <Select className="jcf-addbar-select" size="large" value={null as any} showSearch optionFilterProp="search" options={addOptions as any}
+                placeholder={<span><PlusOutlined /> {addType === "Spare" ? "Search a spare by name or code to add it…" : "Search a labour / service charge to add it…"}</span>}
+                notFoundContent={addType === "Spare" ? "No spare found" : "No labour charge found"}
+                onChange={(id: string) => { addItem(addType, id); message.success({ content: `${addType === "Spare" ? "Spare" : "Labour"} added`, duration: 1.2 }); }} />
             </div>
-          </div>
-          <div className="entry-section-fields !p-0">
-            {!lines.length ? <div className="py-8 text-center text-sm text-slate-400">No lines yet — add spares and labour using the selectors above, or import from Excel.</div> : (
-              <Table size="small" rowKey="key" dataSource={lines} pagination={false} scroll={{ x: 1080 }} columns={[
-                { title: "#", key: "n", width: 36, render: (_: any, __: Line, i: number) => i + 1 },
-                { title: "Type", dataIndex: "ItemType", width: 80, render: (t: string) => <Tag color={t === "Spare" ? "blue" : "purple"}>{t}</Tag> },
-                { title: "Particulars", key: "p", render: (_: any, l: Line) => <div><b className="text-slate-800">{l.Name}</b> <span className="text-[11px] text-slate-400">{l.Code}</span>{stockChip(l)}</div> },
-                { title: "Component serial", key: "sn", width: 200, render: (_: any, l: Line) => (
-                  <Select size="small" className="w-full" value={l.SerialNo || ""} onChange={(v: string) => updateLine(l.key, { SerialNo: v, IsWarranty: v ? warrantyFor(v) : l.IsWarranty })}
-                    options={[{ value: "", label: "— none —" }, ...serialOptions.map((c) => ({ value: c.SerialNo as string, label: `${c.Category} · ${c.SerialNo}` })), ...(l.SerialNo && !serialOptions.some((c) => c.SerialNo === l.SerialNo) ? [{ value: l.SerialNo, label: l.SerialNo }] : [])]} />
-                ) },
-                { title: "Qty", key: "q", width: 80, render: (_: any, l: Line) => <InputNumber size="small" min={1} precision={0} value={l.Qty} onChange={(v) => updateLine(l.key, { Qty: Number(v) || 1 })} className="w-full" /> },
-                { title: "Rate ₹", key: "r", width: 110, render: (_: any, l: Line) => <InputNumber size="small" min={0} precision={2} value={l.Rate} onChange={(v) => updateLine(l.key, { Rate: Number(v) || 0 })} className="w-full" /> },
-                { title: "GST %", key: "g", width: 80, render: (_: any, l: Line) => <InputNumber size="small" min={0} max={100} precision={2} value={l.GstPct} onChange={(v) => updateLine(l.key, { GstPct: Number(v) || 0 })} className="w-full" /> },
-                { title: "Amount ₹", key: "a", width: 110, align: "right" as const, render: (_: any, l: Line) => { const amt = round2(l.Qty * l.Rate); return <div><b>{inr(amt + round2((amt * l.GstPct) / 100), 2)}</b><div className="text-[10px] text-slate-400">{inr(amt, 2)} + GST</div></div>; } },
-                { title: <Tooltip title="Tick when the company bears this line (in warranty)">Warranty</Tooltip>, key: "w", width: 80, align: "center" as const, render: (_: any, l: Line) => <Checkbox checked={l.IsWarranty} onChange={(e) => updateLine(l.key, { IsWarranty: e.target.checked })} /> },
-                { title: "", key: "del", width: 44, render: (_: any, l: Line) => <Button type="text" danger size="small" icon={<DeleteOutlined />} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} /> },
-              ]} />
-            )}
-          </div>
-        </section>
-
-        <div className="grid grid-cols-1 xl:grid-cols-[1fr_360px] gap-5">
-          <section className="entry-section !mb-0">
-            <div className="entry-section-heading"><span className="entry-section-number">04</span><div><h3>Photos &amp; videos <span className="text-red-500">*</span></h3><p>At least one photo of the fault / site is required — up to {MAX_JOBCARD_PHOTOS}, compressed before saving. Videos are optional.</p></div></div>
-            <div className="entry-section-fields !pb-5 space-y-3">
-              {existingPhotos.length > 0 && (
-                <Image.PreviewGroup>
-                  <div className="flex flex-wrap gap-3">
-                    {existingPhotos.map((p) => {
-                      const removed = removedPhotoIds.includes(p.AttachmentId);
-                      return (
-                        <div key={p.AttachmentId} className={`relative ${removed ? "opacity-40" : ""}`}>
-                          <Image src={p.FileUrl} alt={p.FileName} width={104} height={104} className="object-cover rounded-lg border border-slate-200" />
-                          <Button size="small" shape="circle" className="!absolute -top-2 -right-2" danger={!removed} icon={removed ? <UndoOutlined /> : <DeleteOutlined />}
-                            onClick={() => setRemovedPhotoIds((ids) => (removed ? ids.filter((x) => x !== p.AttachmentId) : [...ids, p.AttachmentId]))} />
-                        </div>
-                      );
-                    })}
+            {!lines.length ? <div className="jcf-empty">No lines yet — pick Spare part or Labour / service above, then search and select to add it.</div> : (
+              <div className="overflow-x-auto">
+                <div className="line-grid min-w-[1100px]" style={{ ["--lg-cols" as any]: "40px minmax(240px,1.4fr) 200px 100px 120px 96px 130px 84px 48px" }}>
+                  <div className="line-grid-head">
+                    <span>#</span><span>Particulars</span><span>Component serial</span><span className="num">Qty</span><span className="num">Rate</span><span className="num">GST %</span><span className="num">Amount</span>
+                    <span><Tooltip title="Tick when the company bears this line (in warranty)">Warranty</Tooltip></span><span />
                   </div>
-                </Image.PreviewGroup>
-              )}
-              <Upload listType="picture-card" accept="image/*" multiple fileList={photos} beforeUpload={() => false}
-                onChange={({ fileList }) => setPhotos(fileList.slice(0, Math.max(0, MAX_JOBCARD_PHOTOS - (existingPhotos.length - removedPhotoIds.length))))}>
-                {photoCount < MAX_JOBCARD_PHOTOS && <div className="text-slate-500"><CameraOutlined className="text-lg" /><div className="text-xs mt-1">Add photos</div></div>}
-              </Upload>
-              <div className={`text-xs ${photoCount ? "text-slate-500" : "text-red-600"}`}>{photoCount ? `${photoCount} photo${photoCount > 1 ? "s" : ""} attached` : "No photo yet — at least one is required"}</div>
-              <div className="pt-2 border-t border-slate-100"><div className="text-xs font-semibold text-slate-600 mb-2">Videos</div><VideoAttachments value={videos} onChange={setVideos} onUploadingChange={setVideoUploading} /></div>
-            </div>
-          </section>
+                  {lines.map((l, i) => {
+                    const amt = round2(l.Qty * l.Rate), withTax = amt + round2((amt * l.GstPct) / 100);
+                    return (
+                      <div key={l.key} className={`line-grid-row ${l.IsWarranty ? "jcf-row-warranty" : ""}`}>
+                        <div className="lg-cell"><div className="lg-static !justify-start text-slate-400">{i + 1}</div></div>
+                        <div className="lg-cell">
+                          <div className="flex min-h-[var(--ant-control-height,32px)] flex-wrap items-center gap-x-2 gap-y-1">
+                            <Tag color={l.ItemType === "Spare" ? "blue" : "purple"} className="m-0">{l.ItemType}</Tag>
+                            <b className="min-w-0 truncate text-[13.5px] text-slate-800" title={l.Name}>{l.Name}</b>
+                            {l.Code && <span className="rounded border border-slate-200 bg-slate-50 px-1.5 py-px font-mono text-[10.5px] font-semibold text-slate-600">{l.Code}</span>}
+                          </div>
+                          {stockChip(l)}
+                        </div>
+                        <div className="lg-cell">
+                          <Select className="w-full" value={l.SerialNo || ""} onChange={(v: string) => updateLine(l.key, { SerialNo: v, IsWarranty: v ? warrantyFor(v) : l.IsWarranty })}
+                            options={[{ value: "", label: "— none —" }, ...serialOptions.map((c) => ({ value: c.SerialNo as string, label: `${c.Category} · ${c.SerialNo}` })), ...(l.SerialNo && !serialOptions.some((c) => c.SerialNo === l.SerialNo) ? [{ value: l.SerialNo, label: l.SerialNo }] : [])]} />
+                        </div>
+                        <div className="lg-cell"><InputNumber className="w-full lg-num" min={1} precision={0} value={l.Qty} onChange={(v) => updateLine(l.key, { Qty: Number(v) || 1 })} /></div>
+                        <div className="lg-cell"><InputNumber className="w-full lg-num" min={0} precision={2} prefix="₹" value={l.Rate} onChange={(v) => updateLine(l.key, { Rate: Number(v) || 0 })} /></div>
+                        <div className="lg-cell"><InputNumber className="w-full lg-num" min={0} max={100} precision={2} suffix="%" value={l.GstPct} onChange={(v) => updateLine(l.key, { GstPct: Number(v) || 0 })} /></div>
+                        <div className="lg-cell"><div className="lg-static lg-strong !flex-col !items-end !gap-0"><span>₹{inr(withTax, 2)}</span><span className="text-[10px] font-normal text-slate-400">{inr(amt, 2)} + GST</span></div></div>
+                        <div className="lg-cell"><div className="lg-static !justify-center"><Checkbox checked={l.IsWarranty} onChange={(e) => updateLine(l.key, { IsWarranty: e.target.checked })} /></div></div>
+                        <div className="lg-cell lg-icon"><div className="lg-static"><Tooltip title="Remove line"><Button danger size="small" icon={<DeleteOutlined />} onClick={() => setLines((ls) => ls.filter((x) => x.key !== l.key))} /></Tooltip></div></div>
+                      </div>
+                    );
+                  })}
+                  <div className="line-grid-foot">
+                    <span className="text-slate-500">{lines.length} line{lines.length === 1 ? "" : "s"} · {lines.filter((l) => l.IsWarranty).length} under warranty</span>
+                    <span className="text-slate-500">Spares <b>₹{inr(totals.spare, 2)}</b></span>
+                    <span className="text-slate-500">Labour <b>₹{inr(totals.labour, 2)}</b></span>
+                    <span className="text-slate-500">GST <b>₹{inr(totals.gst, 2)}</b></span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </FormSection>
 
-          <section className="entry-section !mb-0">
-            <div className="entry-section-heading"><div><h3>Estimate summary</h3></div></div>
-            <div className="entry-section-fields !pb-5 space-y-2 text-sm">
-              {[["Spares", totals.spare], ["Labour", totals.labour], ["GST", totals.gst]].map(([label, value]) => (
-                <div key={label as string} className="flex justify-between text-slate-600"><span>{label}</span><span>{inr(value, 2)}</span></div>
+        <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_380px] gap-5">
+          <FormSection number="04" title={<>Photos &amp; videos <span className="text-red-500">*</span></>} description={`At least one photo of the fault / site is required — up to ${MAX_JOBCARD_PHOTOS}, compressed before saving. Videos are optional.`}
+            extra={<span className={`sc-chip ${photoCount ? "sc-chip-green" : "jcf-chip-red"}`}><CameraOutlined /> {photoCount ? `${photoCount} photo${photoCount > 1 ? "s" : ""}` : "Photo required"}</span>}>
+            <div className="form-grid form-grid-two pb-4">
+              <div className="sc-media !mb-0">
+                <div className="jc-label mb-2">Photos</div>
+                {existingPhotos.length > 0 && (
+                  <Image.PreviewGroup>
+                    <div className="mb-3 flex flex-wrap gap-3">
+                      {existingPhotos.map((p) => {
+                        const removed = removedPhotoIds.includes(p.AttachmentId);
+                        return (
+                          <div key={p.AttachmentId} className={`relative ${removed ? "opacity-40" : ""}`}>
+                            <Image src={p.FileUrl} alt={p.FileName} width={96} height={96} className="object-cover rounded-lg border border-slate-200" />
+                            <Button size="small" shape="circle" className="!absolute -top-2 -right-2" danger={!removed} icon={removed ? <UndoOutlined /> : <DeleteOutlined />}
+                              onClick={() => setRemovedPhotoIds((ids) => (removed ? ids.filter((x) => x !== p.AttachmentId) : [...ids, p.AttachmentId]))} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Image.PreviewGroup>
+                )}
+                <Upload listType="picture-card" accept="image/*" multiple fileList={photos} beforeUpload={() => false}
+                  onChange={({ fileList }) => setPhotos(fileList.slice(0, Math.max(0, MAX_JOBCARD_PHOTOS - (existingPhotos.length - removedPhotoIds.length))))}>
+                  {photoCount < MAX_JOBCARD_PHOTOS && <div className="text-slate-500"><CameraOutlined className="text-lg" /><div className="text-xs mt-1">Add photos</div></div>}
+                </Upload>
+                <div className={`text-[11px] ${photoCount ? "text-slate-500" : "text-red-600"}`}>{photoCount ? `${photoCount} of ${MAX_JOBCARD_PHOTOS} photos attached` : "No photo yet — at least one is required"}</div>
+              </div>
+              <div className="sc-media !mb-0">
+                <div className="jc-label mb-2">Videos (optional)</div>
+                <VideoAttachments value={videos} onChange={setVideos} onUploadingChange={setVideoUploading} />
+              </div>
+            </div>
+          </FormSection>
+
+          <section className="jcf-summary">
+            <div className="jcf-summary-top">
+              <span className="jc-label !text-blue-100">Estimate summary</span>
+              <strong>₹ {inr(totals.grand, 2)}</strong>
+              <span className="text-xs text-blue-100">Grand total · {lines.length} line{lines.length === 1 ? "" : "s"}</span>
+            </div>
+            <div className="space-y-2 p-4 text-sm">
+              {[["Spares", totals.spare, "#2563eb"], ["Labour", totals.labour, "#7c3aed"], ["GST", totals.gst, "#f59e0b"]].map(([label, value, color]) => (
+                <div key={label as string} className="flex items-center justify-between text-slate-600"><span className="flex items-center gap-2"><i className="h-2 w-2 rounded-sm" style={{ background: color as string }} />{label}</span><span className="font-semibold text-slate-800">₹ {inr(value, 2)}</span></div>
               ))}
-              <div className="flex justify-between items-center text-slate-600"><span>Other charges (transport etc.)</span>
-                <InputNumber size="small" min={0} precision={2} value={otherCharges} onChange={(v) => setOtherCharges(Number(v) || 0)} className="w-28" /></div>
-              <div className="flex justify-between pt-2 border-t border-slate-100 font-bold text-slate-900"><span>Grand total</span><span className="text-base">₹ {inr(totals.grand, 2)}</span></div>
-              <div className="flex justify-between text-emerald-700"><span>Borne by company (warranty)</span><span>− {inr(totals.borne, 2)}</span></div>
-              <div className="flex justify-between font-bold text-emerald-700"><span>Customer payable</span><span className="text-base">₹ {inr(totals.payable, 2)}</span></div>
-              <div className="pt-2 text-[11px] text-slate-400">Approval route for ₹ {inr(totals.grand)}: {approvalRoute || "no approval needed — approved on submit"}</div>
+              <div className="flex items-center justify-between text-slate-600"><span className="flex items-center gap-2"><i className="h-2 w-2 rounded-sm bg-slate-400" />Other charges</span>
+                <InputNumber size="small" min={0} precision={2} prefix="₹" value={otherCharges} onChange={(v) => setOtherCharges(Number(v) || 0)} className="w-32 lg-num" /></div>
+              <div className="jc-split-bar !my-3" aria-hidden="true"><i style={{ width: `${totals.grand ? Math.round((totals.borne / totals.grand) * 100) : 0}%` }} /></div>
+              <div className="jc-payers">
+                <div className="jc-payer is-company"><span>Company · warranty</span><b>₹ {inr(totals.borne, 2)}</b></div>
+                <div className="jc-payer is-customer"><span>Customer pays</span><b>₹ {inr(totals.payable, 2)}</b></div>
+              </div>
+              <div className="jcf-route"><AuditOutlined /> <span><b>Approval route:</b> {approvalRoute || "none — approved on submit"}</span></div>
             </div>
           </section>
         </div>

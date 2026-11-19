@@ -6,6 +6,15 @@ import { saveAuditLog } from "@/lib/services/auditLogger";
 import { OUT_OF_SCOPE, getScope, inGeoScope } from "@/lib/auth/scope";
 import { randomUUID } from "crypto";
 
+/** End date = start + months as calendar months, same day of month (clamped to month end). */
+function addMonths(start: Date, months: number) {
+  const d = new Date(start), day = d.getDate();
+  d.setDate(1);
+  d.setMonth(d.getMonth() + months);
+  d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  return d;
+}
+
 /** Creates customer, installation, sticker updates, and warranties as one SQL Server transaction. */
 export async function POST(request: NextRequest) {
   // The transaction must be built on the connected pool (getSqlPool() is async) — see beginTransaction.
@@ -72,8 +81,11 @@ export async function POST(request: NextRequest) {
       // Type and warranty period default to the sticker and its product model (form sends only the serial when it can).
       const modelId = component.productModelId || sticker[0]?.ProductModelId || null;
       const modelMonths = modelId && !component.warrantyMonths ? Number((await run<any>(`SELECT [WarrantyMonths] FROM dbo.[ProductModels] WHERE [ProductModelId] = @id`, { id: modelId }))[0]?.WarrantyMonths || 0) : 0;
-      const months = Number(component.warrantyMonths || modelMonths || 24), endDate = new Date(installDateObj.getTime() + months * 30 * 24 * 60 * 60 * 1000);
-      const warranty = await run<any>(`INSERT INTO dbo.[Warranties] ([WarrantyId],[WarrantyNo],[InstallationId],[SerialNo],[StickerId],[Category],[ProductModelId],[CustomerId],[DealerId],[StartDate],[WarrantyMonths],[ExtendedMonths],[EndDate],[Status],[RegisteredBy],[RegisteredOn],[WhatsappSent],[Remarks],[InsertedByUserId],[LastUpdatedByUserId],[InsertedOn],[LastUpdatedOn]) OUTPUT INSERTED.* VALUES (@id,@warrantyNo,@installationId,@serialNo,@stickerId,@category,@productModelId,@customerId,@dealerId,@startDate,@months,0,@endDate,'Active',@registeredBy,SYSUTCDATETIME(),0,@remarks,@userId,@userId,SYSUTCDATETIME(),SYSUTCDATETIME())`, { id: randomUUID(), warrantyNo: `WR-${serialNo}`, installationId: installation.InstallationId, serialNo, stickerId: sticker[0]?.StickerId || null, category: String(component.category || sticker[0]?.Category || "PUMP").trim().toUpperCase(), productModelId: component.productModelId || sticker[0]?.ProductModelId || null, customerId: resolvedCustomerId, dealerId: pinnedDealerId, startDate: installDateObj, months, endDate, registeredBy: sessionUser.Username, remarks: `Installed under ${installNo}`, userId: currentUserId });
+      const months = Math.min(120, Math.max(1, Math.round(Number(component.warrantyMonths || modelMonths || 24))));
+      // Warranty starts on the chosen start date (manufacturing date from the Serial Register by default, else the installation date).
+      const startDateObj = component.startDate && !Number.isNaN(new Date(component.startDate).getTime()) ? new Date(component.startDate) : installDateObj;
+      const endDate = addMonths(startDateObj, months);
+      const warranty = await run<any>(`INSERT INTO dbo.[Warranties] ([WarrantyId],[WarrantyNo],[InstallationId],[SerialNo],[StickerId],[Category],[ProductModelId],[CustomerId],[DealerId],[StartDate],[WarrantyMonths],[ExtendedMonths],[EndDate],[Status],[RegisteredBy],[RegisteredOn],[WhatsappSent],[Remarks],[InsertedByUserId],[LastUpdatedByUserId],[InsertedOn],[LastUpdatedOn]) OUTPUT INSERTED.* VALUES (@id,@warrantyNo,@installationId,@serialNo,@stickerId,@category,@productModelId,@customerId,@dealerId,@startDate,@months,0,@endDate,'Active',@registeredBy,SYSUTCDATETIME(),0,@remarks,@userId,@userId,SYSUTCDATETIME(),SYSUTCDATETIME())`, { id: randomUUID(), warrantyNo: `WR-${serialNo}`, installationId: installation.InstallationId, serialNo, stickerId: sticker[0]?.StickerId || null, category: String(component.category || sticker[0]?.Category || "PUMP").trim().toUpperCase(), productModelId: component.productModelId || sticker[0]?.ProductModelId || null, customerId: resolvedCustomerId, dealerId: pinnedDealerId, startDate: startDateObj, months, endDate, registeredBy: sessionUser.Username, remarks: `Installed under ${installNo}`, userId: currentUserId });
       warranties.push(warranty[0]);
     }
     // Customer agreed to updates → queue the warranty message and mark the warranties as sent.

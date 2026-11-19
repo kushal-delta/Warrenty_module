@@ -71,7 +71,7 @@ export const FORM_GROUPS: FormGroup[] = [
       { key: "masters.users", label: "User Management", path: "/admin/users", roles: HO },
       { key: "masters.service-centers", label: "Service Centers / Warehouses", path: "/masters/service-centers", roles: HO },
       { key: "masters.service-engineers", label: "Service Engineers", path: "/masters/service-engineers", roles: HO },
-      { key: "masters.spares", label: "Spares & Rates", path: "/masters/config/spares", roles: HO },
+      { key: "masters.spares", label: "Spares & Products", path: "/masters/config/spares", roles: HO },
       { key: "masters.labour", label: "Labour / Service Charges", path: "/masters/config/labour", roles: HO },
       { key: "masters.faults", label: "Fault Master", path: "/masters/config/faults", roles: HO },
       { key: "masters.call-types", label: "Call Types & Valid Days", path: "/masters/config/call-types", roles: HO },

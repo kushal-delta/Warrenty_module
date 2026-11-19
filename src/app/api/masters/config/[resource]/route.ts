@@ -14,7 +14,8 @@ function valuesFor(body: Record<string, unknown>, config: NonNullable<ReturnType
     if (field.required && (value === undefined || value === null || String(value).trim() === "")) throw new Error(`${field.label} is required`);
     if (value === undefined) continue;
     if (value === null || value === "") { values[field.name] = null; continue; }
-    if (field.kind === "boolean") values[field.name] = Boolean(value);
+    if (field.kind === "itemType") { if (!["SPARE", "PRODUCT"].includes(String(value))) throw new Error(`${field.label} is invalid`); values[field.name] = String(value); }
+    else if (field.kind === "boolean") values[field.name] = Boolean(value);
     else if (field.kind === "percent") { const number = Number(value); if (!Number.isFinite(number) || number < 0 || number > 100) throw new Error(`${field.label} is invalid`); values[field.name] = number.toFixed(2); }
     else if (field.kind === "number" || field.kind === "money") { const number = Number(value); if (!Number.isFinite(number) || number < 0 || (field.kind === "number" && !Number.isInteger(number))) throw new Error(`${field.label} is invalid`); values[field.name] = field.kind === "money" ? number.toFixed(2) : number; }
     else if (field.kind === "date") { const date = new Date(String(value)); if (Number.isNaN(date.getTime())) throw new Error(`${field.label} is invalid`); values[field.name] = date; }

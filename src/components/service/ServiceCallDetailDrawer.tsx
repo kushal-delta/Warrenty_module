@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Descriptions, Drawer, Empty, Image, Spin, Table, Tabs, Tag } from "antd";
-import { CameraOutlined, CarOutlined, CustomerServiceOutlined, HistoryOutlined, InfoCircleOutlined, ToolOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { Drawer, Empty, Image, Spin, Table, Tabs, Tag } from "antd";
+import { CameraOutlined, CarOutlined, CheckCircleOutlined, ClockCircleOutlined, CustomerServiceOutlined, EnvironmentOutlined, HistoryOutlined, InfoCircleOutlined, PhoneOutlined, SafetyCertificateOutlined, ShopOutlined, ToolOutlined, UnorderedListOutlined, UserOutlined } from "@ant-design/icons";
+import { CategoryIcon } from "@/components/warranty/SerialPassport";
 import axios from "axios";
 import dayjs from "dayjs";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
@@ -32,10 +33,129 @@ function Panel({ title, extra, children }: { title: string; extra?: React.ReactN
   );
 }
 
-/** One summary figure in the strip under the progress bar. */
+/* ---------- shared bits (same look as the job card view) ---------- */
+
+const CAT_COLOR: Record<string, string> = { PUMP: "#2563eb", MOTOR: "#0891b2", CONTROLLER: "#7c3aed" };
+const PRIORITY_COLOR: Record<string, string> = { Low: "default", Medium: "blue", Normal: "blue", High: "orange", Urgent: "red", Critical: "red" };
+const initials = (name?: string) => String(name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+const warrantyBadge = (v?: string) => v === "In Warranty" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : v === "Partial" ? "border-amber-200 bg-amber-50 text-amber-700" : /out|expired/i.test(String(v)) ? "border-red-200 bg-red-50 text-red-700" : "border-slate-200 bg-slate-50 text-slate-600";
 const Fact = ({ label, children }: { label: string; children: React.ReactNode }) => (
-  <div className="min-w-0"><div className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{label}</div><div className="mt-0.5 truncate text-sm font-semibold text-slate-800">{children}</div></div>
+  <div className="jc-fact"><span>{label}</span><b>{children || "—"}</b></div>
 );
+
+/** Call summary: the call, a due-date countdown, and who is handling it. */
+function CallSummary({ c }: { c: any }) {
+  const open = OPEN(c.Status);
+  const start = c.CallDate ? dayjs(c.CallDate).startOf("day") : null, due = c.DueDate ? dayjs(c.DueDate).startOf("day") : null;
+  const today = dayjs().startOf("day");
+  const left = due ? due.diff(today, "day") : null;
+  const span = start && due ? Math.max(1, due.diff(start, "day")) : 1;
+  const pct = start && due ? Math.min(100, Math.max(4, (today.diff(start, "day") / span) * 100)) : 0;
+  const tone = !open ? "#10b981" : left === null ? "#94a3b8" : left < 0 ? "#dc2626" : left <= 1 ? "#f59e0b" : "#2563eb";
+  const countdown = !open ? `Call ${String(c.Status).toLowerCase()}` : left === null ? "No due date set" : left < 0 ? `${-left} day${left === -1 ? "" : "s"} overdue` : left === 0 ? "Due today" : `${left} day${left === 1 ? "" : "s"} left`;
+  return (
+    <section className="jc-money verify-pop">
+      <div className="jc-money-total">
+        <span className="jc-label">Service call</span>
+        <strong className="font-mono !text-[22px] text-blue-700">{c.ComplaintNo}</strong>
+        <span className="text-xs text-slate-500">{c.CallTypeName || "Call"} · booked {day(c.CallDate)}</span>
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <Tag color={STATUS_COLOR[c.Status] || "default"} className="m-0">{c.Status}</Tag>
+          {c.Priority && <Tag color={PRIORITY_COLOR[c.Priority] || "default"} className="m-0">{c.Priority} priority</Tag>}
+        </div>
+      </div>
+      <div className="jc-money-parts">
+        <span className="jc-label">Due by</span>
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-3">
+          <span className="text-xl font-extrabold text-slate-900">{day(c.DueDate)}</span>
+          <span className="text-sm font-bold" style={{ color: tone }}><ClockCircleOutlined /> {countdown}</span>
+        </div>
+        <div className="jc-stack" aria-hidden="true"><i style={{ width: `${open ? pct : 100}%`, background: tone }} /></div>
+        <div className="flex justify-between text-[11px] text-slate-500"><span>Booked {day(c.CallDate)}</span><span>Due {day(c.DueDate)}</span></div>
+      </div>
+      <div className="jc-money-split">
+        <span className="jc-label">Handled by</span>
+        <div className="mt-2 flex items-center gap-3">
+          <span className="jc-avatar !h-10 !w-10 !text-sm" style={c.EngineerName ? undefined : { background: "#fef3c7", color: "#b45309" }}>{c.EngineerName ? initials(c.EngineerName) : <UserOutlined />}</span>
+          <div className="min-w-0">
+            <div className={`truncate text-sm font-bold ${c.EngineerName ? "text-slate-900" : "text-amber-600"}`}>{c.EngineerName || "Engineer not assigned"}</div>
+            <div className="truncate text-xs text-slate-500"><ShopOutlined /> {c.ServiceCenterName || "No service center"}</div>
+          </div>
+        </div>
+        <span className={`mt-3 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${warrantyBadge(c.WarrantyStatus)}`}><SafetyCertificateOutlined /> {c.WarrantyStatus || "Warranty unknown"}</span>
+      </div>
+    </section>
+  );
+}
+
+/** Details tab: customer & site, call facts, problem, resolution and the components on the call. */
+function CallDetails({ c, components, onOpenComponents }: { c: any; components: any[]; onOpenComponents: () => void }) {
+  const site = [c.Address, c.Village, c.District, c.StateName, c.Pincode].filter(Boolean).join(", ");
+  return (
+    <div className="jc-details">
+      <div className="jc-card">
+        <div className="flex items-center gap-3">
+          <span className="jc-avatar">{initials(c.CustomerName)}</span>
+          <div className="min-w-0 flex-1">
+            <div className="jc-label">Customer</div>
+            <div className="truncate text-base font-bold text-slate-900">{c.CustomerName || "—"}</div>
+            {c.Mobile && <a href={`tel:${c.Mobile}`} className="text-xs font-semibold text-blue-600"><PhoneOutlined /> +91 {c.Mobile}</a>}
+          </div>
+        </div>
+        <div className="jc-note !mt-4"><EnvironmentOutlined className="mt-0.5 text-slate-400" /><span>{site || "No site address"}</span></div>
+      </div>
+
+      <div className="jc-card">
+        <div className="jc-label mb-3">Call details</div>
+        <div className="jc-facts">
+          <Fact label="Call date">{day(c.CallDate)}</Fact>
+          <Fact label="Call type">{c.CallTypeName}</Fact>
+          <Fact label="Source">{c.Source}</Fact>
+          <Fact label="Service center">{c.ServiceCenterName}</Fact>
+          <Fact label="Dealer">{c.DealerName || "Direct"}</Fact>
+          <Fact label="Project / Scheme">{c.ProjectName}</Fact>
+        </div>
+      </div>
+
+      <div className="jc-card jc-wide jc-problem">
+        <div className="jc-label mb-2">Problem reported by the customer</div>
+        <p className="whitespace-pre-line">{c.ComplaintText || "—"}</p>
+      </div>
+
+      {c.Resolution && (
+        <div className="jc-card jc-wide jc-resolution">
+          <div className="jc-label mb-2"><CheckCircleOutlined /> Resolution</div>
+          <p className="whitespace-pre-line">{c.Resolution}</p>
+        </div>
+      )}
+
+      <div className="jc-card jc-wide">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <span className="jc-label">Components on the call</span>
+          <span className="flex items-center gap-2"><span className="jc-count">{components.length}</span>{components.length > 0 && <button type="button" className="text-xs font-semibold text-blue-600 hover:underline" onClick={onOpenComponents}>Open table</button>}</span>
+        </div>
+        {components.length ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            {components.map((it, i) => {
+              const color = CAT_COLOR[String(it.Category).toUpperCase()] || "#64748b", w = it.Warranty;
+              return (
+                <div key={it.ComplaintItemLnId || `${it.SerialNo}-${i}`} className="jc-fault" style={{ ["--c" as any]: color }}>
+                  <span className="jc-fault-icon"><CategoryIcon category={it.Category} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="jc-fault-cat">{it.Category}{it.ModelName ? ` · ${it.ModelName}` : ""}</span>
+                    <span className="jc-fault-name font-mono">{it.SerialNo || "No serial"}</span>
+                    {it.ReportedFault && <span className="block truncate text-[11px] text-slate-500" title={it.ReportedFault}>{it.ReportedFault}</span>}
+                  </span>
+                  {w && <span className="shrink-0 text-right"><Tag color={STATE_TAG[w.State]} className="m-0">{w.Label}</Tag>{w.EndDate && <span className="mt-0.5 block text-[10.5px] text-slate-400">till {day(w.EndDate)}</span>}</span>}
+                </div>
+              );
+            })}
+          </div>
+        ) : <span className="text-xs text-slate-400">No components recorded</span>}
+      </div>
+    </div>
+  );
+}
 
 /** Read-only view of a service call: details, faulty components with current warranty, visits & job cards, photos / videos and the activity trail. */
 export function ServiceCallDetailDrawer({ complaintId, onClose }: { complaintId: string | null; onClose: () => void }) {
@@ -65,7 +185,6 @@ export function ServiceCallDetails({ complaintId, showProgress = true, onLoaded 
   }, [complaintId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const c = data?.complaint;
-  const overdue = c?.DueDate && dayjs(c.DueDate).isBefore(dayjs(), "day") && OPEN(c?.Status);
   const visits: any[] = data?.visits || [], jobCards: any[] = data?.jobCards || [], photos: any[] = data?.photos || [], videos: any[] = data?.videos || [];
   const activity: any[] = data?.activity || [];
 
@@ -73,35 +192,15 @@ export function ServiceCallDetails({ complaintId, showProgress = true, onLoaded 
     <>
       {loading && !data && <PageLoader label="Loading service call…" hint="Components, warranty, photos and activity" minHeight="60vh" />}
       <Spin spinning={loading && !!data}>
-        {c && <div className="space-y-4">
+        {c && <div className="jc-view space-y-4">
           {showProgress && <ServiceCallProgress status={c.Status} />}
 
-          {/* At a glance */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl border border-slate-200 bg-white px-4 py-3 sm:grid-cols-3 lg:grid-cols-6">
-            <Fact label="Call no."><span className="font-mono text-blue-700">{c.ComplaintNo}</span></Fact>
-            <Fact label="Status"><Tag color={STATUS_COLOR[c.Status] || "default"} className="!mr-0">{c.Status}</Tag></Fact>
-            <Fact label="Priority">{c.Priority || "—"}</Fact>
-            <Fact label="Warranty">{c.WarrantyStatus ? <Tag color={c.WarrantyStatus === "In Warranty" ? "green" : c.WarrantyStatus === "Partial" ? "orange" : "default"} className="!mr-0">{c.WarrantyStatus}</Tag> : "—"}</Fact>
-            <Fact label="Engineer">{c.EngineerName || <span className="text-amber-600">Unassigned</span>}</Fact>
-            <Fact label="Due by"><span className={overdue ? "text-red-600" : ""}>{day(c.DueDate)}{overdue ? " · overdue" : ""}</span></Fact>
-          </div>
+          {/* At a glance: the call, the due-date countdown, who handles it */}
+          <CallSummary c={c} />
 
           <Tabs activeKey={tab} onChange={setTab} items={[
             { key: "details", label: tabLabel(<InfoCircleOutlined />, "Details"), children: (
-              <div className="space-y-4">
-                <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }} items={[
-                  { key: "d", label: "Call date", children: day(c.CallDate) },
-                  { key: "t", label: "Call type", children: c.CallTypeName || "—" },
-                  { key: "s", label: "Source", children: c.Source || "—" },
-                  { key: "pr", label: "Project / Scheme", children: c.ProjectName || "—" },
-                  { key: "dl", label: "Dealer", children: c.DealerName || "Direct" },
-                  { key: "sc", label: "Service center", children: c.ServiceCenterName || "—" },
-                  { key: "cu", label: "Customer", children: <span>{c.CustomerName || "—"}{c.Mobile ? <span className="text-slate-400"> · {c.Mobile}</span> : null}</span> },
-                  { key: "site", label: "Site", span: 2, children: [c.Address, c.Village, c.District, c.StateName, c.Pincode].filter(Boolean).join(", ") || "—" },
-                ]} />
-                <Panel title="Problem reported"><p className="whitespace-pre-line text-sm text-slate-700">{c.ComplaintText || "—"}</p></Panel>
-                {c.Resolution && <Panel title="Resolution"><p className="whitespace-pre-line text-sm text-slate-700">{c.Resolution}</p></Panel>}
-              </div>
+              <CallDetails c={c} components={data.components || []} onOpenComponents={() => setTab("components")} />
             ) },
             { key: "components", label: tabLabel(<UnorderedListOutlined />, "Components", data.components?.length || 0), children: (
               <Table size="middle" rowKey="ComplaintItemLnId" dataSource={data.components} pagination={false} scroll={{ x: 640 }} locale={{ emptyText: "No components recorded" }} columns={[

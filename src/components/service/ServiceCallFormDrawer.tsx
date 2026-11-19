@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { Button, Drawer, Form, Input, Select, Spin, Tag, Upload, message } from "antd";
+import { Button, Drawer, Form, Input, Select, Spin, Tag, Tooltip, Upload, message } from "antd";
 import type { UploadFile } from "antd";
-import { CustomerServiceOutlined, DeleteOutlined, PlusOutlined, CameraOutlined, CheckCircleFilled } from "@ant-design/icons";
+import { CustomerServiceOutlined, DeleteOutlined, PlusOutlined, CameraOutlined, CheckCircleFilled, ClockCircleOutlined, PhoneOutlined, UserOutlined, EnvironmentOutlined, BarcodeOutlined } from "@ant-design/icons";
+import { CategoryIcon } from "@/components/warranty/SerialPassport";
 import axios from "axios";
 import dayjs from "dayjs";
 import { useMasterStore } from "@/lib/store/useMasterStore";
@@ -23,6 +24,7 @@ import { VideoAttachments, type VideoItem } from "@/components/common/VideoAttac
 const COMPONENTS = [{ value: "PUMP", label: "Pump" }, { value: "MOTOR", label: "Motor" }, { value: "CONTROLLER", label: "Controller" }];
 const STATE_TAG: Record<string, string> = { in: "green", out: "red", unreg: "default", unk: "red" };
 const MAX_PHOTOS = 5;
+const SC_CAT_COLOR: Record<string, string> = { PUMP: "#2563eb", MOTOR: "#0891b2", CONTROLLER: "#7c3aed" };
 
 /** Shrinks a photo to ≤1600px JPEG before upload (keeps requests small on mobile networks). */
 function compressImage(file: File): Promise<string> {
@@ -75,6 +77,8 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
   const installationId = useRef<string | null>(null);
   const customerId = useRef<string | null>(null);
   const lastMobile = useRef("");
+  /** What the mobile lookup filled in — cleared again when the mobile is changed to another / unknown number. */
+  const autoFill = useRef<{ values: Record<string, any>; serials: string[] | null } | null>(null);
 
   const callTypeId = Form.useWatch("callTypeId", form);
   const callDate = Form.useWatch("callDate", form);
@@ -93,7 +97,7 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
       components: [{ category: "PUMP" }],
     });
     setPhotos([]); setVideos([]); setSerialInfo({}); setCustomerNote(null);
-    installationId.current = null; customerId.current = null; lastMobile.current = "";
+    installationId.current = null; customerId.current = null; lastMobile.current = ""; autoFill.current = null;
     setRecord(null); setLoadFailed(false);
     if (!complaintId && preset?.serialNo) {
       form.setFieldsValue({ mobile: preset.mobile, components: [{ category: preset.category || "PUMP", serialNo: preset.serialNo }] });
@@ -136,6 +140,29 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
     }
   };
 
+  /** Removes what the last mobile lookup filled in (fields the user has since edited are kept). */
+  const clearAutoFill = () => {
+    const filled = autoFill.current;
+    customerId.current = null; installationId.current = null; setCustomerNote(null);
+    if (!filled) return;
+    autoFill.current = null;
+    const reset: Record<string, undefined> = {};
+    Object.entries(filled.values).forEach(([key, value]) => { if (form.getFieldValue(key) === value) reset[key] = undefined; });
+    form.setFieldsValue(reset);
+    const serials = (form.getFieldValue("components") || []).map((l: any) => String(l?.serialNo || ""));
+    const untouched = filled.serials && serials.length === filled.serials.length && serials.every((sn: string, i: number) => sn === filled.serials![i])
+      && (form.getFieldValue("components") || []).every((l: any) => !l?.fault);
+    if (untouched) { form.setFieldValue("components", [{ category: "PUMP" }]); setSerialInfo({}); }
+  };
+
+  /** Mobile typed: a different number clears the previous customer's details, a complete one is looked up. */
+  const onMobileChange = (mobile: string) => {
+    if (mobile === lastMobile.current) return;
+    if (autoFill.current) clearAutoFill();
+    if (!/^[6-9]\d{9}$/.test(mobile)) { lastMobile.current = ""; return; }
+    lookupCustomer(mobile);
+  };
+
   /** Mobile → existing customer: fills the site and, when the components are still empty, their pump set serials. */
   const lookupCustomer = async (mobile: string) => {
     if (!/^[6-9]\d{9}$/.test(mobile) || mobile === lastMobile.current) return;
@@ -143,11 +170,13 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
     setLookingUp(true);
     try {
       const data = (await axios.post("/api/service/complaints/lookup-customer", { mobile })).data;
-      if (!data.found) { setCustomerNote(null); customerId.current = null; installationId.current = null; return; }
+      if (form.getFieldValue("mobile") !== undefined && String(form.getFieldValue("mobile") || "").trim() !== mobile) return; // number changed while looking up
+      if (!data.found) { clearAutoFill(); return; }
+      clearAutoFill();
       const c = data.customer, inst = data.installations?.[0];
       customerId.current = c.CustomerId;
       installationId.current = inst?.InstallationId || null;
-      form.setFieldsValue({
+      const values: Record<string, any> = {
         customerName: c.CustomerName,
         village: inst?.Village || c.Village || undefined,
         address: inst?.SiteAddress || c.Address || undefined,
@@ -156,11 +185,14 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
         pincode: inst?.Pincode || c.Pincode || undefined,
         ...(inst?.DealerId && portal !== "DEALER" ? { dealerId: inst.DealerId } : {}),
         ...(inst?.ProjectId ? { projectId: inst.ProjectId } : {}),
-      });
+      };
+      form.setFieldsValue(values);
+      autoFill.current = { values: Object.fromEntries(Object.entries(values).filter(([, v]) => v !== undefined && v !== null && v !== "")), serials: null };
       const current = form.getFieldValue("components") || [];
       const empty = current.every((l: any) => !l?.serialNo && !l?.fault);
       if (empty && inst?.Serials?.length) {
         form.setFieldValue("components", inst.Serials.map((s: any) => ({ category: s.Category, serialNo: s.SerialNo })));
+        autoFill.current.serials = inst.Serials.map((s: any) => String(s.SerialNo || ""));
         setSerialInfo({});
         setTimeout(() => inst.Serials.forEach((_: any, i: number) => lookupSerial(i)), 0);
       }
@@ -212,12 +244,12 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
       footer={<div className="flex items-center justify-end gap-2 py-2"><Button onClick={onClose} disabled={saving}>Cancel</Button><Button type="primary" onClick={save} disabled={loadingEdit || loadFailed} loading={saving} className="bg-teal-600">{complaintId ? "Save changes" : "Register call"}</Button></div>}
     >
       {record && <div className="mb-5"><ServiceCallProgress status={record.Status} /></div>}
-      <Spin spinning={loadingEdit}><Form disabled={loadingEdit || loadFailed} form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form">
-        <FormSection number="01" title="Call details" description="Type of call, priority and where the call came from.">
+      <Spin spinning={loadingEdit}><Form disabled={loadingEdit || loadFailed} form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form entry-form-compact">
+        <FormSection number="01" title="Call details" description="Type of call, priority and where the call came from."
+          extra={dueDate ? <span className="sc-chip sc-chip-blue"><ClockCircleOutlined /> Due by {dueDate.format("DD-MMM-YYYY")} · {callType.ValidDays} valid days</span> : undefined}>
           <div className="form-grid form-grid-three">
             <Form.Item name="callDate" label={fieldLabel("Call Date")} rules={[{ required: true, message: "Call date is required" }]}><SmartDatePicker disabledDate={(d) => d.isAfter(dayjs(), "day")} /></Form.Item>
-            <Form.Item name="callTypeId" label={fieldLabel("Call Type")} rules={[{ required: true, message: "Select the call type" }]}
-              extra={dueDate ? <span className="text-[11px]">Due by {dueDate.format("DD-MMM-YYYY")} ({callType.ValidDays} valid days)</span> : null}>
+            <Form.Item name="callTypeId" label={fieldLabel("Call Type")} rules={[{ required: true, message: "Select the call type" }]}>
               <Select placeholder="Select call type" options={callTypes.filter((t: any) => t.IsActive).map((t: any) => ({ value: t.CallTypeId, label: `${t.CallTypeName} (${t.ValidDays} days)` }))} />
             </Form.Item>
             <Form.Item name="priority" label={fieldLabel("Priority")}><Select options={CALL_PRIORITIES.map((p) => ({ value: p, label: p }))} /></Form.Item>
@@ -227,72 +259,94 @@ export function ServiceCallFormDrawer({ open, onClose, onSaved, complaintId, pre
           </div>
         </FormSection>
 
-        <FormSection number="02" title="Customer & site" description="Type the mobile — an existing customer loads automatically.">
-          <div className="form-grid form-grid-three">
-            <Form.Item name="mobile" label={fieldLabel("Mobile")} rules={[{ required: true, message: "Mobile number is required" }, { pattern: /^[6-9]\d{9}$/, message: "Enter a valid 10-digit mobile number" }]}
-              extra={customerNote ? <span className="text-[11px] text-emerald-700"><CheckCircleFilled /> {customerNote}</span> : <span className="text-[11px]">Type the mobile — an existing customer loads automatically</span>}>
-              <Input maxLength={10} inputMode="numeric" suffix={lookingUp ? <Spin size="small" /> : null} onChange={(e) => lookupCustomer(e.target.value.trim())} placeholder="e.g. 9414101017" />
+        <FormSection number="02" title="Customer & site" description="Type the mobile — an existing customer loads automatically."
+          extra={lookingUp ? <span className="sc-chip"><Spin size="small" /> Looking up…</span> : customerNote ? <span className="sc-chip sc-chip-green"><CheckCircleFilled /> Existing customer</span> : undefined}>
+          {customerNote && <div className="sc-found verify-pop"><CheckCircleFilled /> {customerNote}</div>}
+          <div className="form-grid form-grid-four">
+            <Form.Item name="mobile" label={fieldLabel("Mobile")} rules={[{ required: true, message: "Mobile number is required" }, { pattern: /^[6-9]\d{9}$/, message: "Enter a valid 10-digit mobile number" }]}>
+              <Input prefix={<PhoneOutlined className="text-slate-400" />} maxLength={10} inputMode="numeric" suffix={lookingUp ? <Spin size="small" /> : null} onChange={(e) => onMobileChange(e.target.value.trim())} placeholder="e.g. 9414101017" />
             </Form.Item>
-            <Form.Item name="customerName" label={fieldLabel("Customer Name")} rules={[{ required: true, message: "Customer name is required" }, { max: 120 }]}><Input /></Form.Item>
-            <Form.Item name="village" label={fieldLabel("Village / Area")}><Input maxLength={100} /></Form.Item>
-            <div className="entry-field-wide"><Form.Item name="address" label={fieldLabel("Address")}><Input maxLength={300} /></Form.Item></div>
+            <Form.Item name="customerName" label={fieldLabel("Customer Name")} rules={[{ required: true, message: "Customer name is required" }, { max: 120 }]}><Input prefix={<UserOutlined className="text-slate-400" />} placeholder="Full name" /></Form.Item>
+            <Form.Item name="village" label={fieldLabel("Village / Area")}><Input maxLength={100} placeholder="e.g. Sikri Kalan" /></Form.Item>
+            <Form.Item name="pincode" label={fieldLabel("Pincode")} rules={[{ pattern: /^\d{6}$/, message: "Pincode must be 6 digits" }]}><Input maxLength={6} inputMode="numeric" placeholder="6 digits" /></Form.Item>
+            <div className="sc-span-2"><Form.Item name="address" label={fieldLabel("Address")}><Input prefix={<EnvironmentOutlined className="text-slate-400" />} maxLength={300} placeholder="Khet / farm location, landmarks…" /></Form.Item></div>
             <Form.Item name="stateId" label={fieldLabel("State")} rules={[{ required: true, message: "Select the state" }]}>
               <Select showSearch optionFilterProp="label" placeholder="Select state" options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))} onChange={() => form.setFieldValue("district", undefined)} />
             </Form.Item>
             <Form.Item name="district" label={fieldLabel("District")}><DistrictSelect stateField="stateId" /></Form.Item>
-            <Form.Item name="pincode" label={fieldLabel("Pincode")} rules={[{ pattern: /^\d{6}$/, message: "Pincode must be 6 digits" }]}><Input maxLength={6} inputMode="numeric" /></Form.Item>
           </div>
         </FormSection>
 
-        <FormSection number="03" title="Faulty components" description="Pump, motor and controller each have their own serial and warranty.">
-          <Form.List name="components">
-            {(fields, { add, remove }) => (
-              <div className="pb-4 space-y-2">
-                <div className="hidden md:grid grid-cols-[140px_180px_1fr_1fr_40px] gap-3 px-1 text-xs font-semibold text-slate-600">
-                  <span>Component</span><span>Serial no</span><span>Model &amp; warranty</span><span>Fault reported</span><span />
+        <Form.List name="components">
+          {(fields, { add, remove }) => {
+            const lines: any[] = form.getFieldValue("components") || [];
+            const known = fields.filter((f) => { const i = serialInfo[f.name]; return i && i !== "loading"; });
+            const inWarranty = known.filter((f) => (serialInfo[f.name] as any)?.State === "in").length;
+            return (
+              <FormSection number="03" title="Faulty components" description="Pump, motor and controller each have their own serial and warranty."
+                extra={<Button size="small" icon={<PlusOutlined />} onClick={() => add({ category: ["PUMP", "MOTOR", "CONTROLLER"][fields.length % 3] })}>Add component</Button>}>
+                <div className="overflow-x-auto pb-4">
+                  <div className="line-grid min-w-[860px]" style={{ ["--lg-cols" as any]: "150px 210px minmax(240px,1.2fr) minmax(200px,1fr) 48px" }}>
+                    <div className="line-grid-head"><span>Component</span><span>Serial no</span><span>Model &amp; warranty</span><span>Fault reported</span><span /></div>
+                    {fields.map((field) => {
+                      const info = serialInfo[field.name];
+                      const cat = String(lines[field.name]?.category || "").toUpperCase();
+                      return (
+                        <div key={field.key} className="line-grid-row">
+                          <div className="lg-cell">
+                            <Form.Item name={[field.name, "category"]} className="!mb-0"><Select options={COMPONENTS} labelRender={(p) => <span className="flex items-center gap-2"><span className="sc-cat-icon" style={{ color: SC_CAT_COLOR[cat] || "#64748b" }}><CategoryIcon category={cat} /></span>{p.label}</span>} /></Form.Item>
+                          </div>
+                          <div className="lg-cell">
+                            <Form.Item name={[field.name, "serialNo"]} className="!mb-0"><Input className="font-mono uppercase" prefix={<BarcodeOutlined className="text-slate-400" />} placeholder="Scan / type serial" onBlur={() => lookupSerial(field.name)} onPressEnter={(e) => { e.preventDefault(); lookupSerial(field.name); }} /></Form.Item>
+                          </div>
+                          <div className="lg-cell">
+                            <div className="sc-warranty">
+                              {info === "loading" ? <span className="text-slate-400"><Spin size="small" /> Checking warranty…</span> : !info ? <span className="text-slate-400">Enter the serial to fetch the warranty</span> : (
+                                <>
+                                  <span className="min-w-0 flex-1">
+                                    <span className="block truncate font-semibold text-slate-800" title={info.ModelName}>{info.ModelName || (info.State === "unk" ? "Unknown serial" : "—")}</span>
+                                    {info.State === "unk" ? <span className="block text-[11px] text-red-600">Not in the sticker register — correct or clear it</span>
+                                      : info.EndDate && <span className="block text-[11px] text-slate-500">till {dayjs(info.EndDate).format("DD-MMM-YYYY")}{info.State === "in" ? ` · ${info.DaysLeft} days left` : ""}</span>}
+                                  </span>
+                                  <Tag color={STATE_TAG[info.State]} className="m-0 shrink-0">{info.Label}</Tag>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <div className="lg-cell">
+                            <Form.Item name={[field.name, "fault"]} className="!mb-0" rules={[{ max: 250 }]}><Input placeholder="e.g. no discharge" /></Form.Item>
+                          </div>
+                          <div className="lg-cell lg-icon"><div className="lg-static">
+                            <Tooltip title={fields.length === 1 ? "At least one component is needed" : "Remove component"}>
+                              <Button danger size="small" icon={<DeleteOutlined />} disabled={fields.length === 1} onClick={() => { remove(field.name); setSerialInfo({}); setTimeout(() => (form.getFieldValue("components") || []).forEach((_: any, i: number) => lookupSerial(i)), 0); }} />
+                            </Tooltip>
+                          </div></div>
+                        </div>
+                      );
+                    })}
+                    <div className="line-grid-foot"><span className="text-slate-500">{fields.length} component{fields.length === 1 ? "" : "s"} · {known.length} checked</span><b className="text-emerald-700">{inWarranty} in warranty</b></div>
+                  </div>
                 </div>
-                {fields.map((field) => {
-                  const info = serialInfo[field.name];
-                  return (
-                    <div key={field.key} className="grid grid-cols-1 md:grid-cols-[140px_180px_1fr_1fr_40px] gap-3 items-start rounded-lg border border-slate-200 md:border-0 p-2 md:p-0">
-                      <Form.Item name={[field.name, "category"]} className="!mb-0"><Select options={COMPONENTS} /></Form.Item>
-                      <Form.Item name={[field.name, "serialNo"]} className="!mb-0"><Input className="font-mono uppercase" placeholder="Scan / type serial" onBlur={() => lookupSerial(field.name)} onPressEnter={(e) => { e.preventDefault(); lookupSerial(field.name); }} /></Form.Item>
-                      <div className="text-xs pt-1.5 min-h-[32px]">
-                        {info === "loading" ? <Spin size="small" /> : !info ? <span className="text-slate-400">Enter the serial to fetch warranty</span> : (
-                          <span>
-                            {info.ModelName && <span className="text-slate-700">{info.ModelName} </span>}
-                            <Tag color={STATE_TAG[info.State]} className="ml-1">{info.Label}</Tag>
-                            {info.EndDate && <span className="text-slate-400">till {dayjs(info.EndDate).format("DD-MMM-YYYY")}{info.State === "in" ? ` · ${info.DaysLeft} d left` : ""}</span>}
-                            {info.State === "unk" && <span className="text-red-600 block">Not in the sticker register — correct or clear it</span>}
-                          </span>
-                        )}
-                      </div>
-                      <Form.Item name={[field.name, "fault"]} className="!mb-0" rules={[{ max: 250 }]}><Input placeholder="e.g. no discharge" /></Form.Item>
-                      <Button type="text" danger icon={<DeleteOutlined />} disabled={fields.length === 1} onClick={() => { remove(field.name); setSerialInfo({}); setTimeout(() => (form.getFieldValue("components") || []).forEach((_: any, i: number) => lookupSerial(i)), 0); }} />
-                    </div>
-                  );
-                })}
-                <Button icon={<PlusOutlined />} onClick={() => add({ category: ["PUMP", "MOTOR", "CONTROLLER"][fields.length % 3] })}>Add component</Button>
-              </div>
-            )}
-          </Form.List>
-        </FormSection>
+              </FormSection>
+            );
+          }}
+        </Form.List>
 
         <FormSection number="04" title="Complaint" description="What the customer reported, with optional photos and videos from the site.">
+          <Form.Item name="complaintText" label={fieldLabel("Complaint / Problem Reported")} rules={[{ required: true, message: "Describe the problem reported" }, { min: 3, message: "Describe the problem reported" }]}>
+            <Input.TextArea rows={3} maxLength={1000} showCount placeholder="Breakdown symptoms, discharge issues, controller trip code, motor heating..." />
+          </Form.Item>
           <div className="form-grid form-grid-two">
-            <div className="entry-field-wide">
-              <Form.Item name="complaintText" label={fieldLabel("Complaint / Problem Reported")} rules={[{ required: true, message: "Describe the problem reported" }, { min: 3, message: "Describe the problem reported" }]}>
-                <Input.TextArea rows={3} placeholder="Breakdown symptoms, discharge issues, controller trip code, motor heating..." />
-              </Form.Item>
-            </div>
-            <div className="entry-field-wide">
-              <Form.Item label={fieldLabel("Photos (optional)")} extra={<span className="text-[11px]">Up to {MAX_PHOTOS} photos from the site — compressed before saving</span>}>
+            <div className="sc-media">
+              <Form.Item className="!mb-0" label={fieldLabel("Photos (optional)")} extra={<span className="text-[11px]">Up to {MAX_PHOTOS} photos from the site — compressed before saving</span>}>
                 <Upload listType="picture-card" accept="image/*" multiple fileList={photos} beforeUpload={() => false}
                   onChange={({ fileList }) => setPhotos(fileList.slice(0, MAX_PHOTOS))}>
                   {photos.length < MAX_PHOTOS && <div className="text-slate-500"><CameraOutlined className="text-lg" /><div className="text-xs mt-1">Add photo</div></div>}
                 </Upload>
               </Form.Item>
-              <Form.Item label={fieldLabel("Videos (optional)")}>
+            </div>
+            <div className="sc-media">
+              <Form.Item className="!mb-0" label={fieldLabel("Videos (optional)")}>
                 <VideoAttachments value={videos} onChange={setVideos} onUploadingChange={setVideoUploading} />
               </Form.Item>
             </div>

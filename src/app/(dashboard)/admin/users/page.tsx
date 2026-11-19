@@ -17,7 +17,6 @@ import {
   Avatar,
   Popconfirm,
   Badge,
-  Divider,
   Alert,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
@@ -45,6 +44,8 @@ import {
   DRAWER_WIDTH,
   DRAWER_HEADER_STYLE,
 } from "@/components/common/DrawerHeader";
+import { FormSection } from "@/components/common/FormSection";
+import { fieldLabel } from "@/components/common/PageHeader";
 import { ConfirmModal } from "@/components/common/ConfirmModal";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { formatDate } from "@/lib/utils/dateFormat";
@@ -599,8 +600,10 @@ export default function UsersPage() {
         open={drawerOpen}
         onClose={closeDrawer}
         width={maximized ? "100%" : DRAWER_WIDTH}
-        styles={{ header: DRAWER_HEADER_STYLE, body: { padding: 0 } }}
+        rootClassName="entry-drawer"
+        styles={{ header: DRAWER_HEADER_STYLE }}
         closeIcon={null}
+        destroyOnClose={false}
         title={
           <DrawerHeader
             icon={<UserOutlined className="text-white/90" />}
@@ -617,135 +620,100 @@ export default function UsersPage() {
           />
         }
         footer={
-          <div className="flex justify-end gap-3 py-3 px-4 border-t border-slate-100">
-            <Button onClick={closeDrawer} className="rounded-lg border-slate-300 text-sm">
+          <div className="flex items-center justify-end space-x-2 py-2">
+            <Button onClick={closeDrawer} disabled={saving}>
               Cancel
             </Button>
             <Button
               type="primary"
               loading={saving}
               onClick={handleSave}
-              className="rounded-lg bg-blue-600 border-none font-semibold text-sm px-6"
+              className="bg-blue-600"
             >
               {editingUser ? "Save Changes" : "Create User"}
             </Button>
           </div>
         }
       >
-        <div className="p-5 sm:p-6">
-          <Form
-            form={form}
-            layout="vertical"
-            requiredMark={false}
-            className="space-y-0"
-          >
-            {/* Section: Account Info */}
-            <div className="mb-4">
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <UserOutlined />
-                Account Information
-              </div>
-              <div className="grid grid-cols-2 gap-3">
+        <Form form={form} layout="vertical" requiredMark scrollToFirstError className="entry-form entry-form-compact">
+          <p className="entry-form-hint"><span aria-hidden="true">*</span> Required fields · Screen rights decide which menus this user sees.</p>
+
+          <FormSection number="01" title="Account information" description="Who the user is and how to reach them.">
+            <div className="form-grid form-grid-three">
+              <Form.Item name="FirstName" label={fieldLabel("First name")} rules={[{ required: true, message: "First name is required" }]}>
+                <Input placeholder="e.g. Rajesh" />
+              </Form.Item>
+              <Form.Item name="LastName" label={fieldLabel("Last name")}>
+                <Input placeholder="e.g. Kumar" />
+              </Form.Item>
+              {/* Username — only for new users */}
+              {!editingUser && (
                 <Form.Item
-                  name="FirstName"
-                  label={<span className="text-xs font-semibold text-slate-700">First Name *</span>}
-                  rules={[{ required: true, message: "First name is required" }]}
-                  className="!mb-0"
+                  name="Username"
+                  label={fieldLabel("Username")}
+                  rules={[
+                    { required: true, message: "Username is required" },
+                    { min: 3, message: "At least 3 characters" },
+                    {
+                      pattern: /^[a-z0-9._-]+$/,
+                      message: "Lowercase letters, numbers, dots, underscores, hyphens only",
+                    },
+                  ]}
+                  tooltip="Must be unique. Lowercase letters, numbers, dots, underscores and hyphens only."
                 >
-                  <Input
-                    placeholder="e.g. Rajesh"
-                    className="h-9 rounded-lg border-slate-300 text-sm"
-                  />
+                  <Input prefix={<span className="text-slate-400 text-sm">@</span>} placeholder="e.g. rajesh.kumar (lowercase, unique)" />
                 </Form.Item>
+              )}
+              <Form.Item name="Email" label={fieldLabel("Email")} rules={[{ type: "email", message: "Enter a valid email" }]}>
+                <Input prefix={<MailOutlined className="text-slate-400 text-xs" />} placeholder="email@company.com" />
+              </Form.Item>
+              <Form.Item name="Phone" label={fieldLabel("Phone")}>
+                <Input prefix={<PhoneOutlined className="text-slate-400 text-xs" />} placeholder="10-digit mobile" />
+              </Form.Item>
+              {/* Password: required for a new user; when editing, a switch decides whether a new one is set. */}
+              {editingUser ? (
                 <Form.Item
-                  name="LastName"
-                  label={<span className="text-xs font-semibold text-slate-700">Last Name</span>}
-                  className="!mb-0"
+                  name="NewPassword"
+                  label={<span className="inline-flex items-center gap-2">{fieldLabel("New password")}<Switch size="small" checked={changePassword} onChange={setChangePassword} /><span className="text-[11px] font-normal text-slate-500">{changePassword ? "will be changed" : "keep current"}</span></span>}
+                  tooltip={editingUser?.IsErpUser ? "This administrator signs in with their Delta iERP password. A password set here is ignored." : "Switch on to set a new password for this user."}
+                  rules={[
+                    { required: changePassword, message: "Enter a new password" },
+                    { min: 6, message: "Minimum 6 characters" },
+                  ]}
                 >
-                  <Input
-                    placeholder="e.g. Kumar"
-                    className="h-9 rounded-lg border-slate-300 text-sm"
-                  />
+                  <Input.Password disabled={!changePassword} prefix={<LockOutlined className="text-slate-400 text-xs" />} placeholder={changePassword ? "New password (min 6 characters)" : "Unchanged"} autoComplete="new-password" />
+                </Form.Item>
+              ) : (
+                <Form.Item
+                  name="Password"
+                  label={fieldLabel("Password")}
+                  tooltip="At least 6 characters. The user can change it after first login."
+                  rules={[
+                    { required: true, message: "Password is required" },
+                    { min: 6, message: "Minimum 6 characters" },
+                  ]}
+                >
+                  <Input.Password prefix={<LockOutlined className="text-slate-400 text-xs" />} placeholder="Min 6 characters" autoComplete="new-password" />
+                </Form.Item>
+              )}
+              <div className="entry-field-wide">
+                <Form.Item
+                  name="Address"
+                  label={fieldLabel("Address")}
+                  extra={watchedRole === "ENGINEER" ? "Engineers are also saved as an iERP ledger (Service Engineers group) with this address." : undefined}
+                  rules={[{ max: 255 }]}
+                >
+                  <Input.TextArea rows={2} maxLength={255} />
                 </Form.Item>
               </div>
             </div>
+          </FormSection>
 
-            {/* Username — only for new users */}
-            {!editingUser && (
-              <Form.Item
-                name="Username"
-                label={<span className="text-xs font-semibold text-slate-700">Username *</span>}
-                rules={[
-                  { required: true, message: "Username is required" },
-                  { min: 3, message: "At least 3 characters" },
-                  {
-                    pattern: /^[a-z0-9._-]+$/,
-                    message: "Lowercase letters, numbers, dots, underscores, hyphens only",
-                  },
-                ]}
-                extra={<span className="text-[11px] text-slate-400">Must be unique. Use lowercase only.</span>}
-                className="!mb-4"
-              >
-                <Input
-                  prefix={<span className="text-slate-400 text-sm">@</span>}
-                  placeholder="e.g. rajesh.kumar"
-                  className="h-9 rounded-lg border-slate-300 text-sm"
-                />
-              </Form.Item>
-            )}
-
-            <div className="grid grid-cols-2 gap-3 mb-4">
-              <Form.Item
-                name="Email"
-                label={<span className="text-xs font-semibold text-slate-700">Email</span>}
-                rules={[{ type: "email", message: "Enter a valid email" }]}
-                className="!mb-0"
-              >
-                <Input
-                  prefix={<MailOutlined className="text-slate-400 text-xs" />}
-                  placeholder="email@company.com"
-                  className="h-9 rounded-lg border-slate-300 text-sm"
-                />
-              </Form.Item>
-              <Form.Item
-                name="Phone"
-                label={<span className="text-xs font-semibold text-slate-700">Phone</span>}
-                className="!mb-0"
-              >
-                <Input
-                  prefix={<PhoneOutlined className="text-slate-400 text-xs" />}
-                  placeholder="10-digit mobile"
-                  className="h-9 rounded-lg border-slate-300 text-sm"
-                />
-              </Form.Item>
-            </div>
-            <Form.Item
-              name="Address"
-              label={<span className="text-xs font-semibold text-slate-700">Address</span>}
-              extra={watchedRole === "ENGINEER" ? <span className="text-[11px]">Engineers are also saved as an iERP ledger (Service Engineers group) with this address.</span> : undefined}
-              rules={[{ max: 255 }]}
-              className="!mb-0 !mt-3"
-            >
-              <Input.TextArea rows={2} maxLength={255} className="rounded-lg border-slate-300 text-sm" />
-            </Form.Item>
-
-            <Divider className="!my-4" />
-
-            {/* Section: Role & Access */}
-            <div className="mb-4">
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <SafetyCertificateOutlined />
-                Role & Access
-              </div>
-              <Form.Item
-                name="Role"
-                label={<span className="text-xs font-semibold text-slate-700">System Role *</span>}
-                rules={[{ required: true, message: "Please select a role" }]}
-                className="!mb-3"
-              >
+          <FormSection number="02" title="Role & status" description="What kind of user this is, and whether the login is switched on.">
+            <div className="form-grid form-grid-two">
+              <Form.Item name="Role" label={fieldLabel("System role")} rules={[{ required: true, message: "Please select a role" }]}>
                 <Select
                   placeholder="Select role"
-                  className="h-9 text-sm"
                   onChange={(role: string) => {
                     // New users start with the screens suggested for the role; existing users keep their selection.
                     if (!editingUser) form.setFieldValue("FormRights", defaultFormsForRole(role));
@@ -760,76 +728,67 @@ export default function UsersPage() {
                   }))}
                 />
               </Form.Item>
-              <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200">
-                <div>
-                  <div className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <CrownOutlined className="text-amber-500" />
-                    Administrator Access
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Full system access including user management
-                  </div>
-                </div>
-                <Form.Item name="IsAdmin" valuePropName="checked" className="!mb-0">
-                  <Switch size="small" />
-                </Form.Item>
-              </div>
-              <div className="flex items-center justify-between bg-slate-50 rounded-lg px-3 py-2.5 border border-slate-200 mt-2">
-                <div>
-                  <div className="text-sm font-semibold text-slate-700 flex items-center gap-1.5">
-                    <CheckCircleFilled className="text-emerald-500" />
-                    Active Account
-                  </div>
-                  <div className="text-[11px] text-slate-500 mt-0.5">
-                    Inactive users cannot log in
-                  </div>
-                </div>
-                <Form.Item name="IsActive" valuePropName="checked" className="!mb-0">
-                  <Switch size="small" defaultChecked />
-                </Form.Item>
-              </div>
-            </div>
-
-            <Divider className="!my-4" />
-
-            {/* Section: Access Rights */}
-            <div className="mb-4">
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <SafetyCertificateOutlined />
-                Access Rights
-              </div>
-              {rightsUnrestricted && (
-                <Alert type="success" showIcon className="!mb-3 text-xs" message="Super Admin and administrator accounts see all states and every screen. The rights below are kept but not applied." />
-              )}
-              {isPortalRole && !rightsUnrestricted && (
-                <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 mb-3">
-                  <div className="text-xs font-semibold text-slate-700 mb-1.5">{watchedRole === "DEALER" ? "Linked Dealer" : "Linked Customer"}</div>
-                  {editingUser ? (
-                    <p className={`text-xs ${getLinkedRecord() ? "text-slate-700" : "text-red-600"}`}>{getLinkedRecord() || "Not linked — no " + (watchedRole === "DEALER" ? "dealer code or mobile" : "customer mobile") + " matches this user name, so the login sees nothing."}</p>
-                  ) : (
-                    <Select showSearch allowClear optionFilterProp="label" className="w-full" placeholder={watchedRole === "DEALER" ? "Select the dealer this login belongs to" : "Select the customer this login belongs to"}
-                      options={watchedRole === "DEALER"
-                        ? dealers.map((d) => ({ value: d.DealerId, label: `${d.FirmName}${d.DealerCode ? ` (${d.DealerCode})` : ""} · ${d.Mobile}` }))
-                        : customers.map((c) => ({ value: c.CustomerId, label: `${c.CustomerName} · ${c.Mobile}${c.Village ? ` · ${c.Village}` : ""}` }))}
-                      onChange={(id: string) => linkRecord(id)} />
-                  )}
-                  <p className="text-[11px] text-slate-500 mt-1.5">The login sees only {watchedRole === "DEALER" ? "this dealer's" : "this customer's"} own pumps, warranties and service calls. It is linked by user name = {watchedRole === "DEALER" ? "dealer code (or dealer mobile)" : "registered mobile number"}; choosing a record fills the user name, name and mobile.</p>
-                </div>
-              )}
               <Form.Item
                 name="ServiceCenterId"
-                label={<span className="text-xs font-semibold text-slate-700">Service Center</span>}
-                extra={<span className="text-[11px]">Managers see calls of this centre; engineers' van stock belongs to it.</span>}
+                label={fieldLabel("Service center")}
+                extra="Managers see calls of this centre; engineers' van stock belongs to it."
                 rules={[{ required: watchedRole === "MANAGER" || watchedRole === "ENGINEER" || watchedRole === "SERVICE_CENTER", message: "Service center is required for managers, engineers and service center logins" }]}
-                className="!mb-3"
               >
                 <Select allowClear showSearch optionFilterProp="label" placeholder="Select service center" options={serviceCenters.map((s: any) => ({ value: s.ServiceCenterId, label: s.ServiceCenterName }))} />
               </Form.Item>
+            </div>
+            <div className="grid grid-cols-1 gap-3 pb-5 md:grid-cols-2">
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/50 px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-base text-amber-600"><CrownOutlined /></span>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">Administrator access</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">Full system access including user management</div>
+                  </div>
+                </div>
+                <Form.Item name="IsAdmin" valuePropName="checked" className="!mb-0">
+                  <Switch />
+                </Form.Item>
+              </div>
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50/50 px-4 py-3">
+                <div className="flex items-start gap-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-base text-emerald-600"><CheckCircleFilled /></span>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-800">Active account</div>
+                    <div className="mt-0.5 text-[11px] text-slate-500">Inactive users cannot log in</div>
+                  </div>
+                </div>
+                <Form.Item name="IsActive" valuePropName="checked" className="!mb-0">
+                  <Switch defaultChecked />
+                </Form.Item>
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection number="03" title="Access rights" description="Which states, districts and screens this user can work with.">
+            {rightsUnrestricted && (
+              <Alert type="success" showIcon className="!mb-4 text-xs" message="Super Admin and administrator accounts see all states and every screen. The rights below are kept but not applied." />
+            )}
+            {isPortalRole && !rightsUnrestricted && (
+              <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-4 mb-4">
+                <div className="text-xs font-semibold text-slate-700 mb-1.5">{watchedRole === "DEALER" ? "Linked Dealer" : "Linked Customer"}</div>
+                {editingUser ? (
+                  <p className={`text-xs ${getLinkedRecord() ? "text-slate-700" : "text-red-600"}`}>{getLinkedRecord() || "Not linked — no " + (watchedRole === "DEALER" ? "dealer code or mobile" : "customer mobile") + " matches this user name, so the login sees nothing."}</p>
+                ) : (
+                  <Select showSearch allowClear optionFilterProp="label" className="w-full" placeholder={watchedRole === "DEALER" ? "Select the dealer this login belongs to" : "Select the customer this login belongs to"}
+                    options={watchedRole === "DEALER"
+                      ? dealers.map((d) => ({ value: d.DealerId, label: `${d.FirmName}${d.DealerCode ? ` (${d.DealerCode})` : ""} · ${d.Mobile}` }))
+                      : customers.map((c) => ({ value: c.CustomerId, label: `${c.CustomerName} · ${c.Mobile}${c.Village ? ` · ${c.Village}` : ""}` }))}
+                    onChange={(id: string) => linkRecord(id)} />
+                )}
+                <p className="text-[11px] text-slate-500 mt-1.5">The login sees only {watchedRole === "DEALER" ? "this dealer's" : "this customer's"} own pumps, warranties and service calls. It is linked by user name = {watchedRole === "DEALER" ? "dealer code (or dealer mobile)" : "registered mobile number"}; choosing a record fills the user name, name and mobile.</p>
+              </div>
+            )}
+            <div className="form-grid form-grid-two">
               <Form.Item
                 name="StateRights"
-                label={<span className="text-xs font-semibold text-slate-700">State Rights</span>}
-                extra={<span className="text-[11px]">Blank = all states. Calls, installations, warranties, customers and dealers are limited to the ticked states.</span>}
-                className="!mb-3"
+                label={fieldLabel("State rights")}
+                extra="Blank = all states. Calls, installations, warranties, customers and dealers are limited to the ticked states."
               >
                 <Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder="All states" maxTagCount="responsive"
                   options={states.map((s: any) => ({ value: s.StateId, label: s.StateName }))}
@@ -841,96 +800,29 @@ export default function UsersPage() {
               </Form.Item>
               <Form.Item
                 name="DistrictRights"
-                label={<span className="text-xs font-semibold text-slate-700">District Rights (optional)</span>}
-                extra={<span className="text-[11px]">Blank = every district of the selected states.</span>}
-                className="!mb-3"
+                label={fieldLabel("District rights (optional)")}
+                extra="Blank = every district of the selected states."
               >
                 <Select mode="multiple" allowClear showSearch optionFilterProp="label" placeholder={watchedStates.length ? "All districts of the selected states" : "Select states first to narrow the list"} maxTagCount="responsive"
                   options={districtOptions(districts, watchedStates)} />
               </Form.Item>
-              <Form.Item
-                name="FormRights"
-                label={<span className="text-xs font-semibold text-slate-700">Screen (Form) Rights</span>}
-                extra={<span className="text-[11px]">Only the ticked screens appear in this user's menu and can be opened. The dashboard is always visible.</span>}
-                rules={[{
-                  validator: (_, value?: string[]) => rightsUnrestricted || (value && value.length)
-                    ? Promise.resolve()
-                    : Promise.reject(new Error("Tick at least one screen this user can open")),
-                }]}
-                className="!mb-0"
-              >
-                <FormRightsPicker role={watchedRole} unrestricted={rightsUnrestricted} />
-              </Form.Item>
-            </div>
-
-            <Divider className="!my-4" />
-
-            {/* Section: Password */}
-            <div className="mb-2">
-              <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3 flex items-center gap-2">
-                <LockOutlined />
-                {editingUser ? "Change Password (Optional)" : "Set Password"}
+              <div className="entry-field-wide">
+                <Form.Item
+                  name="FormRights"
+                  label={fieldLabel("Screen (form) rights")}
+                  extra="Only the ticked screens appear in this user's menu and can be opened. The dashboard is always visible."
+                  rules={[{
+                    validator: (_, value?: string[]) => rightsUnrestricted || (value && value.length)
+                      ? Promise.resolve()
+                      : Promise.reject(new Error("Tick at least one screen this user can open")),
+                  }]}
+                >
+                  <FormRightsPicker role={watchedRole} unrestricted={rightsUnrestricted} />
+                </Form.Item>
               </div>
-              {Boolean(editingUser?.IsErpUser) && (
-                <Alert type="info" showIcon className="!mb-3 text-xs" message="This administrator signs in with their Delta iERP password. Change it in the iERP — a password set here is ignored." />
-              )}
-
-              {editingUser ? (
-                <>
-                  <div className="flex items-center gap-2 mb-3">
-                    <Switch
-                      size="small"
-                      checked={changePassword}
-                      onChange={setChangePassword}
-                    />
-                    <span className="text-sm text-slate-600 font-medium">
-                      Set a new password for this user
-                    </span>
-                  </div>
-                  {changePassword && (
-                    <Form.Item
-                      name="NewPassword"
-                      rules={[
-                        { required: changePassword, message: "Enter a new password" },
-                        { min: 6, message: "Minimum 6 characters" },
-                      ]}
-                      className="!mb-0"
-                    >
-                      <Input.Password
-                        prefix={<LockOutlined className="text-slate-400 text-xs" />}
-                        placeholder="New password"
-                        className="h-9 rounded-lg border-slate-300 text-sm"
-                      />
-                    </Form.Item>
-                  )}
-                </>
-              ) : (
-                <>
-                  <Form.Item
-                    name="Password"
-                    rules={[
-                      { required: true, message: "Password is required" },
-                      { min: 6, message: "Minimum 6 characters" },
-                    ]}
-                    className="!mb-3"
-                  >
-                    <Input.Password
-                      prefix={<LockOutlined className="text-slate-400 text-xs" />}
-                      placeholder="Create a strong password"
-                      className="h-9 rounded-lg border-slate-300 text-sm"
-                    />
-                  </Form.Item>
-                  <Alert
-                    type="info"
-                    showIcon={false}
-                    className="rounded-lg text-xs border-blue-200 bg-blue-50 text-blue-700 py-2 px-3"
-                    message="Password must be at least 6 characters. The user can change it after first login."
-                  />
-                </>
-              )}
             </div>
-          </Form>
-        </div>
+          </FormSection>
+        </Form>
       </Drawer>
 
       {/* Delete Confirmation Modal */}

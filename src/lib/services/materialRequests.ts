@@ -6,8 +6,8 @@ import { ownEntriesOnly } from "@/lib/auth/scope";
 
 /**
  * Material Request item catalogue.
- *  - Product items: iERP dbo.Itms in the "FINISH GOODS" sub-group (pump sets etc.)
- *  - Spare parts:   the local Spares master (with stock in hand) + iERP component items (sub-groups below)
+ *  - Product items: items added as "Product" in the Spares & Products master (with stock in hand) + iERP dbo.Itms in the "FINISH GOODS" sub-group
+ *  - Spare parts:   items added as "Spare" in the master (with stock in hand) + iERP component items (sub-groups below)
  * iERP runs at compatibility level 100 — keep its SQL to plain LIKE / IN.
  */
 export const REQUEST_TYPES = ["Product", "Spare"] as const;
@@ -48,9 +48,10 @@ async function erpItems(subGroups: string[], search?: string, ids?: string[]): P
   return rows.map((r) => ({ key: `ERP|${r.ItmId}`, source: "ERP", id: String(r.ItmId), code: r.Alias || null, name: r.Name, uom: null, group: `iERP · ${r.SubGrp}`, stock: null, rate: Number(r.StdRate) > 0 ? Number(r.StdRate) : Number(r.PurPrice) > 0 ? Number(r.PurPrice) : null }));
 }
 
-async function localSpares(user: AuthSessionUser, search?: string, ids?: string[]): Promise<CatalogueItem[]> {
-  const values: Record<string, unknown> = {};
-  const where = ["[IsActive] = 1"];
+/** Active rows of the Spares & Products master of one item type ("SPARE" / "PRODUCT"). */
+async function localSpares(user: AuthSessionUser, itemType: "SPARE" | "PRODUCT", search?: string, ids?: string[]): Promise<CatalogueItem[]> {
+  const values: Record<string, unknown> = { itemType };
+  const where = ["[IsActive] = 1", "ISNULL([ItemType], 'SPARE') = @itemType"];
   if (search) { where.push("([SpareName] LIKE @q OR [SpareCode] LIKE @q)"); values.q = `%${search}%`; }
   if (ids) {
     if (!ids.length) return [];
@@ -63,14 +64,17 @@ async function localSpares(user: AuthSessionUser, search?: string, ids?: string[
   const balances = await stockBalances(runQuery, { locIds });
   const totals = new Map<string, number>();
   balances.filter((b) => b.LocType !== "DAMAGED").forEach((b) => { const k = String(b.SpareId).toLowerCase(); totals.set(k, (totals.get(k) || 0) + Number(b.Balance || 0)); });
-  return spares.map((s) => ({ key: `LOCAL|${s.SpareId}`, source: "LOCAL", id: String(s.SpareId), code: s.SpareCode, name: s.SpareName, uom: s.Uom, group: "Spares master", stock: totals.get(String(s.SpareId).toLowerCase()) || 0, rate: s.CurrentRate === null || s.CurrentRate === undefined ? null : Number(s.CurrentRate) }));
+  return spares.map((s) => ({ key: `LOCAL|${s.SpareId}`, source: "LOCAL", id: String(s.SpareId), code: s.SpareCode, name: s.SpareName, uom: s.Uom, group: itemType === "PRODUCT" ? "Products master" : "Spares master", stock: totals.get(String(s.SpareId).toLowerCase()) || 0, rate: s.CurrentRate === null || s.CurrentRate === undefined ? null : Number(s.CurrentRate) }));
 }
 
 /** Items that can be requested for this request type. */
 export async function catalogue(user: AuthSessionUser, type: string, search?: string): Promise<CatalogueItem[]> {
-  if (type === "Product") return erpItems(ERP_PRODUCT_SUBGROUPS, search);
+  if (type === "Product") {
+    const [local, erp] = await Promise.all([localSpares(user, "PRODUCT", search), erpItems(ERP_PRODUCT_SUBGROUPS, search)]);
+    return [...local, ...erp];
+  }
   if (type === "Spare") {
-    const [local, erp] = await Promise.all([localSpares(user, search), erpItems(ERP_SPARE_SUBGROUPS, search)]);
+    const [local, erp] = await Promise.all([localSpares(user, "SPARE", search), erpItems(ERP_SPARE_SUBGROUPS, search)]);
     return [...local, ...erp];
   }
   return [];
@@ -80,8 +84,8 @@ export async function catalogue(user: AuthSessionUser, type: string, search?: st
 export async function resolveItems(user: AuthSessionUser, type: string, keys: string[]) {
   const ids = (source: string) => keys.filter((k) => k.startsWith(`${source}|`)).map((k) => k.slice(source.length + 1));
   const found = type === "Product"
-    ? await erpItems(ERP_PRODUCT_SUBGROUPS, undefined, ids("ERP"))
-    : [...(await localSpares(user, undefined, ids("LOCAL"))), ...(await erpItems(ERP_SPARE_SUBGROUPS, undefined, ids("ERP")))];
+    ? [...(await localSpares(user, "PRODUCT", undefined, ids("LOCAL"))), ...(await erpItems(ERP_PRODUCT_SUBGROUPS, undefined, ids("ERP")))]
+    : [...(await localSpares(user, "SPARE", undefined, ids("LOCAL"))), ...(await erpItems(ERP_SPARE_SUBGROUPS, undefined, ids("ERP")))];
   return new Map(found.map((i) => [i.key.toLowerCase(), i]));
 }
 

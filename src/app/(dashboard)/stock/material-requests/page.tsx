@@ -20,7 +20,7 @@ import { DateRangeFilter, ExportExcelButton, inDateRange, type DateRange } from 
 import { exportTable, rangeLabel } from "@/lib/utils/excelExport";
 
 const REQUEST_TYPES = [
-  { value: "Product", label: "Product items", hint: "Finished products from the iERP" },
+  { value: "Product", label: "Product items", hint: "Products master and iERP finished goods" },
   { value: "Spare", label: "Spare parts", hint: "Spares master and iERP component items" },
 ];
 const PRIORITIES = ["Low", "Normal", "High", "Urgent"];

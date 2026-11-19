@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Button, Descriptions, Drawer, Form, Input, Select, Space, Table, Tabs, Tag, Tooltip, message } from "antd";
+import { Button, Drawer, Form, Input, Select, Space, Table, Tag, Tooltip, message } from "antd";
 import { DeleteOutlined, EditOutlined, EyeOutlined, PhoneOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, TeamOutlined } from "@ant-design/icons";
 import { useCustomerStore, Customer, CustomerDetail } from "@/lib/store/useCustomerStore";
 import { useMasterStore } from "@/lib/store/useMasterStore";
@@ -15,6 +15,7 @@ import { formatDate } from "@/lib/utils/dateFormat";
 import { reportFormError } from "@/lib/utils/formErrors";
 import { useUrlQuery } from "@/lib/hooks/useUrlQuery";
 import { ExportExcelButton } from "@/components/common/ReportTools";
+import { CustomerProfile } from "@/components/warranty/CustomerProfile";
 import { exportTable } from "@/lib/utils/excelExport";
 
 const LANGUAGES = [{ value: "EN", label: "English" }, { value: "HI", label: "Hindi" }, { value: "GU", label: "Gujarati" }];
@@ -170,31 +171,7 @@ export default function CustomersPage() {
       <Drawer open={!!detail} onClose={() => setDetail(null)} width={DRAWER_WIDTH} closable={false} styles={{ header: DRAWER_HEADER_STYLE }} destroyOnClose
         title={detail && <DrawerHeader icon={<TeamOutlined />} title={detail.customer.CustomerName} subtitle={`${detail.customer.Mobile} · ${[detail.customer.Village, detail.customer.District, detail.customer.StateName].filter(Boolean).join(", ")}`} meta={<DrawerChip label="Customer 360" tone="solid" />} onClose={() => setDetail(null)} />}
       >
-        {detail && <div className="space-y-4">
-          <Descriptions bordered size="small" column={{ xs: 1, sm: 2 }} items={[
-            { key: "m", label: "Mobile", children: detail.customer.Mobile },
-            { key: "a", label: "Alternate", children: detail.customer.AltMobile || "-" },
-            { key: "e", label: "Email", children: detail.customer.Email || "-" },
-            { key: "l", label: "Language", children: LANGUAGES.find((l) => l.value === detail.customer.Language)?.label || detail.customer.Language },
-            { key: "ad", label: "Address", span: 2, children: [detail.customer.Address, detail.customer.Village, detail.customer.City, detail.customer.District, detail.customer.StateName, detail.customer.Pincode].filter(Boolean).join(", ") || "-" },
-          ]} />
-          <Tabs items={[
-            { key: "w", label: `Warranties (${detail.warranties.length})`, children: <Table size="small" rowKey="WarrantyId" dataSource={detail.warranties} pagination={false} scroll={{ x: 700 }} columns={[
-              { title: "Serial", dataIndex: "SerialNo", render: (v: string) => <span className="font-mono font-semibold">{v}</span> },
-              { title: "Category", dataIndex: "Category" }, { title: "Model", dataIndex: "ModelName" },
-              { title: "Start", dataIndex: "StartDate", render: (v: string) => formatDate(v) }, { title: "End", dataIndex: "EndDate", render: (v: string) => formatDate(v) },
-              { title: "Status", dataIndex: "Status", render: (s: string, r: any) => { const expired = s === "Active" && new Date(r.EndDate) < new Date(); return <Tag color={expired ? "default" : s === "Active" ? "green" : "orange"}>{expired ? "Expired" : s}</Tag>; } },
-            ]} /> },
-            { key: "i", label: `Installations (${detail.installations.length})`, children: <Table size="small" rowKey="InstallationId" dataSource={detail.installations} pagination={false} scroll={{ x: 600 }} columns={[
-              { title: "Install No", dataIndex: "InstallNo" }, { title: "Date", dataIndex: "InstallDate", render: (v: string) => formatDate(v) },
-              { title: "Site", key: "site", render: (_: any, r: any) => [r.Village, r.District].filter(Boolean).join(", ") || "-" }, { title: "Dealer", dataIndex: "DealerName", render: (v: string) => v || "-" },
-            ]} /> },
-            { key: "c", label: `Service Calls (${detail.complaints.length})`, children: <Table size="small" rowKey="ComplaintId" dataSource={detail.complaints} pagination={false} scroll={{ x: 600 }} columns={[
-              { title: "Call No", dataIndex: "ComplaintNo" }, { title: "Date", dataIndex: "CallDate", render: (v: string) => formatDate(v) },
-              { title: "Type", dataIndex: "CallTypeName" }, { title: "Issue", dataIndex: "ComplaintText", ellipsis: true }, { title: "Status", dataIndex: "Status", render: (s: string) => <Tag>{s}</Tag> },
-            ]} /> },
-          ]} />
-        </div>}
+        {detail && <CustomerProfile detail={detail as any} />}
       </Drawer>
 
       <ConfirmModal open={!!deleting} title="Delete Customer" description={`Delete customer ${deleting?.CustomerName}? This cannot be undone.`} warningText="Customers with installations, warranties or service calls cannot be deleted." loading={deleteBusy} onConfirm={handleDelete} onCancel={() => setDeleting(null)} />

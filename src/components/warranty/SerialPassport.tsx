@@ -1,10 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
-import { Tag, Tooltip } from "antd";
+import { Pagination, Tag, Tooltip, message } from "antd";
+import { copyText } from "@/lib/utils/clipboard";
 import {
-  AppstoreOutlined, CheckCircleFilled, ClockCircleFilled, CloseCircleFilled, ControlOutlined, SafetyCertificateFilled, StopOutlined, SwapOutlined, ThunderboltOutlined,
+  ColumnHeightOutlined, EnvironmentOutlined, PhoneOutlined, ShopOutlined, UserOutlined, BarcodeOutlined, BuildOutlined, CalendarOutlined, CopyOutlined, FileTextOutlined, FlagOutlined, HomeOutlined, ToolOutlined, AppstoreOutlined, CheckCircleFilled, ClockCircleFilled, CloseCircleFilled, ControlOutlined, SafetyCertificateFilled, StopOutlined, SwapOutlined, ThunderboltOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { VIZ } from "@/components/dashboard/Charts";
@@ -207,6 +208,27 @@ export function WarrantyGauge({ warranty, status }: { warranty: any; status: Pas
   );
 }
 
+/* ---------- ring ---------- */
+
+/** Circular meter: the coloured arc is the part of the warranty still running (pct 0–100), with a headline in the middle. */
+export function DaysRing({ pct, color, big, small, size = 140 }: { pct: number; color: string; big: string; small: string; size?: number }) {
+  const R = 54, C = 2 * Math.PI * R, shown = Math.max(0, Math.min(100, pct));
+  const scale = size / 140;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }} role="img" aria-label={`${big} ${small}`}>
+      <svg viewBox="0 0 140 140" className="h-full w-full -rotate-90">
+        <circle cx="70" cy="70" r={R} fill="none" stroke={VIZ.track} strokeWidth="13" />
+        <circle cx="70" cy="70" r={R} fill="none" stroke={color} strokeWidth="13" strokeLinecap="round" strokeDasharray={`${(C * shown) / 100} ${C}`}
+          style={{ transition: "stroke-dasharray .9s cubic-bezier(.2,.8,.2,1)" }} />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center px-3">
+        <span className="font-extrabold leading-none tabular-nums text-slate-900" style={{ fontSize: Math.round((big.length > 5 ? 22 : 30) * scale) }}>{big}</span>
+        <span className="mt-1 font-bold uppercase tracking-wide text-slate-500" style={{ fontSize: Math.max(9, Math.round(10.5 * scale)) }}>{small}</span>
+      </div>
+    </div>
+  );
+}
+
 /* ---------- hero ---------- */
 
 export function PassportHero({ serial, category, model, warranty, registeredOn, registeredBy, replacedFromSerial, onOpenSerial, footer }: {
@@ -224,10 +246,24 @@ export function PassportHero({ serial, category, model, warranty, registeredOn, 
     ...(replacedFromSerial ? [{ key: "rf", label: "Replaced serial", value: <SerialLink sn={replacedFromSerial} onOpen={onOpenSerial} /> }] : []),
   ];
 
+  // Ring = share of the warranty period still left (the gauge below carries the days and dates).
+  const p = periodOf(warranty);
+  const live = status === "active" || status === "expiring";
+  const leftPct = live ? (p ? Math.max(0, Math.round(100 - p.elapsedPct)) : 100) : 0;
+  const ring = live ? { big: `${leftPct}%`, small: "of period left" }
+    : { big: status === "expired" ? "Ended" : STATUS[status].label, small: status === "expired" && p ? `${plural(Math.max(0, -p.daysLeft), "day")} ago` : "no coverage" };
+  const FACT_ICON: Record<string, React.ReactNode> = {
+    w: <SafetyCertificateFilled />, p: <CalendarOutlined />, r: <ThunderboltOutlined />, ro: <CheckCircleFilled />, mc: <BarcodeOutlined />, rf: <SwapOutlined />,
+  };
+  const copySerial = async () => {
+    if (await copyText(serial)) message.success({ content: "Serial number copied", duration: 1.5 });
+    else message.error("Could not copy — select the text and press Ctrl+C");
+  };
+
   return (
-    <section className={`${CARD} overflow-hidden`}>
-      <div className="p-5 flex flex-wrap items-start gap-4">
-        <div className="h-14 w-14 shrink-0 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center text-[26px]"><CategoryIcon category={category} /></div>
+    <section className={`${CARD} overflow-hidden`} style={{ borderTop: `4px solid ${STATUS[status].color}` }}>
+      <div className="p-5 flex flex-wrap items-center gap-x-5 gap-y-4">
+        <DaysRing pct={leftPct} color={STATUS[status].color} big={ring.big} small={ring.small} size={116} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[11px] font-bold uppercase tracking-wide text-blue-600">Serial passport</span>
@@ -235,20 +271,34 @@ export function PassportHero({ serial, category, model, warranty, registeredOn, 
             <Tooltip title="Found in the sticker register and registered to an installation">
               <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700"><SafetyCertificateFilled />Authentic</span>
             </Tooltip>
+            <span className="ml-auto"><StatusBadge status={status} /></span>
           </div>
-          <h2 className="text-xl font-extrabold text-slate-900 leading-tight mt-1 break-words">{model?.ModelName || "Model not recorded"}</h2>
-          <div className="font-mono text-sm font-semibold text-slate-600 mt-0.5 break-all">{serial}</div>
+          <div className="mt-2 flex items-start gap-3">
+            <span className="mt-0.5 h-10 w-10 shrink-0 rounded-lg bg-blue-50 text-blue-700 flex items-center justify-center text-xl"><CategoryIcon category={category} /></span>
+            <div className="min-w-0">
+              <h2 className="m-0 text-xl font-extrabold text-slate-900 leading-tight break-words">{model?.ModelName || "Model not recorded"}</h2>
+              <div className="mt-1 flex items-center gap-1.5">
+                <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 font-mono text-[13px] font-bold tracking-wide text-slate-700 break-all">{serial}</span>
+                <Tooltip title="Copy serial number">
+                  <button type="button" onClick={copySerial} aria-label="Copy serial number" className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-600"><CopyOutlined className="text-[13px]" /></button>
+                </Tooltip>
+              </div>
+            </div>
+          </div>
+          <p className="mb-0 mt-2.5 text-xs text-slate-500">{STATUS[status].hint}</p>
         </div>
-        <StatusBadge status={status} />
       </div>
 
-      <div className="px-5 pb-5"><WarrantyGauge warranty={warranty} status={status} /></div>
+      <div className="border-t border-slate-100 px-5 py-4"><WarrantyGauge warranty={warranty} status={status} /></div>
 
-      <dl className="border-t border-slate-100 px-5 py-4 grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-3 m-0">
+      <dl className="border-t border-slate-100 bg-slate-50/50 p-4 grid grid-cols-2 sm:grid-cols-3 gap-2.5 m-0">
         {facts.map((f) => (
-          <div key={f.key} className="min-w-0">
-            <dt className={LABEL}>{f.label}</dt>
-            <dd className="m-0 mt-0.5 text-sm text-slate-800 break-words">{f.value}</dd>
+          <div key={f.key} className="min-w-0 flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-[13px] text-blue-700">{FACT_ICON[f.key] || <AppstoreOutlined />}</span>
+            <div className="min-w-0">
+              <dt className={LABEL}>{f.label}</dt>
+              <dd className="m-0 mt-0.5 text-[13px] font-semibold text-slate-800 break-words">{f.value}</dd>
+            </div>
           </div>
         ))}
       </dl>
@@ -267,8 +317,9 @@ function SerialLink({ sn, onOpen }: { sn: string; onOpen: (sn: string) => void }
 
 /* ---------- lifecycle timeline ---------- */
 
+type LifeKind = "milestone" | "service" | "replacement";
 interface LifeEvent {
-  key: string; seq: number; date: dayjs.Dayjs; color: string;
+  key: string; seq: number; date: dayjs.Dayjs; color: string; kind?: LifeKind; icon?: React.ReactNode;
   title: React.ReactNode; tag?: React.ReactNode; meta?: string; detail?: React.ReactNode; tip?: React.ReactNode;
 }
 
@@ -282,7 +333,17 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
   const status = statusKeyOf(w);
   const p = periodOf(w);
   const events: LifeEvent[] = [];
-  const push = (date: unknown, e: Omit<LifeEvent, "date">) => { const d = asDate(date); if (d) events.push({ ...e, date: d }); };
+  const [filter, setFilter] = useState<"all" | LifeKind>("all");
+  useEffect(() => { setFilter("all"); }, [serial]);
+  const ICONS: Record<string, React.ReactNode> = {
+    mfg: <BuildOutlined />, inv: <FileTextOutlined />, inst: <HomeOutlined />, reg: <SafetyCertificateFilled />, "std-end": <CalendarOutlined />, end: <FlagOutlined />,
+  };
+  const push = (date: unknown, e: Omit<LifeEvent, "date">) => {
+    const d = asDate(date);
+    if (!d) return;
+    const kind: LifeKind = e.key.startsWith("call-") ? "service" : e.key.startsWith("repl-") ? "replacement" : "milestone";
+    events.push({ ...e, kind, icon: kind === "service" ? <ToolOutlined /> : kind === "replacement" ? <SwapOutlined /> : ICONS[e.key] || <AppstoreOutlined />, date: d });
+  };
 
   push(sticker.MfgDate, { key: "mfg", seq: 0, color: RAMP[1], title: "Manufactured", detail: [model.ModelName, model.ModelCode].filter(Boolean).join(" · ") || "—" });
   push(sticker.InvoiceDate, {
@@ -345,7 +406,15 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
   type Row = { kind: "event"; e: LifeEvent; future: boolean } | { kind: "today" };
   const rows: Row[] = [];
   let todayPlaced = false;
-  for (const e of events) {
+  const counts = { service: events.filter((e) => e.kind === "service").length, replacement: events.filter((e) => e.kind === "replacement").length, milestone: events.filter((e) => e.kind === "milestone").length };
+  const shown = filter === "all" ? events : events.filter((e) => e.kind === filter);
+  const chips: { key: "all" | LifeKind; label: string; count: number }[] = [
+    { key: "all", label: "All", count: events.length },
+    { key: "milestone", label: "Milestones", count: counts.milestone },
+    { key: "service", label: "Service calls", count: counts.service },
+    { key: "replacement", label: "Replacements", count: counts.replacement },
+  ];
+  for (const e of shown) {
     const future = isFuture(e.date);
     if (future && !todayPlaced) { rows.push({ kind: "today" }); todayPlaced = true; }
     rows.push({ kind: "event", e, future });
@@ -360,7 +429,14 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
           <h3 className="text-sm font-bold text-slate-900">Lifecycle</h3>
           <p className="text-xs text-slate-500 mt-0.5">Everything recorded against this serial, oldest first</p>
         </div>
-        <span className="text-xs text-slate-400 whitespace-nowrap">{plural(events.length, "event")}</span>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {chips.filter((c) => c.key === "all" || c.count > 0).map((c) => (
+            <button key={c.key} type="button" aria-pressed={filter === c.key} onClick={() => setFilter(c.key)}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors ${filter === c.key ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"}`}>
+              {c.label}<span className={`rounded-full px-1.5 text-[10px] font-bold tabular-nums ${filter === c.key ? "bg-white/25 text-white" : "bg-slate-100 text-slate-600"}`}>{c.count}</span>
+            </button>
+          ))}
+        </div>
       </header>
       <ol className="px-5 py-4 m-0 list-none">
         {rows.map((row, i) => {
@@ -369,8 +445,8 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
           const lowerDashed = row.kind === "today" || (row.kind === "event" && row.future);
           const rail = (dot: React.ReactNode) => (
             <div className="relative flex justify-center">
-              {!first && <span className="absolute left-1/2 -translate-x-1/2 top-0 h-[10px] border-l" style={{ borderColor: RULE, borderLeftStyle: upperDashed ? "dashed" : "solid" }} />}
-              {!last && <span className="absolute left-1/2 -translate-x-1/2 top-[10px] bottom-0 border-l" style={{ borderColor: RULE, borderLeftStyle: lowerDashed ? "dashed" : "solid" }} />}
+              {!first && <span className="absolute left-1/2 -translate-x-1/2 top-0 h-[14px] border-l" style={{ borderColor: RULE, borderLeftStyle: upperDashed ? "dashed" : "solid" }} />}
+              {!last && <span className="absolute left-1/2 -translate-x-1/2 top-[14px] bottom-0 border-l" style={{ borderColor: RULE, borderLeftStyle: lowerDashed ? "dashed" : "solid" }} />}
               {dot}
             </div>
           );
@@ -378,18 +454,20 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
           if (row.kind === "today") {
             const now = dayjs();
             return (
-              <li key="today" className="grid grid-cols-[16px_minmax(0,1fr)] sm:grid-cols-[88px_16px_minmax(0,1fr)] gap-x-3">
-                <div className="hidden sm:block text-right pt-0.5">
+              <li key="today" className="grid grid-cols-[28px_minmax(0,1fr)] sm:grid-cols-[88px_28px_minmax(0,1fr)] gap-x-3">
+                <div className="hidden sm:block text-right pt-1">
                   <div className="text-xs font-bold text-blue-700">Today</div>
                   <div className="text-[10.5px] text-slate-400 tabular-nums">{formatDate(now)}</div>
                 </div>
                 {rail(
                   <Tooltip title={`Today · ${formatDate(now)} · ${sum.sentence}`}>
-                    <span className="relative z-[1] mt-[3px] block h-3.5 w-3.5 rounded-full bg-white" style={{ border: `3px solid ${VIZ.blue}` }} />
+                    <span className="relative z-[1] flex h-7 w-7 items-center justify-center rounded-full bg-white" style={{ border: `2px solid ${VIZ.blue}` }}>
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ background: VIZ.blue }} />
+                    </span>
                   </Tooltip>,
                 )}
-                <div className={`min-w-0 ${last ? "" : "pb-5"}`}>
-                  <span className="inline-flex flex-wrap items-center gap-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5">
+                <div className={`min-w-0 ${last ? "" : "pb-4"}`}>
+                  <span className="inline-flex flex-wrap items-center gap-1.5 rounded-full bg-blue-50 border border-blue-100 text-blue-800 text-xs font-semibold px-3 py-1">
                     <span className="sm:hidden">{formatDate(now)} ·</span> Today · {sum.sentence}
                   </span>
                 </div>
@@ -399,25 +477,30 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
 
           const { e, future } = row;
           return (
-            <li key={e.key} className="grid grid-cols-[16px_minmax(0,1fr)] sm:grid-cols-[88px_16px_minmax(0,1fr)] gap-x-3">
-              <div className="hidden sm:block text-right pt-0.5">
+            <li key={e.key} className="grid grid-cols-[28px_minmax(0,1fr)] sm:grid-cols-[88px_28px_minmax(0,1fr)] gap-x-3">
+              <div className="hidden sm:block text-right pt-1">
                 <div className={`text-xs tabular-nums ${future ? "text-slate-400" : "font-semibold text-slate-700"}`}>{formatDate(e.date)}</div>
                 <div className="text-[10.5px] text-slate-400">{relative(e.date)}</div>
               </div>
               {rail(
                 <Tooltip title={e.tip || <><div className="font-semibold">{typeof e.title === "string" ? e.title : ""}</div><div>{formatDate(e.date)} · {relative(e.date)}</div></>}>
-                  <span className="relative z-[1] mt-[4px] block h-3 w-3 rounded-full cursor-default"
-                    style={future ? { border: `2px dashed ${e.color}`, background: "#fff" } : { background: e.color, boxShadow: "0 0 0 3px #fff" }} />
+                  <span className="relative z-[1] flex h-7 w-7 items-center justify-center rounded-full text-[13px] cursor-default"
+                    style={future ? { border: `1.5px dashed ${e.color}`, background: "#fff", color: e.color } : { background: e.color, color: "#fff", boxShadow: "0 0 0 3px #fff" }}>
+                    {e.icon}
+                  </span>
                 </Tooltip>,
               )}
-              <div className={`min-w-0 ${last ? "" : "pb-5"}`}>
-                <div className="sm:hidden text-[11px] font-semibold text-slate-500 tabular-nums">{formatDate(e.date)} · {relative(e.date)}</div>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                  <span className={`text-sm font-semibold ${future ? "text-slate-500" : "text-slate-900"}`}>{e.title}</span>
-                  {e.tag}
-                  {e.meta && <span className="text-[11px] text-slate-400">{e.meta}</span>}
+              <div className={`min-w-0 ${last ? "" : "pb-3"}`}>
+                <div className={`rounded-lg border px-3 py-2 transition-colors ${future ? "border-dashed border-slate-200 bg-slate-50/60" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/60"}`}>
+                  <div className="sm:hidden text-[11px] font-semibold text-slate-500 tabular-nums">{formatDate(e.date)} · {relative(e.date)}</div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    <span className={`text-sm font-semibold ${future ? "text-slate-500" : "text-slate-900"}`}>{e.title}</span>
+                    {e.tag}
+                    {future && <span className="rounded-full bg-slate-100 px-1.5 py-px text-[10px] font-bold uppercase tracking-wide text-slate-500">Upcoming</span>}
+                    {e.meta && <span className="text-[11px] text-slate-400">{e.meta}</span>}
+                  </div>
+                  {e.detail && <div className={`mt-0.5 text-xs break-words ${future ? "text-slate-400" : "text-slate-500"}`}>{e.detail}</div>}
                 </div>
-                {e.detail && <div className={`text-xs truncate ${future ? "text-slate-400" : "text-slate-500"}`}>{e.detail}</div>}
               </div>
             </li>
           );
@@ -429,17 +512,64 @@ export function LifecycleTimeline({ report, serial, canOpenCalls, onOpenSerial }
 
 /* ---------- pump set ---------- */
 
+const SET_PAGE_SIZE = 4;
+
 export function PumpSet({ components, serial, onOpenSerial }: { components: any[] | null | undefined; serial: string; onOpenSerial: (sn: string) => void }) {
-  const list = components || [];
+  const all = components || [];
+  const [cat, setCat] = useState<string>("ALL");
+  const tabs = [
+    { key: "ALL", label: "All", icon: <AppstoreOutlined /> },
+    { key: "PUMP", label: "Pump", icon: <CategoryIcon category="PUMP" /> },
+    { key: "MOTOR", label: "Motor", icon: <CategoryIcon category="MOTOR" /> },
+    { key: "CONTROLLER", label: "Controller", icon: <CategoryIcon category="CONTROLLER" /> },
+  ].map((t) => ({ ...t, count: t.key === "ALL" ? all.length : all.filter((c: any) => String(c.Category || "").toUpperCase() === t.key).length }));
+  const list = cat === "ALL" ? all : all.filter((c: any) => String(c.Category || "").toUpperCase() === cat);
+  const pages = Math.max(1, Math.ceil(list.length / SET_PAGE_SIZE));
+  // Open on the page that holds the serial being viewed, so "This serial" is always visible first.
+  const currentIndex = list.findIndex((c: any) => c.SerialNo === serial);
+  const [page, setPage] = useState(() => (currentIndex >= 0 ? Math.floor(currentIndex / SET_PAGE_SIZE) + 1 : 1));
+  useEffect(() => { setCat("ALL"); }, [serial]);
+  useEffect(() => { setPage(currentIndex >= 0 ? Math.floor(currentIndex / SET_PAGE_SIZE) + 1 : 1); }, [serial, cat, all.length]); // eslint-disable-line react-hooks/exhaustive-deps
+  const safePage = Math.min(page, pages);
+  const from = (safePage - 1) * SET_PAGE_SIZE;
+  const visible = list.slice(from, from + SET_PAGE_SIZE);
+  // Status summary of the shown tab, so the state of the whole set reads at a glance.
+  const tally = list.reduce((m: Record<string, number>, c: any) => { const k = statusKeyOf(c); m[k] = (m[k] || 0) + 1; return m; }, {});
   return (
     <section className={CARD}>
       <header className="px-5 py-3.5 border-b border-slate-100">
         <h3 className="text-sm font-bold text-slate-900">Pump set</h3>
-        <p className="text-xs text-slate-500 mt-0.5">{list.length ? `${plural(list.length, "component")} of this installation · each has its own serial and warranty` : "Components of this installation"}</p>
+        <p className="text-xs text-slate-500 mt-0.5">{all.length ? `${plural(all.length, "component")} of this installation · each has its own serial and warranty` : "Components of this installation"}</p>
       </header>
+      {all.length > 0 && (
+        <div>
+          {/* Underline tabs in one row (layout set inline so it never stacks). */}
+          <div role="tablist" aria-label="Component type" className="border-b border-slate-200 px-2" style={{ display: "flex", flexDirection: "row", flexWrap: "nowrap", alignItems: "stretch" }}>
+            {tabs.map((t) => {
+              const on = cat === t.key, off = t.key !== "ALL" && !t.count;
+              return (
+                <button key={t.key} type="button" role="tab" aria-selected={on} disabled={off} onClick={() => setCat(t.key)} title={`${t.label}: ${t.count}`}
+                  className={`group relative min-w-0 px-1 pb-2.5 pt-3 text-xs font-semibold transition-colors ${on ? "text-blue-700" : off ? "cursor-not-allowed text-slate-300" : "text-slate-500 hover:text-slate-900"}`}
+                  style={{ flex: "1 1 0", display: "flex", flexDirection: "row", flexWrap: "nowrap", alignItems: "center", justifyContent: "center", gap: 6, background: "transparent", border: 0 }}>
+                  <span className="shrink-0 text-[14px] leading-none">{t.icon}</span>
+                  <span className="truncate">{t.label}</span>
+                  <span className={`shrink-0 rounded-full px-1.5 py-px text-[10.5px] font-bold tabular-nums ${on ? "bg-blue-600 text-white" : off ? "bg-slate-100 text-slate-300" : "bg-slate-100 text-slate-600 group-hover:bg-slate-200"}`}>{t.count}</span>
+                  <span aria-hidden="true" className={`absolute inset-x-1 -bottom-px h-[3px] rounded-t-full transition-colors ${on ? "bg-blue-600" : "bg-transparent group-hover:bg-slate-200"}`} />
+                </button>
+              );
+            })}
+          </div>
+          <div className="px-4 pt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-500">
+            {(["active", "expiring", "expired", "replaced", "void"] as PassportStatus[]).filter((k) => tally[k]).map((k) => (
+              <span key={k} className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: STATUS[k].color }} /><b className="text-slate-700 tabular-nums">{tally[k]}</b> {STATUS[k].label.toLowerCase()}</span>
+            ))}
+          </div>
+        </div>
+      )}
       {list.length ? (
-        <div className="p-4 grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-1 gap-2.5">
-          {list.map((c: any) => {
+        <>
+        <div className="p-4 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-1 gap-2.5">
+          {visible.map((c: any) => {
             const current = c.SerialNo === serial;
             const st = statusKeyOf(c);
             const p = periodOf(c);
@@ -471,6 +601,13 @@ export function PumpSet({ components, serial, onOpenSerial }: { components: any[
             );
           })}
         </div>
+        {list.length > SET_PAGE_SIZE && (
+          <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 px-4 py-2.5">
+            <span className="text-[11px] text-slate-500 tabular-nums">Showing <b className="text-slate-700">{from + 1}–{Math.min(from + SET_PAGE_SIZE, list.length)}</b> of {list.length}</span>
+            <Pagination size="small" simple current={safePage} pageSize={SET_PAGE_SIZE} total={list.length} showSizeChanger={false} onChange={setPage} />
+          </footer>
+        )}
+        </>
       ) : (
         <div className="px-5 py-6 text-xs text-slate-400">No components recorded for this installation.</div>
       )}
@@ -492,18 +629,59 @@ export function OwnerCard({ owner, children }: { owner: any; children?: React.Re
     ...(o.SaleInvoiceNo ? [{ key: "iv", label: "Sale invoice", value: `${o.SaleInvoiceNo}${o.SaleInvoiceDate ? ` · ${formatDate(o.SaleInvoiceDate)}` : ""}` }] : []),
     ...(o.BorewellDepthM ? [{ key: "bw", label: "Borewell / head", value: `${o.BorewellDepthM} m / ${o.DynamicHeadM || "—"} m` }] : []),
   ];
+  const name = String(o.CustomerName || "").trim();
+  const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]!.toUpperCase()).join("") || "?";
+  const site = [o.Village, o.District, o.StateName, o.Pincode].filter(Boolean).join(", ");
+  const copyMobile = async () => {
+    if (await copyText(String(o.Mobile))) message.success({ content: "Mobile number copied", duration: 1.5 });
+    else message.error("Could not copy — select the text and press Ctrl+C");
+  };
+  const ICON: Record<string, React.ReactNode> = {
+    si: <EnvironmentOutlined />, in: <HomeOutlined />, ib: <UserOutlined />, de: <ShopOutlined />, iv: <FileTextOutlined />, bw: <ColumnHeightOutlined />,
+  };
+  // Name and mobile are shown in the header block; the rest are icon rows.
+  const detailRows = rows.filter((r) => r.key !== "cu" && r.key !== "mo");
+
   return (
-    <section className={CARD}>
+    <section className={`${CARD} overflow-hidden`}>
       <header className="px-5 py-3.5 border-b border-slate-100"><h3 className="text-sm font-bold text-slate-900">Customer &amp; site</h3></header>
-      <dl className="px-5 py-4 grid grid-cols-2 gap-x-4 gap-y-3 m-0">
-        {rows.map((r) => (
-          <div key={r.key} className={`min-w-0 ${r.key === "si" || r.key === "cu" ? "col-span-2 sm:col-span-1 xl:col-span-2" : ""}`}>
-            <dt className={LABEL}>{r.label}</dt>
-            <dd className="m-0 mt-0.5 text-sm text-slate-800 break-words">{r.value}</dd>
+
+      {/* who */}
+      <div className="flex items-center gap-3.5 px-5 py-4 bg-slate-50/60 border-b border-slate-100">
+        <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-blue-600 text-base font-extrabold text-white shadow-sm">{initials}</span>
+        <div className="min-w-0 flex-1">
+          <div className={LABEL}>Customer</div>
+          <div className="text-base font-extrabold leading-tight text-slate-900 break-words">{name || "—"}</div>
+          {o.Mobile ? (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <a href={`tel:${o.Mobile}`} className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-white px-2.5 py-0.5 font-mono text-[13px] font-bold text-blue-700 transition-colors hover:bg-blue-50">
+                <PhoneOutlined />{o.Mobile}
+              </a>
+              <Tooltip title="Copy mobile number">
+                <button type="button" onClick={copyMobile} aria-label="Copy mobile number" className="flex h-6 w-6 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-100 hover:text-blue-600"><CopyOutlined className="text-[13px]" /></button>
+              </Tooltip>
+            </div>
+          ) : <div className="mt-1 text-xs text-slate-400">No mobile number recorded</div>}
+        </div>
+      </div>
+
+      {/* where / how */}
+      <dl className="m-0 px-5 py-2 divide-y divide-slate-100">
+        {detailRows.map((r) => (
+          <div key={r.key} className="flex items-start gap-3 py-2.5">
+            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-blue-50 text-[13px] text-blue-700">{ICON[r.key] || <AppstoreOutlined />}</span>
+            <div className="min-w-0 flex-1">
+              <dt className={LABEL}>{r.label}</dt>
+              <dd className="m-0 mt-0.5 text-[13px] font-semibold text-slate-800 break-words">{r.value}</dd>
+              {r.key === "si" && site && (
+                <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(site)}`} target="_blank" rel="noopener noreferrer" className="mt-0.5 inline-block text-[11px] font-semibold text-blue-600 hover:underline">Open in Maps ↗</a>
+              )}
+            </div>
           </div>
         ))}
       </dl>
-      {React.Children.toArray(children).length > 0 && <div className="px-5 pb-4 flex flex-wrap gap-2">{children}</div>}
+
+      {React.Children.toArray(children).length > 0 && <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-3 flex flex-wrap gap-2">{children}</div>}
     </section>
   );
 }

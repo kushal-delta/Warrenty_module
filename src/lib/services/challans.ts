@@ -10,7 +10,7 @@ import { ownEntriesOnly } from "@/lib/auth/scope";
  *  - Dispatch stores are iERP dbo.Locs; transporters are iERP ledgers of the "Transporter" group plus TextLists names.
  *  - Items are the Material Request catalogue (product items + spare parts) with their carried rate.
  */
-export const TEXT_LIST_GROUPS = ["ChallanPurpose", "PartyKind", "Transporter"] as const;
+export const TEXT_LIST_GROUPS = ["ChallanPurpose", "PartyKind", "Transporter", "ItemUnit", "ItemCategory"] as const;
 export const CHALLAN_TYPES = ["Returnable", "Non-returnable"] as const;
 export const TRANSPORT_MODES = ["Road", "Rail", "Air", "Ship", "Courier"] as const;
 

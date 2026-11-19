@@ -301,7 +301,7 @@ export default function DashboardLayout({
           label: <Link href="/masters/service-engineers">Service Engineers</Link>,
         },
         ...[
-          ["spares", "Spares & Rates"],
+          ["spares", "Spares & Products"],
           ["labour", "Labour / Service Charges"],
           ["faults", "Fault Master"],
           ["call-types", "Call Types & Valid Days"],

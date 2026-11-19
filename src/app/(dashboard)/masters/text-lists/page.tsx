@@ -16,6 +16,8 @@ const LISTS = [
   { group: "ChallanPurpose", label: "Purpose", noun: "purpose", hint: "Purpose dropdown on the Delivery Challan" },
   { group: "PartyKind", label: "Party kind", noun: "party kind", hint: "Party kind dropdown on the Delivery Challan" },
   { group: "Transporter", label: "Transporter", noun: "transporter", hint: "Transporter dropdown on the Delivery Challan (iERP transporter ledgers are listed there too)" },
+  { group: "ItemUnit", label: "Item unit", noun: "unit", hint: "Unit dropdown on Spares & Products" },
+  { group: "ItemCategory", label: "Item category", noun: "category", hint: "Category dropdown on Spares & Products" },
 ];
 
 /** Configuration → Text Lists: the values behind the Delivery Challan dropdowns (purpose, party kind, transporter). */
@@ -83,7 +85,7 @@ export default function TextListsPage() {
   const columns = [
     { title: "Order", dataIndex: "SortOrder", key: "order", width: 80, align: "right" as const },
     { title: "Value", dataIndex: "Value", key: "value", render: (v: string) => <b className="text-slate-800">{v}</b> },
-    { title: "Used on challans", dataIndex: "UsedOn", key: "used", width: 140, align: "right" as const, render: (v: number) => Number(v) || <span className="text-slate-300">0</span> },
+    { title: "Times used", dataIndex: "UsedOn", key: "used", width: 140, align: "right" as const, render: (v: number) => Number(v) || <span className="text-slate-300">0</span> },
     { title: "Added by", dataIndex: "AddedBy", key: "by", render: (v: string, r: any) => <div className="text-xs"><div>{v?.trim() || <span className="text-slate-400">Starting value</span>}</div><div className="text-slate-400">{formatDate(r.InsertedOn)}</div></div> },
     { title: "Status", dataIndex: "IsActive", key: "status", width: 95, render: (a: boolean) => a ? <Tag color="green">Active</Tag> : <Tag>Inactive</Tag> },
     { title: "Actions", key: "actions", width: 90, render: (_: any, r: any) => (
@@ -97,7 +99,7 @@ export default function TextListsPage() {
   const exportExcel = () => exportTable(`Text Lists - ${list.label}`, [
     { header: "Order", value: (r: any) => r.SortOrder, type: "number" },
     { header: "Value", value: (r: any) => r.Value },
-    { header: "Used on challans", value: (r: any) => Number(r.UsedOn) || 0, type: "number" },
+    { header: "Times used", value: (r: any) => Number(r.UsedOn) || 0, type: "number" },
     { header: "Added by", value: (r: any) => r.AddedBy?.trim() || "Starting value" },
     { header: "Added on", value: (r: any) => r.InsertedOn, type: "date" },
     { header: "Status", value: (r: any) => (r.IsActive ? "Active" : "Inactive") },
@@ -105,7 +107,7 @@ export default function TextListsPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader icon={<OrderedListOutlined />} title="Text Lists" subtitle="Values behind the Delivery Challan dropdowns · values added from the challan form appear here · switch a value off to hide it"
+      <PageHeader icon={<OrderedListOutlined />} title="Text Lists" subtitle="Values behind the Delivery Challan and Spares & Products dropdowns · values added from those forms appear here · switch a value off to hide it"
         actions={<>
           <ExportExcelButton onExport={exportExcel} disabled={!filtered.length} />
           <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>Refresh</Button>

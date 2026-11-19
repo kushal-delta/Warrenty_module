@@ -14,6 +14,8 @@ export async function POST(request: NextRequest) {
           WHEN 'ChallanPurpose' THEN (SELECT COUNT(*) FROM dbo.[DeliveryChallans] d WHERE d.[Purpose] = t.[Value])
           WHEN 'PartyKind' THEN (SELECT COUNT(*) FROM dbo.[DeliveryChallans] d WHERE d.[PartyKind] = t.[Value])
           WHEN 'Transporter' THEN (SELECT COUNT(*) FROM dbo.[DeliveryChallans] d WHERE d.[TransporterName] = t.[Value])
+          WHEN 'ItemUnit' THEN (SELECT COUNT(*) FROM dbo.[Spares] s WHERE s.[Uom] = t.[Value])
+          WHEN 'ItemCategory' THEN (SELECT COUNT(*) FROM dbo.[Spares] s WHERE s.[Category] = t.[Value])
           ELSE 0 END AS [UsedOn]
       FROM dbo.[TextLists] t LEFT JOIN dbo.[Users] u ON u.[UserId] = t.[InsertedByUserId]
       WHERE t.[ListGroup] IN (${TEXT_LIST_GROUPS.map((g) => `'${g}'`).join(", ")})

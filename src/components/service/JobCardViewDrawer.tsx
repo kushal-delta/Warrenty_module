@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { Button, Checkbox, Descriptions, Drawer, Empty, Image, Input, Modal, Spin, Steps, Table, Tabs, Tag, message } from "antd";
-import { AuditOutlined, CameraOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, HistoryOutlined, InfoCircleOutlined, PrinterOutlined, SendOutlined, ToolOutlined, UnorderedListOutlined } from "@ant-design/icons";
+import { Button, Checkbox, Drawer, Empty, Image, Input, Modal, Spin, Steps, Table, Tabs, Tag, message } from "antd";
+import { AuditOutlined, CameraOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileDoneOutlined, FileTextOutlined, HistoryOutlined, InfoCircleOutlined, PhoneOutlined, PrinterOutlined, SafetyCertificateOutlined, SendOutlined, ShopOutlined, ToolOutlined, UnorderedListOutlined, UserOutlined } from "@ant-design/icons";
+import { CategoryIcon } from "@/components/warranty/SerialPassport";
 import { useJobCardStore, JobCardDetail } from "@/lib/store/useJobCardStore";
 import { useAuthStore } from "@/lib/store/useAuthStore";
 import { DrawerHeader, DrawerChip, DRAWER_WIDTH, DRAWER_HEADER_STYLE } from "@/components/common/DrawerHeader";
@@ -27,6 +28,184 @@ function Panel({ title, extra, children }: { title: string; extra?: React.ReactN
       <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-2.5"><h3 className="text-sm font-bold text-slate-800">{title}</h3>{extra}</div>
       <div className="p-4">{children}</div>
     </section>
+  );
+}
+
+/* ---------- journey: Draft → approval levels → Approved → Closed ---------- */
+
+type ChainStep = { title: string; description: string; status: "process" | "finish" | "error" | "wait" };
+type StepState = "done" | "current" | "error" | "wait";
+
+function JourneyStrip({ job, chain }: { job: any; chain: ChainStep[] }) {
+  const s = job.Status as string;
+  const after = (states: string[]) => states.includes(s);
+  const steps: { label: string; sub: string; state: StepState }[] = [
+    { label: "Draft", sub: `Created ${formatDate(job.JobCardDate)}`, state: s === "Draft" ? "current" : s === "Rejected" ? "error" : "done" },
+    ...chain.map((c) => ({ label: c.title, sub: c.description, state: (c.status === "finish" ? "done" : c.status === "process" ? "current" : c.status === "error" ? "error" : "wait") as StepState })),
+    { label: "Approved", sub: after(["Approved", "Closed"]) ? "Estimate approved" : "After the last level", state: s === "Approved" ? "current" : s === "Closed" ? "done" : "wait" },
+    { label: "Closed", sub: s === "Closed" ? "Repair complete" : "When the repair is done", state: s === "Closed" ? "done" : "wait" },
+  ];
+  const next = s === "Draft" ? (chain.length ? "Next: send for approval" : "Next: send — no approval level applies, it is approved on submission")
+    : s === "In Approval" ? `Waiting at ${job.PendingRole || `level ${job.CurrentLevel}`}`
+    : s === "Approved" ? "Next: close the job card once the repair is complete"
+    : s === "Rejected" ? "Rejected — edit the job card and send it again"
+    : "Job card closed";
+  const tone = s === "Rejected" ? "error" : s === "Closed" ? "done" : s === "Approved" ? "ok" : s === "In Approval" ? "wait" : "draft";
+  const doneCount = steps.filter((x) => x.state === "done").length;
+  return (
+    <section className="jc-journey verify-pop">
+      <div className="jc-journey-head">
+        <span className={`jc-next jc-next-${tone}`}><span className="jc-next-dot" />{next}</span>
+        <span className="text-[11px] font-semibold text-slate-400">{doneCount} of {steps.length} steps done</span>
+      </div>
+      <ol className="jc-steps">
+        {steps.map((st, i) => (
+          <li key={`${st.label}-${i}`} className={`jc-step is-${st.state}`}>
+            <span className="jc-step-dot">{st.state === "done" ? <CheckOutlined /> : st.state === "error" ? <CloseOutlined /> : i + 1}</span>
+            <span className="min-w-0">
+              <span className="jc-step-label" title={st.label}>{st.label}</span>
+              <span className="jc-step-sub" title={st.sub}>{st.sub}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/* ---------- money: total, what it is made of, who pays ---------- */
+
+function MoneyCard({ job }: { job: any }) {
+  const total = Number(job.TotalEstimate) || 0;
+  const company = Math.min(Number(job.WarrantyAmount) || 0, total);
+  const customer = Number(job.CustomerPayable) || Math.max(0, total - company);
+  const parts = [
+    { label: "Spares", value: Number(job.SparesTotal) || 0, color: "#2563eb" },
+    { label: "Labour", value: Number(job.LabourTotal) || 0, color: "#7c3aed" },
+    { label: "GST", value: Number(job.GstTotal) || 0, color: "#f59e0b" },
+    { label: "Other charges", value: Number(job.OtherCharges) || 0, color: "#64748b" },
+  ];
+  const sum = parts.reduce((a, p) => a + p.value, 0) || 1;
+  const companyPct = total ? Math.round((company / total) * 100) : 0;
+  return (
+    <section className="jc-money verify-pop">
+      <div className="jc-money-total">
+        <span className="jc-label">Grand total</span>
+        <strong>₹ {inr(total, 2)}</strong>
+        <span className="text-xs text-slate-500">{job.WarrantyStatus ? `Warranty status · ${job.WarrantyStatus}` : "Estimate for this repair"}</span>
+      </div>
+      <div className="jc-money-parts">
+        <span className="jc-label">What it is made of</span>
+        <div className="jc-stack" aria-hidden="true">
+          {parts.filter((p) => p.value > 0).map((p) => <i key={p.label} style={{ width: `${(p.value / sum) * 100}%`, background: p.color }} title={`${p.label} ₹ ${inr(p.value, 2)}`} />)}
+        </div>
+        <div className="jc-legend">
+          {parts.map((p) => (
+            <span key={p.label} className={p.value ? "" : "is-zero"}><i style={{ background: p.color }} />{p.label}<b>₹ {inr(p.value, 2)}</b></span>
+          ))}
+        </div>
+      </div>
+      <div className="jc-money-split">
+        <span className="jc-label">Who pays</span>
+        <div className="jc-split-bar" aria-hidden="true"><i style={{ width: `${companyPct}%` }} /></div>
+        <div className="jc-payers">
+          <div className="jc-payer is-company"><span>Company · warranty</span><b>₹ {inr(company, 2)}</b><em>{companyPct}%</em></div>
+          <div className="jc-payer is-customer"><span>Customer pays</span><b>₹ {inr(customer, 2)}</b><em>{100 - companyPct}%</em></div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- details tab: customer & call, service, problem, faults, components ---------- */
+
+const FAULT_TONE: Record<string, string> = { PUMP: "#2563eb", MOTOR: "#0891b2", CONTROLLER: "#7c3aed" };
+const initials = (name?: string) => String(name || "?").trim().split(/\s+/).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+function warrantyTone(v?: string) {
+  const t = String(v || "").toLowerCase();
+  if (/in warranty|active|under/.test(t)) return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  if (/out|expired|void/.test(t)) return "border-red-200 bg-red-50 text-red-700";
+  return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function Fact({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="jc-fact"><span>{label}</span><b>{children || "—"}</b></div>;
+}
+
+function DetailsView({ job, data }: { job: any; data: JobCardDetail }) {
+  const components: any[] = data.components || [];
+  return (
+    <div className="jc-details">
+      <div className="jc-card jc-person">
+        <div className="flex items-center gap-3">
+          <span className="jc-avatar">{initials(job.CustomerName)}</span>
+          <div className="min-w-0 flex-1">
+            <div className="jc-label">Customer</div>
+            <div className="truncate text-base font-bold text-slate-900">{job.CustomerName}</div>
+            <a href={`tel:${job.Mobile}`} className="text-xs font-semibold text-blue-600"><PhoneOutlined /> +91 {job.Mobile}</a>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold ${warrantyTone(job.WarrantyStatus)}`}><SafetyCertificateOutlined /> {job.WarrantyStatus || "Warranty unknown"}</span>
+        </div>
+        <div className="jc-facts mt-4">
+          <Fact label="Service call">{job.ComplaintNo}</Fact>
+          <Fact label="Call date">{formatDate(job.CallDate)}</Fact>
+        </div>
+      </div>
+
+      <div className="jc-card">
+        <div className="jc-label mb-3">Service</div>
+        <div className="jc-facts">
+          <Fact label="Job card date">{formatDate(job.JobCardDate)}</Fact>
+          <Fact label="Status"><Tag color={JOBCARD_STATUS_COLOR[job.Status]} className="m-0">{job.Status}</Tag></Fact>
+          <Fact label="Engineer"><span><UserOutlined className="mr-1 text-slate-400" />{job.EngineerName?.trim() || "—"}</span></Fact>
+          <Fact label="Service center"><span><ShopOutlined className="mr-1 text-slate-400" />{job.ServiceCenterName || "—"}</span></Fact>
+        </div>
+      </div>
+
+      <div className="jc-card jc-wide jc-problem">
+        <div className="jc-label mb-2">Problem reported by the customer</div>
+        <p>{job.ComplaintText || "—"}</p>
+        {job.Remarks && <div className="jc-note"><FileTextOutlined /> <span><b>Engineer notes · </b>{job.Remarks}</span></div>}
+      </div>
+
+      <div className="jc-card">
+        <div className="mb-3 flex items-center justify-between"><span className="jc-label">Faults found</span><span className="jc-count">{data.faults.length}</span></div>
+        {data.faults.length ? (
+          <div className="flex flex-col gap-2">
+            {data.faults.map((f) => {
+              const color = FAULT_TONE[String(f.Category).toUpperCase()] || "#ea580c";
+              return (
+                <div key={f.JobCardFaultLnId} className="jc-fault" style={{ ["--c" as any]: color }}>
+                  <span className="jc-fault-icon"><CategoryIcon category={f.Category} /></span>
+                  <span className="min-w-0"><span className="jc-fault-cat">{f.Category}</span><span className="jc-fault-name">{f.FaultName}</span></span>
+                </div>
+              );
+            })}
+          </div>
+        ) : <span className="text-xs text-slate-400">None recorded</span>}
+      </div>
+
+      <div className="jc-card">
+        <div className="mb-3 flex items-center justify-between"><span className="jc-label">Components on the call</span><span className="jc-count">{components.length}</span></div>
+        {components.length ? (
+          <div className="flex flex-col gap-2">
+            {components.map((c, i) => {
+              const color = FAULT_TONE[String(c.Category).toUpperCase()] || "#64748b";
+              return (
+                <div key={`${c.SerialNo}-${i}`} className="jc-fault" style={{ ["--c" as any]: color }}>
+                  <span className="jc-fault-icon"><CategoryIcon category={c.Category} /></span>
+                  <span className="min-w-0 flex-1">
+                    <span className="jc-fault-cat">{c.Category}{c.ModelName ? ` · ${c.ModelName}` : ""}</span>
+                    <span className="jc-fault-name font-mono">{c.SerialNo || "No serial"}</span>
+                    {c.ReportedFault && <span className="block truncate text-[11px] text-slate-500" title={c.ReportedFault}>{c.ReportedFault}</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        ) : <span className="text-xs text-slate-400">No component serials on this call</span>}
+      </div>
+    </div>
   );
 }
 
@@ -111,36 +290,28 @@ export function JobCardViewDrawer({ jobCardId, onClose, onEdit, onChanged }: Pro
     >
       {loading && !data && <PageLoader label="Loading job card…" hint="Lines, approvals and photos" minHeight="60vh" />}
       <Spin spinning={loading && !!data}>
-        {job && data && <div className="space-y-5">
+        {job && data && <div className="jc-view space-y-5">
           {job.Status === "Rejected" && <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">Rejected: {[...data.approvals].reverse().find((a) => a.Action === "Rejected")?.Remarks || "no reason given"}. Edit the job card and send it again.</div>}
-          {/* At a glance: the money */}
-          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4 lg:grid-cols-7">
-            {[["Spares", job.SparesTotal], ["Labour", job.LabourTotal], ["GST", job.GstTotal], ["Other charges", job.OtherCharges], ["Grand total", job.TotalEstimate], ["Warranty (company)", Math.min(Number(job.WarrantyAmount), Number(job.TotalEstimate))], ["Customer pays", job.CustomerPayable]].map(([label, value]) => (
-              <div key={label as string} className={`rounded-lg border px-3 py-2 ${label === "Grand total" ? "border-blue-200 bg-blue-50" : "border-slate-200 bg-white"}`}><div className="text-[11px] text-slate-500">{label}</div><div className="font-bold text-slate-900">₹ {inr(value, 2)}</div></div>
-            ))}
-          </div>
+          {/* Where the job card is in its journey, and what happens next */}
+          <JourneyStrip job={job} chain={chain} />
+
+          {/* At a glance: the money — what it is made of and who pays */}
+          <MoneyCard job={job} />
 
           <Tabs activeKey={tab} onChange={setTab} items={[
             { key: "details", label: tabLabel(<InfoCircleOutlined />, "Details"), children: (
-              <div className="space-y-4">
-                <Descriptions bordered size="small" column={{ xs: 1, sm: 2, lg: 3 }} items={[
-                  { key: "d", label: "Date", children: formatDate(job.JobCardDate) },
-                  { key: "s", label: "Status", children: <Tag color={JOBCARD_STATUS_COLOR[job.Status]}>{job.Status}</Tag> },
-                  { key: "c", label: "Call", children: `${job.ComplaintNo} (${formatDate(job.CallDate)})` },
-                  { key: "cu", label: "Customer", children: `${job.CustomerName} · ${job.Mobile}` },
-                  { key: "e", label: "Engineer", children: job.EngineerName?.trim() || "-" },
-                  { key: "sc", label: "Service Center", children: job.ServiceCenterName || "-" },
-                  { key: "w", label: "Warranty Status", children: job.WarrantyStatus || "-" },
-                  { key: "p", label: "Problem", span: 2, children: job.ComplaintText },
-                  { key: "n", label: "Notes", span: 3, children: job.Remarks || "-" },
-                ]} />
-                <Panel title="Faults found" extra={<span className="text-xs text-slate-400">{data.faults.length}</span>}>
-                  {data.faults.length ? <div className="flex flex-wrap gap-1.5">{data.faults.map((f) => <Tag key={f.JobCardFaultLnId} color="volcano">{f.Category} · {f.FaultName}</Tag>)}</div> : <span className="text-xs text-slate-400">None recorded</span>}
-                </Panel>
-              </div>
+              <DetailsView job={job} data={data} />
             ) },
             { key: "lines", label: tabLabel(<UnorderedListOutlined />, "Spares & labour", data.items.length), children: (
-              <Table size="middle" rowKey="JobCardItemLnId" dataSource={data.items} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: "No lines" }} columns={[
+              <Table size="middle" rowKey="JobCardItemLnId" dataSource={data.items} pagination={false} scroll={{ x: 760 }} locale={{ emptyText: "No lines" }}
+                summary={(rows) => rows.length ? (
+                  <Table.Summary.Row className="bg-slate-50">
+                    <Table.Summary.Cell index={0} colSpan={6}><span className="text-xs font-bold uppercase tracking-wide text-slate-500">{rows.length} line{rows.length === 1 ? "" : "s"} · {rows.filter((r: any) => r.IsWarranty).length} under warranty</span></Table.Summary.Cell>
+                    <Table.Summary.Cell index={1} align="right"><b className="text-slate-900">₹ {inr(rows.reduce((s: number, r: any) => s + Number(r.Amount) + Number(r.GstAmount || 0), 0), 2)}</b></Table.Summary.Cell>
+                    <Table.Summary.Cell index={2} />
+                  </Table.Summary.Row>
+                ) : null}
+                columns={[
                 { title: "Type", dataIndex: "ItemType", render: (t: string) => <Tag color={t === "Labour" ? "purple" : "blue"}>{t || "Spare"}</Tag> },
                 { title: "Particulars", key: "s", render: (_: any, i: any) => <span><b>{i.Particulars || i.SpareName}</b> <span className="text-xs text-slate-400">{i.ItemCode || i.SpareCode}</span></span> },
                 { title: "Serial", dataIndex: "SerialNo", render: (v: string) => v ? <span className="font-mono text-xs">{v}</span> : "—" },
